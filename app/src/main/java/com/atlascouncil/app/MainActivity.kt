@@ -51,6 +51,17 @@ class MainActivity: Activity() {
   runOnUiThread { councilWeb.evaluateJavascript("window.atlasNativeResult&&window.atlasNativeResult("+JSONObject.quote(id)+","+payload.toString()+")",null) }
  }
  inner class CouncilBridge {
+  @JavascriptInterface fun shareText(title:String,content:String){
+   if(content.length>1000000)return
+   runOnUiThread {
+    val intent=Intent(Intent.ACTION_SEND).apply {
+     type="text/plain"
+     putExtra(Intent.EXTRA_SUBJECT,title.take(120))
+     putExtra(Intent.EXTRA_TEXT,content)
+    }
+    startActivity(Intent.createChooser(intent,"Atlas Council sohbetini paylaş"))
+   }
+  }
   @JavascriptInterface fun connected():Boolean = !accessToken.isNullOrBlank()
   @JavascriptInterface fun ask(id:String,message:String){
    if(!id.matches(Regex("[A-Za-z0-9_-]{1,48}"))||message.length>4000||message.isBlank())return
