@@ -122,14 +122,14 @@ class MainActivity: Activity() {
   }.start()
  }
  private fun startGoogleLogin(){
-  val verifier=token(48);googleVerifier=verifier
+  val verifier=token(48);googleVerifier=verifier;getPreferences(MODE_PRIVATE).edit().putString("google_pending_verifier",verifier).apply()
   val digest=sha(verifier)
   val url="https://atlas-council.sshrrgoktas.workers.dev/auth/google/start?mobile=1&challenge="+enc(digest)
   try{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}catch(e:Exception){Toast.makeText(this,"Google girişi açılamadı",Toast.LENGTH_LONG).show()}
  }
  private fun completeGoogleLogin(ticket:String){
-  val verifier=googleVerifier?:return
-  googleVerifier=null
+  val verifier=googleVerifier?:getPreferences(MODE_PRIVATE).getString("google_pending_verifier",null)?:return
+  googleVerifier=null;getPreferences(MODE_PRIVATE).edit().remove("google_pending_verifier").apply()
   Thread {
    var conn:HttpURLConnection?=null
    try{
@@ -199,6 +199,7 @@ class MainActivity: Activity() {
   }
   layout.addView(councilWeb,LinearLayout.LayoutParams(-1,-1));setContentView(layout)
   // Web UI updates arrive from Cloudflare; APK updates are checked only on request.
+  val incoming=intent?.data;if(incoming?.scheme=="atlascouncil"&&incoming.host=="google-auth"){incoming.getQueryParameter("ticket")?.let{completeGoogleLogin(it)}}
  }
  private fun startLogin(){status.text="Deneysel yerel bağlantı hazırlanıyor…";Thread {
   var server:ServerSocket?=null
