@@ -31,13 +31,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-      - name: Install original Atlas emblem as Android launcher icon
-        run: |
-          mkdir -p app/src/main/res/drawable-nodpi
-          curl --fail --location --silent --show-error --retry 3 \
-            https://raw.githubusercontent.com/sshrrgoktas/valyren-sky-guard/main/web/assets/atlas-logo.png \
-            -o app/src/main/res/drawable-nodpi/atlas_launcher.png
-          file app/src/main/res/drawable-nodpi/atlas_launcher.png
       - name: Build debug APK for internal checks
         run: gradle :app:assembleDebug --stacktrace --no-daemon
       - uses: actions/upload-artifact@v4
