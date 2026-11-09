@@ -162,7 +162,7 @@ class MainActivity: Activity() {
    loadUrl("https://atlas-council.sshrrgoktas.workers.dev/council-v2?source=android&refresh="+System.currentTimeMillis())
   }
   layout.addView(title);layout.addView(nativeToggle);layout.addView(councilWeb,LinearLayout.LayoutParams(-1,0,1f));setContentView(layout)
-  checkForUpdates(false)
+  // Web UI updates arrive from Cloudflare; APK updates are checked only on request.
  }
  private fun startLogin(){status.text="Deneysel yerel bağlantı hazırlanıyor…";Thread {
   var server:ServerSocket?=null
