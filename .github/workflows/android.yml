@@ -39,4 +39,4 @@ jobs:
           gh release delete latest-debug --yes --cleanup-tag || true
           git tag -f latest-debug
           git push origin refs/tags/latest-debug --force
-          gh release create latest-debug atlas-council-debug.apk --title "Atlas Council Android — Experimental Debug APK" --notes "Experimental Android prototype. ChatGPT and Gemini account integration not yet verified. Do not use production credentials." --prerelease
+          gh release create latest-debug atlas-council-debug.apk --notes "versionCode: ${GITHUB_RUN_NUMBER}" --title "Atlas Council Android — Experimental Debug APK" --prerelease
