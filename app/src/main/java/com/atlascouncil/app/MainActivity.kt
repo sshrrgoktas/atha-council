@@ -33,6 +33,9 @@ import com.nimbusds.jose.proc.SecurityContext
 
 class MainActivity: Activity() {
  private lateinit var status: TextView
+ private lateinit var loginButton: Button
+ private lateinit var testButton: Button
+ private lateinit var authBadge: TextView
  private lateinit var councilWeb: WebView
  private var lastWebRefresh:Long=0L
  private lateinit var prompt: EditText
@@ -49,15 +52,16 @@ class MainActivity: Activity() {
   val layout=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(36,48,36,24);setBackgroundColor(Color.rgb(9,19,33)) }
   val title=TextView(this).apply { text="ATLAS COUNCIL";textSize=28f;setTextColor(Color.rgb(77,214,193)) }
   status=TextView(this).apply {text="ChatGPT bağlı değil. Giriş prototipi test edilmedi.";textSize=16f;setTextColor(Color.WHITE);setPadding(0,28,0,28)}
-  val button=Button(this).apply {text="ChatGPT ile devam et (deneysel)";setOnClickListener{startLogin()} }
+  loginButton=Button(this).apply {text="ChatGPT ile devam et (deneysel)";setOnClickListener{startLogin()} }
+  authBadge=TextView(this).apply {text="ChatGPT bağlı değil";textSize=17f;setTextColor(Color.rgb(77,214,193));visibility=android.view.View.GONE}
   prompt=EditText(this).apply {hint="Atlas'a bir mesaj yaz";setHintTextColor(Color.LTGRAY);setTextColor(Color.WHITE);minLines=2}
   reply=TextView(this).apply {text="Henüz yanıt yok";setTextColor(Color.WHITE);setPadding(0,18,0,18)}
-  val send=Button(this).apply {text="ChatGPT yanıtını test et";setOnClickListener{sendMessage()} }
+  testButton=Button(this).apply {text="ChatGPT yanıtını test et";setOnClickListener{sendMessage()} }
   updateStatus=TextView(this).apply {text="Güncellemeler kontrol edilmedi";setTextColor(Color.LTGRAY)}
   val checkUpdates=Button(this).apply {text="Güncellemeleri kontrol et";setOnClickListener{checkForUpdates(true)} }
   val web=Button(this).apply {text="Atlas Council web panelini aç";setOnClickListener{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://atlas-council.sshrrgoktas.workers.dev")))} }
   val nativeControls=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL}
-  nativeControls.addView(status);nativeControls.addView(button);nativeControls.addView(prompt);nativeControls.addView(send);nativeControls.addView(reply);nativeControls.addView(updateStatus);nativeControls.addView(checkUpdates)
+  nativeControls.addView(status);nativeControls.addView(authBadge);nativeControls.addView(loginButton);nativeControls.addView(prompt);nativeControls.addView(testButton);nativeControls.addView(reply);nativeControls.addView(updateStatus);nativeControls.addView(checkUpdates)
   nativeControls.visibility=android.view.View.GONE
   val nativeToggle=Button(this).apply {text="ChatGPT bağlantısı / yerel ayarlar";setOnClickListener {nativeControls.visibility=if(nativeControls.visibility==android.view.View.VISIBLE)android.view.View.GONE else android.view.View.VISIBLE}}
   councilWeb=WebView(this).apply {
@@ -118,7 +122,15 @@ class MainActivity: Activity() {
    val tokenValue=data.optString("access_token")
    if(tokenValue.isBlank())throw Exception("Erişim belirteci dönmedi")
    accessToken=tokenValue
-   runOnUiThread{status.text="ChatGPT kimliği doğrulandı. Model çağrısını test edebilirsin. Oturum yalnızca uygulama açıkken tutulur."}
+   runOnUiThread{
+    authBadge.text="✓ ChatGPT hesabı bağlı"
+    authBadge.visibility=android.view.View.VISIBLE
+    loginButton.visibility=android.view.View.GONE
+    testButton.visibility=android.view.View.GONE
+    prompt.visibility=android.view.View.GONE
+    reply.visibility=android.view.View.GONE
+    status.text="Kimlik doğrulandı. Model erişimi henüz doğrulanmadı; web konseyine otomatik aktarılmaz. Oturum uygulama açıkken geçerlidir."
+   }
   }catch(e:Exception){runOnUiThread{status.text="Bağlantı tamamlanamadı: ${e.message}"}}finally{try{server?.close()}catch(_:Exception){}}
  }.start()}
  private fun sendMessage() {
