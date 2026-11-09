@@ -136,7 +136,7 @@ class MainActivity: Activity() {
     conn.readTimeout=60000
     conn.setRequestProperty("Authorization","Bearer $bearer")
     conn.setRequestProperty("Content-Type","application/json")
-    val request=JSONObject().put("model","gpt-6.1-sol").put("input",message).toString()
+    val request=JSONObject().put("model","gpt-6.1-sol").put("input",org.json.JSONArray().put(JSONObject().put("role","user").put("content",org.json.JSONArray().put(JSONObject().put("type","input_text").put("text",message))))).toString()
     conn.outputStream.use {it.write(request.toByteArray(Charsets.UTF_8))}
     val statusCode=conn.responseCode
     val body=(if(statusCode in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use{it.readText()} ?: ""
