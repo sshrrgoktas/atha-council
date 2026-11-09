@@ -6,6 +6,9 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.*
 import android.graphics.Color
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.webkit.WebResourceRequest
 import android.app.DownloadManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -29,6 +32,7 @@ import com.nimbusds.jose.proc.SecurityContext
 
 class MainActivity: Activity() {
  private lateinit var status: TextView
+ private lateinit var councilWeb: WebView
  private lateinit var prompt: EditText
  private lateinit var reply: TextView
  private lateinit var updateStatus: TextView
@@ -50,7 +54,25 @@ class MainActivity: Activity() {
   updateStatus=TextView(this).apply {text="Güncellemeler kontrol edilmedi";setTextColor(Color.LTGRAY)}
   val checkUpdates=Button(this).apply {text="Güncellemeleri kontrol et";setOnClickListener{checkForUpdates(true)} }
   val web=Button(this).apply {text="Atlas Council web panelini aç";setOnClickListener{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://atlas-council.sshrrgoktas.workers.dev")))} }
-  layout.addView(title);layout.addView(status);layout.addView(button);layout.addView(prompt);layout.addView(send);layout.addView(reply);layout.addView(web);layout.addView(updateStatus);layout.addView(checkUpdates);setContentView(layout)
+  val nativeControls=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL}
+  nativeControls.addView(status);nativeControls.addView(button);nativeControls.addView(prompt);nativeControls.addView(send);nativeControls.addView(reply);nativeControls.addView(updateStatus);nativeControls.addView(checkUpdates)
+  nativeControls.visibility=android.view.View.GONE
+  val nativeToggle=Button(this).apply {text="ChatGPT bağlantısı / yerel ayarlar";setOnClickListener {nativeControls.visibility=if(nativeControls.visibility==android.view.View.VISIBLE)android.view.View.GONE else android.view.View.VISIBLE}}
+  councilWeb=WebView(this).apply {
+   settings.javaScriptEnabled=true
+   settings.domStorageEnabled=true
+   webViewClient=object:WebViewClient(){
+    override fun shouldOverrideUrlLoading(view:WebView?,request:WebResourceRequest?):Boolean{
+     val u=request?.url?:return false
+     return if(u.scheme=="https"&&u.host=="atlas-council.sshrrgoktas.workers.dev")false else {
+      try{startActivity(Intent(Intent.ACTION_VIEW,u))}catch(_:Exception){}
+      true
+     }
+    }
+   }
+   loadUrl("https://atlas-council.sshrrgoktas.workers.dev")
+  }
+  layout.addView(title);layout.addView(nativeToggle);layout.addView(councilWeb,LinearLayout.LayoutParams(-1,0,1f));layout.addView(nativeControls);setContentView(layout)
   checkForUpdates(false)
  }
  private fun startLogin(){status.text="Deneysel yerel bağlantı hazırlanıyor…";Thread {
@@ -203,6 +225,7 @@ class MainActivity: Activity() {
   }catch(e:Exception){updateStatus.text="Güncelleme indirilemedi: ${e.message}"}
  }
  override fun onDestroy(){
+  if(::councilWeb.isInitialized)councilWeb.destroy()
   downloadReceiver?.let{try{unregisterReceiver(it)}catch(_:Exception){}}
   downloadReceiver=null
   super.onDestroy()
