@@ -68,6 +68,8 @@ class MainActivity: Activity() {
    settings.javaScriptEnabled=true
    settings.domStorageEnabled=true
    settings.cacheMode=WebSettings.LOAD_NO_CACHE
+   clearHistory()
+   clearCache(true)
    webViewClient=object:WebViewClient(){
     override fun shouldOverrideUrlLoading(view:WebView?,request:WebResourceRequest?):Boolean{
      val u=request?.url?:return false
@@ -78,7 +80,7 @@ class MainActivity: Activity() {
     }
    }
    clearCache(true)
-   loadUrl("https://atlas-council.sshrrgoktas.workers.dev/?source=android&refresh="+System.currentTimeMillis())
+   loadUrl("https://atlas-council.sshrrgoktas.workers.dev/council-v2?source=android&refresh="+System.currentTimeMillis())
   }
   layout.addView(title);layout.addView(nativeToggle);layout.addView(councilWeb,LinearLayout.LayoutParams(-1,0,1f));layout.addView(nativeControls);setContentView(layout)
   checkForUpdates(false)
@@ -244,7 +246,7 @@ class MainActivity: Activity() {
   super.onResume()
   if(::councilWeb.isInitialized && android.os.SystemClock.elapsedRealtime()-lastWebRefresh>10000L){
    lastWebRefresh=android.os.SystemClock.elapsedRealtime()
-   councilWeb.post{councilWeb.loadUrl("https://atlas-council.sshrrgoktas.workers.dev/?source=android&refresh="+System.currentTimeMillis())}
+   councilWeb.post{councilWeb.loadUrl("https://atlas-council.sshrrgoktas.workers.dev/council-v2?source=android&refresh="+System.currentTimeMillis())}
   }
  }
  override fun onDestroy(){
