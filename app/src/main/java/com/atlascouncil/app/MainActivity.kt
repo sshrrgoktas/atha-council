@@ -66,20 +66,43 @@ class MainActivity: Activity() {
   val bearer=accessToken
   if(bearer.isNullOrBlank()){councilCallback(id,JSONObject().put("error","ChatGPT oturumu bağlı değil"));return}
   Thread {
+   var conn:HttpURLConnection?=null
    try {
-    val conn=URL("https://api.openai.com/v1/responses").openConnection() as HttpURLConnection
-    conn.requestMethod="POST";conn.doOutput=true;conn.connectTimeout=15000;conn.readTimeout=60000
-    conn.setRequestProperty("Authorization","Bearer $bearer");conn.setRequestProperty("Content-Type","application/json")
+    conn=URL("https://api.openai.com/v1/responses").openConnection() as HttpURLConnection
+    conn.requestMethod="POST";conn.doOutput=true;conn.connectTimeout=15000;conn.readTimeout=90000
+    conn.setRequestProperty("Authorization","Bearer $bearer")
+    conn.setRequestProperty("Content-Type","application/json")
+    conn.setRequestProperty("Accept","text/event-stream")
     val input=org.json.JSONArray().put(JSONObject().put("role","user").put("content",org.json.JSONArray().put(JSONObject().put("type","input_text").put("text",message))))
-    conn.outputStream.use{it.write(JSONObject().put("model","gpt-6.1-sol").put("store",false).put("input",input).toString().toByteArray())}
+    val request=JSONObject().put("model","gpt-6.1-sol").put("store",false).put("stream",true).put("input",input)
+    conn.outputStream.use{it.write(request.toString().toByteArray(Charsets.UTF_8))}
     val code=conn.responseCode
-    val raw=(if(code in 200..299)conn.inputStream else conn.errorStream)?.bufferedReader()?.use{it.readText()}?:""
-    if(code !in 200..299)throw Exception("OpenAI HTTP $code: "+raw.take(350))
-    val output=JSONObject(raw).optJSONArray("output")
-    val parts=mutableListOf<String>()
-    if(output!=null)for(i in 0 until output.length()){val content=output.optJSONObject(i)?.optJSONArray("content")?:continue;for(j in 0 until content.length()){val item=content.optJSONObject(j)?:continue;if(item.optString("type")=="output_text")parts.add(item.optString("text"))}}
-    councilCallback(id,JSONObject().put("text",parts.joinToString("\\n").ifBlank{"Model boş yanıt döndürdü"}))
+    if(code !in 200..299){
+     val error=conn.errorStream?.bufferedReader()?.use{it.readText()}?:""
+     throw Exception("OpenAI HTTP $code: "+error.take(350))
+    }
+    val answer=StringBuilder()
+    var completed=false
+    conn.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+     while(true){
+      val line=reader.readLine()?:break
+      if(!line.startsWith("data:"))continue
+      val data=line.substring(5).trim()
+      if(data.isEmpty()||data=="[DONE]")continue
+      val event=try{JSONObject(data)}catch(_:Exception){continue}
+      when(event.optString("type")){
+       "response.output_text.delta" -> answer.append(event.optString("delta"))
+       "response.output_text.done" -> if(answer.isEmpty())answer.append(event.optString("text"))
+       "response.completed" -> completed=true
+       "response.failed" -> throw Exception("Model yanıtı başarısız: "+event.optJSONObject("response")?.optJSONObject("error")?.optString("message","Bilinmeyen hata"))
+       "error" -> throw Exception(event.optString("message",event.toString().take(350)))
+      }
+     }
+    }
+    if(!completed)throw Exception("Akış tamamlanmadı; eksik yanıt gösterilmedi")
+    councilCallback(id,JSONObject().put("text",answer.toString().ifBlank{"Model boş yanıt döndürdü"}))
    }catch(e:Exception){councilCallback(id,JSONObject().put("error",e.message?:"Bağlantı hatası"))}
+   finally{conn?.disconnect()}
   }.start()
  }
  private fun token(n:Int=32):String { val b=ByteArray(n);random.nextBytes(b);return Base64.getUrlEncoder().withoutPadding().encodeToString(b) }
