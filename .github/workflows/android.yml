@@ -36,7 +36,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete latest-debug --yes --cleanup-tag || true
-          git tag -f latest-debug
-          git push origin refs/tags/latest-debug --force
-          gh release create latest-debug atlas-council-debug.apk --notes "versionCode: ${GITHUB_RUN_NUMBER}" --title "Atlas Council Android — Experimental Debug APK" --prerelease
+          gh release view latest-debug >/dev/null 2>&1 || gh release create latest-debug --title "Atlas Council Android — Experimental Debug APK" --notes "Experimental Android prototype" --prerelease
+          gh release upload latest-debug atlas-council-debug.apk --clobber
+          gh release edit latest-debug --notes "versionCode: ${GITHUB_RUN_NUMBER}"
