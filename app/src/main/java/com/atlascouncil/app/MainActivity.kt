@@ -99,8 +99,9 @@ class MainActivity: Activity() {
   val web=Button(this).apply {text="Atlas Council web panelini aç";setOnClickListener{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://atlas-council.sshrrgoktas.workers.dev")))} }
   val nativeControls=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL}
   nativeControls.addView(status);nativeControls.addView(authBadge);nativeControls.addView(loginButton);nativeControls.addView(prompt);nativeControls.addView(testButton);nativeControls.addView(reply);nativeControls.addView(updateStatus);nativeControls.addView(checkUpdates)
-  nativeControls.visibility=android.view.View.GONE
-  val nativeToggle=Button(this).apply {text="ChatGPT bağlantısı / yerel ayarlar";setOnClickListener {nativeControls.visibility=if(nativeControls.visibility==android.view.View.VISIBLE)android.view.View.GONE else android.view.View.VISIBLE}}
+  val nativeScroll=ScrollView(this).apply {addView(nativeControls);setPadding(18,8,18,8)}
+  val nativeDialog=android.app.AlertDialog.Builder(this).setTitle("Bağlantılar ve güncellemeler").setView(nativeScroll).setPositiveButton("Kapat"){d,_->d.dismiss()}.create()
+  val nativeToggle=Button(this).apply {text="⚙ Ayarlar";setOnClickListener {nativeDialog.show()} }
   councilWeb=WebView(this).apply {
    settings.javaScriptEnabled=true
    addJavascriptInterface(CouncilBridge(),"AtlasNative")
@@ -120,7 +121,7 @@ class MainActivity: Activity() {
    clearCache(true)
    loadUrl("https://atlas-council.sshrrgoktas.workers.dev/council-v2?source=android&refresh="+System.currentTimeMillis())
   }
-  layout.addView(title);layout.addView(nativeToggle);layout.addView(councilWeb,LinearLayout.LayoutParams(-1,0,1f));layout.addView(nativeControls);setContentView(layout)
+  layout.addView(title);layout.addView(nativeToggle);layout.addView(councilWeb,LinearLayout.LayoutParams(-1,0,1f));setContentView(layout)
   checkForUpdates(false)
  }
  private fun startLogin(){status.text="Deneysel yerel bağlantı hazırlanıyor…";Thread {
