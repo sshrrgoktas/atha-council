@@ -2,6 +2,8 @@ package com.atlascouncil.app
 
 import android.app.Activity
 import android.os.Bundle
+import android.view.Menu
+import android.view.MenuItem
 import android.content.Intent
 import android.net.Uri
 import android.widget.*
@@ -38,6 +40,7 @@ class MainActivity: Activity() {
  private lateinit var testButton: Button
  private lateinit var authBadge: TextView
  private lateinit var councilWeb: WebView
+ private lateinit var nativeSettingsDialog: android.app.AlertDialog
  private var lastWebRefresh:Long=0L
  private lateinit var prompt: EditText
  private lateinit var reply: TextView
@@ -120,7 +123,7 @@ class MainActivity: Activity() {
  private fun enc(s:String)=URLEncoder.encode(s,"UTF-8")
  private fun sha(s:String)=Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(s.toByteArray()))
  override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState)
-  val layout=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(36,48,36,24);setBackgroundColor(Color.rgb(9,19,33)) }
+  val layout=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setBackgroundColor(Color.rgb(9,19,33)) }
   val title=TextView(this).apply { text="ATLAS COUNCIL";textSize=28f;setTextColor(Color.rgb(77,214,193)) }
   status=TextView(this).apply {text="ChatGPT bağlı değil. Giriş prototipi test edilmedi.";textSize=16f;setTextColor(Color.WHITE);setPadding(0,28,0,28)}
   loginButton=Button(this).apply {text="ChatGPT ile devam et (deneysel)";setOnClickListener{startLogin()} }
@@ -134,8 +137,7 @@ class MainActivity: Activity() {
   val nativeControls=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL}
   nativeControls.addView(status);nativeControls.addView(authBadge);nativeControls.addView(loginButton);nativeControls.addView(prompt);nativeControls.addView(testButton);nativeControls.addView(reply);nativeControls.addView(updateStatus);nativeControls.addView(checkUpdates);nativeControls.addView(web)
   val nativeScroll=ScrollView(this).apply {addView(nativeControls);setPadding(18,8,18,8)}
-  val nativeDialog=android.app.AlertDialog.Builder(this).setTitle("Bağlantılar ve güncellemeler").setView(nativeScroll).setPositiveButton("Kapat"){d,_->d.dismiss()}.create()
-  val nativeToggle=Button(this).apply {text="⚙ Ayarlar";setOnClickListener {nativeDialog.show()} }
+  nativeSettingsDialog=android.app.AlertDialog.Builder(this).setTitle("Bağlantılar ve güncellemeler").setView(nativeScroll).setPositiveButton("Kapat"){d,_->d.dismiss()}.create()
   councilWeb=WebView(this).apply {
    settings.javaScriptEnabled=true
    addJavascriptInterface(CouncilBridge(),"AtlasNative")
@@ -161,7 +163,7 @@ class MainActivity: Activity() {
    clearCache(true)
    loadUrl("https://atlas-council.sshrrgoktas.workers.dev/council-v2?source=android&refresh="+System.currentTimeMillis())
   }
-  layout.addView(title);layout.addView(nativeToggle);layout.addView(councilWeb,LinearLayout.LayoutParams(-1,0,1f));setContentView(layout)
+  layout.addView(councilWeb,LinearLayout.LayoutParams(-1,-1));setContentView(layout)
   // Web UI updates arrive from Cloudflare; APK updates are checked only on request.
  }
  private fun startLogin(){status.text="Deneysel yerel bağlantı hazırlanıyor…";Thread {
@@ -321,12 +323,17 @@ class MainActivity: Activity() {
    else @Suppress("DEPRECATION") registerReceiver(downloadReceiver,filter)
   }catch(e:Exception){updateStatus.text="Güncelleme indirilemedi: ${e.message}"}
  }
- override fun onResume(){
-  super.onResume()
-  if(::councilWeb.isInitialized && android.os.SystemClock.elapsedRealtime()-lastWebRefresh>10000L){
-   lastWebRefresh=android.os.SystemClock.elapsedRealtime()
-   councilWeb.post{councilWeb.loadUrl("https://atlas-council.sshrrgoktas.workers.dev/council-v2?source=android&refresh="+System.currentTimeMillis())}
+ override fun onCreateOptionsMenu(menu:Menu):Boolean {
+  menu.add(0,100,0,"Bağlantılar ve güncellemeler")
+  menu.add(0,101,1,"Konseyi yenile")
+  return true
+ }
+ override fun onOptionsItemSelected(item:MenuItem):Boolean {
+  when(item.itemId){
+   100 -> {if(::nativeSettingsDialog.isInitialized)nativeSettingsDialog.show();return true}
+   101 -> {if(::councilWeb.isInitialized)councilWeb.reload();return true}
   }
+  return super.onOptionsItemSelected(item)
  }
  override fun onDestroy(){
   if(::councilWeb.isInitialized)councilWeb.destroy()
