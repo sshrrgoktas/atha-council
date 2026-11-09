@@ -9,6 +9,7 @@ import android.net.Uri
 import android.widget.*
 import android.graphics.Color
 import android.webkit.WebView
+import android.webkit.CookieManager
 import android.webkit.WebViewClient
 import android.webkit.WebSettings
 import android.webkit.WebResourceRequest
@@ -42,6 +43,7 @@ class MainActivity: Activity() {
  private lateinit var councilWeb: WebView
  private lateinit var nativeSettingsDialog: android.app.AlertDialog
  private var lastWebRefresh:Long=0L
+ private var googleVerifier:String?=null
  private lateinit var prompt: EditText
  private lateinit var reply: TextView
  private lateinit var updateStatus: TextView
@@ -119,6 +121,39 @@ class MainActivity: Activity() {
    finally{conn?.disconnect()}
   }.start()
  }
+ private fun startGoogleLogin(){
+  val verifier=token(48);googleVerifier=verifier
+  val digest=sha(verifier)
+  val url="https://atlas-council.sshrrgoktas.workers.dev/auth/google/start?mobile=1&challenge="+enc(digest)
+  try{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}catch(e:Exception){Toast.makeText(this,"Google girişi açılamadı",Toast.LENGTH_LONG).show()}
+ }
+ private fun completeGoogleLogin(ticket:String){
+  val verifier=googleVerifier?:return
+  googleVerifier=null
+  Thread {
+   var conn:HttpURLConnection?=null
+   try{
+    conn=URL("https://atlas-council.sshrrgoktas.workers.dev/auth/google/mobile-exchange").openConnection() as HttpURLConnection
+    conn.requestMethod="POST";conn.doOutput=true;conn.connectTimeout=12000;conn.readTimeout=12000
+    conn.setRequestProperty("Content-Type","application/json")
+    val body=JSONObject().put("ticket",ticket).put("verifier",verifier).toString()
+    conn.outputStream.use{it.write(body.toByteArray(Charsets.UTF_8))}
+    if(conn.responseCode!=200)throw Exception("Google oturum aktarımı reddedildi: "+conn.responseCode)
+    val result=JSONObject(conn.inputStream.bufferedReader().use{it.readText()})
+    val cookie=result.getString("cookie")
+    if(!cookie.startsWith("atlas_google="))throw Exception("Oturum verisi geçersiz")
+    runOnUiThread{
+     CookieManager.getInstance().setAcceptCookie(true)
+     CookieManager.getInstance().setCookie("https://atlas-council.sshrrgoktas.workers.dev",cookie){ok->
+      if(ok){CookieManager.getInstance().flush();councilWeb.loadUrl("https://atlas-council.sshrrgoktas.workers.dev/council-v2?google=connected")}
+      else Toast.makeText(this,"Google oturumu uygulamaya kaydedilemedi",Toast.LENGTH_LONG).show()
+     }
+    }
+   }catch(e:Exception){runOnUiThread{Toast.makeText(this,"Gemini bağlantısı: "+e.message,Toast.LENGTH_LONG).show()}}
+   finally{conn?.disconnect()}
+  }.start()
+ }
+ override fun onNewIntent(intent:Intent){super.onNewIntent(intent);setIntent(intent);val uri=intent.data;if(uri?.scheme=="atlascouncil"&&uri.host=="google-auth"){val ticket=uri.getQueryParameter("ticket");if(!ticket.isNullOrBlank())completeGoogleLogin(ticket)}}
  private fun token(n:Int=32):String { val b=ByteArray(n);random.nextBytes(b);return Base64.getUrlEncoder().withoutPadding().encodeToString(b) }
  private fun enc(s:String)=URLEncoder.encode(s,"UTF-8")
  private fun sha(s:String)=Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(s.toByteArray()))
@@ -148,10 +183,9 @@ class MainActivity: Activity() {
    webViewClient=object:WebViewClient(){
     override fun shouldOverrideUrlLoading(view:WebView?,request:WebResourceRequest?):Boolean{
      val u=request?.url?:return false
-     // Google blocks OAuth sign-in inside embedded WebView. Open the full Council in Chrome
-     // so Google's authorization and the Council session stay in the same browser.
+     // Google login uses the external browser; a verified callback returns to this APK.
      if(u.scheme=="https"&&u.host=="atlas-council.sshrrgoktas.workers.dev"&&u.path=="/auth/google/start"){
-      try{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://atlas-council.sshrrgoktas.workers.dev/council-v2")))}catch(_:Exception){}
+      startGoogleLogin()
       return true
      }
      return if(u.scheme=="https"&&u.host=="atlas-council.sshrrgoktas.workers.dev")false else {
