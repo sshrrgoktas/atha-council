@@ -37,6 +37,7 @@ jobs:
         with:
           name: atlas-council-debug-test
           path: app/build/outputs/apk/debug/*.apk
+      # Repository signing secrets configured; trigger signed production artifact.
       - name: Check signing credentials
         id: signing
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
