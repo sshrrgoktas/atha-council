@@ -23,6 +23,9 @@ import com.nimbusds.jose.proc.SecurityContext
 
 class MainActivity: Activity() {
  private lateinit var status: TextView
+ private lateinit var prompt: EditText
+ private lateinit var reply: TextView
+ @Volatile private var accessToken: String? = null
  private val random=SecureRandom()
  private fun token(n:Int=32):String { val b=ByteArray(n);random.nextBytes(b);return Base64.getUrlEncoder().withoutPadding().encodeToString(b) }
  private fun enc(s:String)=URLEncoder.encode(s,"UTF-8")
@@ -32,8 +35,11 @@ class MainActivity: Activity() {
   val title=TextView(this).apply { text="ATLAS COUNCIL";textSize=28f;setTextColor(Color.rgb(77,214,193)) }
   status=TextView(this).apply {text="ChatGPT bağlı değil. Giriş prototipi test edilmedi.";textSize=16f;setTextColor(Color.WHITE);setPadding(0,28,0,28)}
   val button=Button(this).apply {text="ChatGPT ile devam et (deneysel)";setOnClickListener{startLogin()} }
+  prompt=EditText(this).apply {hint="Atlas'a bir mesaj yaz";setHintTextColor(Color.LTGRAY);setTextColor(Color.WHITE);minLines=2}
+  reply=TextView(this).apply {text="Henüz yanıt yok";setTextColor(Color.WHITE);setPadding(0,18,0,18)}
+  val send=Button(this).apply {text="ChatGPT yanıtını test et";setOnClickListener{sendMessage()} }
   val web=Button(this).apply {text="Atlas Council web panelini aç";setOnClickListener{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://atlas-council.sshrrgoktas.workers.dev")))} }
-  layout.addView(title);layout.addView(status);layout.addView(button);layout.addView(web);setContentView(layout)
+  layout.addView(title);layout.addView(status);layout.addView(button);layout.addView(prompt);layout.addView(send);layout.addView(reply);layout.addView(web);setContentView(layout)
  }
  private fun startLogin(){status.text="Deneysel yerel bağlantı hazırlanıyor…";Thread {
   var server:ServerSocket?=null
@@ -72,7 +78,42 @@ class MainActivity: Activity() {
    val scopes=data.optString("scope").split(" ")
    if(!scopes.contains("chatgpt.tokens.use.direct"))throw Exception("ChatGPT model kullanım izni verilmedi")
    getPreferences(MODE_PRIVATE).edit().putString("client_id",client).apply()
-   runOnUiThread{status.text="Kimlik doğrulandı. Güvenli token saklama ve model çağrısı henüz eklenmedi."}
+   val tokenValue=data.optString("access_token")
+   if(tokenValue.isBlank())throw Exception("Erişim belirteci dönmedi")
+   accessToken=tokenValue
+   runOnUiThread{status.text="ChatGPT kimliği doğrulandı. Model çağrısını test edebilirsin. Oturum yalnızca uygulama açıkken tutulur."}
   }catch(e:Exception){runOnUiThread{status.text="Bağlantı tamamlanamadı: ${e.message}"}}finally{try{server?.close()}catch(_:Exception){}}
  }.start()}
+ private fun sendMessage() {
+  val bearer=accessToken
+  if(bearer.isNullOrBlank()){status.text="Önce ChatGPT ile giriş yap.";return}
+  val message=prompt.text.toString().trim()
+  if(message.isBlank()){status.text="Önce bir mesaj yaz.";return}
+  reply.text="Model yanıtı bekleniyor…"
+  Thread {
+   try {
+    val conn=URL("https://api.openai.com/v1/responses").openConnection() as HttpURLConnection
+    conn.requestMethod="POST"
+    conn.doOutput=true
+    conn.connectTimeout=15000
+    conn.readTimeout=60000
+    conn.setRequestProperty("Authorization","Bearer $bearer")
+    conn.setRequestProperty("Content-Type","application/json")
+    val request=JSONObject().put("model","gpt-5.1-codex-mini").put("input",message).toString()
+    conn.outputStream.use {it.write(request.toByteArray(Charsets.UTF_8))}
+    val statusCode=conn.responseCode
+    val body=(if(statusCode in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use{it.readText()} ?: ""
+    if(statusCode !in 200..299)throw Exception("Model çağrısı reddedildi (HTTP $statusCode): "+JSONObject(body).optJSONObject("error")?.optString("message","Yetki veya model erişimi yok").orEmpty().take(220))
+    val obj=JSONObject(body)
+    val output=obj.optJSONArray("output")
+    val lines=mutableListOf<String>()
+    if(output!=null)for(i in 0 until output.length()){
+     val contents=output.optJSONObject(i)?.optJSONArray("content")?:continue
+     for(j in 0 until contents.length()){val part=contents.optJSONObject(j)?:continue;if(part.optString("type")=="output_text")lines.add(part.optString("text"))}
+    }
+    runOnUiThread{reply.text=lines.joinToString("\\n").ifBlank{"Model yanıtı boş döndü."}}
+   }catch(e:Exception){runOnUiThread{reply.text="Bağlantı testi başarısız: "+(e.message?:"Bilinmeyen hata")}}
+  }.start()
+ }
+
 }
