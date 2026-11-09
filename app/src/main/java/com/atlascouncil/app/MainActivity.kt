@@ -77,7 +77,8 @@ class MainActivity: Activity() {
      }
     }
    }
-   loadUrl("https://atlas-council.sshrrgoktas.workers.dev/?source=android")
+   clearCache(true)
+   loadUrl("https://atlas-council.sshrrgoktas.workers.dev/?source=android&refresh="+System.currentTimeMillis())
   }
   layout.addView(title);layout.addView(nativeToggle);layout.addView(councilWeb,LinearLayout.LayoutParams(-1,0,1f));layout.addView(nativeControls);setContentView(layout)
   checkForUpdates(false)
@@ -243,7 +244,7 @@ class MainActivity: Activity() {
   super.onResume()
   if(::councilWeb.isInitialized && android.os.SystemClock.elapsedRealtime()-lastWebRefresh>10000L){
    lastWebRefresh=android.os.SystemClock.elapsedRealtime()
-   councilWeb.post{councilWeb.reload()}
+   councilWeb.post{councilWeb.loadUrl("https://atlas-council.sshrrgoktas.workers.dev/?source=android&refresh="+System.currentTimeMillis())}
   }
  }
  override fun onDestroy(){
