@@ -7,6 +7,9 @@ on:
 concurrency:
   group: atlas-council-android-release
   cancel-in-progress: false
+concurrency:
+  group: atlas-council-apk-main
+  cancel-in-progress: false
 jobs:
   build:
     runs-on: ubuntu-latest
