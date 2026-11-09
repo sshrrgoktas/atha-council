@@ -119,9 +119,9 @@ class MainActivity: Activity() {
   testButton=Button(this).apply {text="ChatGPT yanıtını test et";setOnClickListener{sendMessage()} }
   updateStatus=TextView(this).apply {text="Güncellemeler kontrol edilmedi";setTextColor(Color.LTGRAY)}
   val checkUpdates=Button(this).apply {text="Güncellemeleri kontrol et";setOnClickListener{checkForUpdates(true)} }
-  val web=Button(this).apply {text="Atlas Council web panelini aç";setOnClickListener{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://atlas-council.sshrrgoktas.workers.dev")))} }
+  val web=Button(this).apply {text="Gemini / Atlas Council (tarayıcıda)";setOnClickListener{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://atlas-council.sshrrgoktas.workers.dev/council-v2")))} }
   val nativeControls=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL}
-  nativeControls.addView(status);nativeControls.addView(authBadge);nativeControls.addView(loginButton);nativeControls.addView(prompt);nativeControls.addView(testButton);nativeControls.addView(reply);nativeControls.addView(updateStatus);nativeControls.addView(checkUpdates)
+  nativeControls.addView(status);nativeControls.addView(authBadge);nativeControls.addView(loginButton);nativeControls.addView(prompt);nativeControls.addView(testButton);nativeControls.addView(reply);nativeControls.addView(updateStatus);nativeControls.addView(checkUpdates);nativeControls.addView(web)
   val nativeScroll=ScrollView(this).apply {addView(nativeControls);setPadding(18,8,18,8)}
   val nativeDialog=android.app.AlertDialog.Builder(this).setTitle("Bağlantılar ve güncellemeler").setView(nativeScroll).setPositiveButton("Kapat"){d,_->d.dismiss()}.create()
   val nativeToggle=Button(this).apply {text="⚙ Ayarlar";setOnClickListener {nativeDialog.show()} }
@@ -135,6 +135,12 @@ class MainActivity: Activity() {
    webViewClient=object:WebViewClient(){
     override fun shouldOverrideUrlLoading(view:WebView?,request:WebResourceRequest?):Boolean{
      val u=request?.url?:return false
+     // Google blocks OAuth sign-in inside embedded WebView. Open the full Council in Chrome
+     // so Google's authorization and the Council session stay in the same browser.
+     if(u.scheme=="https"&&u.host=="atlas-council.sshrrgoktas.workers.dev"&&u.path=="/auth/google/start"){
+      try{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://atlas-council.sshrrgoktas.workers.dev/council-v2")))}catch(_:Exception){}
+      return true
+     }
      return if(u.scheme=="https"&&u.host=="atlas-council.sshrrgoktas.workers.dev")false else {
       try{startActivity(Intent(Intent.ACTION_VIEW,u))}catch(_:Exception){}
       true
