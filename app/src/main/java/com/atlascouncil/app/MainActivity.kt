@@ -71,7 +71,7 @@ class MainActivity: Activity() {
     conn.requestMethod="POST";conn.doOutput=true;conn.connectTimeout=15000;conn.readTimeout=60000
     conn.setRequestProperty("Authorization","Bearer $bearer");conn.setRequestProperty("Content-Type","application/json")
     val input=org.json.JSONArray().put(JSONObject().put("role","user").put("content",org.json.JSONArray().put(JSONObject().put("type","input_text").put("text",message))))
-    conn.outputStream.use{it.write(JSONObject().put("model","gpt-6.1-sol").put("input",input).toString().toByteArray())}
+    conn.outputStream.use{it.write(JSONObject().put("model","gpt-6.1-sol").put("store",false).put("input",input).toString().toByteArray())}
     val code=conn.responseCode
     val raw=(if(code in 200..299)conn.inputStream else conn.errorStream)?.bufferedReader()?.use{it.readText()}?:""
     if(code !in 200..299)throw Exception("OpenAI HTTP $code: "+raw.take(350))
@@ -190,7 +190,7 @@ class MainActivity: Activity() {
     conn.readTimeout=60000
     conn.setRequestProperty("Authorization","Bearer $bearer")
     conn.setRequestProperty("Content-Type","application/json")
-    val request=JSONObject().put("model","gpt-6.1-sol").put("input",org.json.JSONArray().put(JSONObject().put("role","user").put("content",org.json.JSONArray().put(JSONObject().put("type","input_text").put("text",message))))).toString()
+    val request=JSONObject().put("model","gpt-6.1-sol").put("store",false).put("input",org.json.JSONArray().put(JSONObject().put("role","user").put("content",org.json.JSONArray().put(JSONObject().put("type","input_text").put("text",message))))).toString()
     conn.outputStream.use {it.write(request.toByteArray(Charsets.UTF_8))}
     val statusCode=conn.responseCode
     val body=(if(statusCode in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use{it.readText()} ?: ""
