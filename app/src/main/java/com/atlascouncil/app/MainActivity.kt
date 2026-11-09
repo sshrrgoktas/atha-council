@@ -6,6 +6,12 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.*
 import android.graphics.Color
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
+import android.os.Build
+import android.os.Environment
 import java.net.ServerSocket
 import java.net.HttpURLConnection
 import java.net.URL
@@ -25,6 +31,9 @@ class MainActivity: Activity() {
  private lateinit var status: TextView
  private lateinit var prompt: EditText
  private lateinit var reply: TextView
+ private lateinit var updateStatus: TextView
+ private var downloadId: Long = -1L
+ private var downloadReceiver: BroadcastReceiver? = null
  @Volatile private var accessToken: String? = null
  private val random=SecureRandom()
  private fun token(n:Int=32):String { val b=ByteArray(n);random.nextBytes(b);return Base64.getUrlEncoder().withoutPadding().encodeToString(b) }
@@ -38,8 +47,11 @@ class MainActivity: Activity() {
   prompt=EditText(this).apply {hint="Atlas'a bir mesaj yaz";setHintTextColor(Color.LTGRAY);setTextColor(Color.WHITE);minLines=2}
   reply=TextView(this).apply {text="Henüz yanıt yok";setTextColor(Color.WHITE);setPadding(0,18,0,18)}
   val send=Button(this).apply {text="ChatGPT yanıtını test et";setOnClickListener{sendMessage()} }
+  updateStatus=TextView(this).apply {text="Güncellemeler kontrol edilmedi";setTextColor(Color.LTGRAY)}
+  val checkUpdates=Button(this).apply {text="Güncellemeleri kontrol et";setOnClickListener{checkForUpdates(true)} }
   val web=Button(this).apply {text="Atlas Council web panelini aç";setOnClickListener{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://atlas-council.sshrrgoktas.workers.dev")))} }
-  layout.addView(title);layout.addView(status);layout.addView(button);layout.addView(prompt);layout.addView(send);layout.addView(reply);layout.addView(web);setContentView(layout)
+  layout.addView(title);layout.addView(status);layout.addView(button);layout.addView(prompt);layout.addView(send);layout.addView(reply);layout.addView(web);layout.addView(updateStatus);layout.addView(checkUpdates);setContentView(layout)
+  checkForUpdates(false)
  }
  private fun startLogin(){status.text="Deneysel yerel bağlantı hazırlanıyor…";Thread {
   var server:ServerSocket?=null
@@ -114,6 +126,86 @@ class MainActivity: Activity() {
     runOnUiThread{reply.text=lines.joinToString("\\n").ifBlank{"Model yanıtı boş döndü."}}
    }catch(e:Exception){runOnUiThread{reply.text="Bağlantı testi başarısız: "+(e.message?:"Bilinmeyen hata")}}
   }.start()
+ }
+
+ private fun currentVersion(): Long {
+  val info=packageManager.getPackageInfo(packageName,0)
+  return if(Build.VERSION.SDK_INT>=28)info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
+ }
+ private fun checkForUpdates(showCurrent:Boolean) {
+  if(showCurrent)updateStatus.text="Yeni sürüm kontrol ediliyor…"
+  Thread {
+   try {
+    val conn=URL("https://api.github.com/repos/sshrrgoktas/atlas-council/releases/tags/latest-debug").openConnection() as HttpURLConnection
+    conn.connectTimeout=12000;conn.readTimeout=12000
+    conn.setRequestProperty("Accept","application/vnd.github+json")
+    conn.setRequestProperty("User-Agent","AtlasCouncilAndroid")
+    if(conn.responseCode!=200)throw Exception("Sürüm bilgisi alınamadı (HTTP ${conn.responseCode})")
+    val json=JSONObject(conn.inputStream.bufferedReader().use{it.readText()})
+    val version=Regex("versionCode:\\s*(\\d+)").find(json.optString("body"))?.groupValues?.get(1)?.toLongOrNull()
+      ?:throw Exception("Sürüm numarası bulunamadı")
+    val assets=json.getJSONArray("assets")
+    var downloadUrl:String?=null
+    for(i in 0 until assets.length()){
+     val a=assets.getJSONObject(i)
+     if(a.optString("name")=="atlas-council-debug.apk")downloadUrl=a.optString("browser_download_url")
+    }
+    if(downloadUrl.isNullOrBlank())throw Exception("APK sürüm dosyası bulunamadı")
+    runOnUiThread{
+     if(version>currentVersion()){
+      updateStatus.text="Yeni sürüm var: #$version"
+      android.app.AlertDialog.Builder(this).setTitle("Atlas Council güncellemesi")
+       .setMessage("Yeni sürüm #$version indirilsin mi? Android kurulum için ayrıca onay isteyecek.")
+       .setNegativeButton("Sonra",null)
+       .setPositiveButton("İndir"){_,_->downloadUpdate(downloadUrl)}.show()
+     }else if(showCurrent){updateStatus.text="Uygulama güncel (sürüm ${currentVersion()})."}
+    }
+   }catch(e:Exception){if(showCurrent)runOnUiThread{updateStatus.text="Güncelleme kontrolü başarısız: ${e.message}"}}
+  }.start()
+ }
+ private fun downloadUpdate(url:String) {
+  try{
+   val uri=Uri.parse(url)
+   if(uri.scheme!="https"||uri.host!="github.com")throw Exception("Güvenilmeyen indirme adresi")
+   val request=DownloadManager.Request(uri).setTitle("Atlas Council güncellemesi")
+     .setDescription("Android APK indiriliyor")
+     .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+     .setDestinationInExternalFilesDir(this,Environment.DIRECTORY_DOWNLOADS,"atlas-council-update.apk")
+   val manager=getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+   downloadId=manager.enqueue(request)
+   updateStatus.text="APK indiriliyor…"
+   downloadReceiver?.let{unregisterReceiver(it)}
+   downloadReceiver=object:BroadcastReceiver(){
+    override fun onReceive(context:Context,intent:Intent){
+     if(intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID,-1L)!=downloadId)return
+     val query=DownloadManager.Query().setFilterById(downloadId)
+     manager.query(query)?.use{cursor->
+      if(cursor.moveToFirst()){
+       val state=cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+       if(state==DownloadManager.STATUS_SUCCESSFUL){
+        updateStatus.text="İndirme tamamlandı. Kurulumu onayla."
+        val apkUri=manager.getUriForDownloadedFile(downloadId)
+        if(apkUri!=null){
+         val install=Intent(Intent.ACTION_VIEW).setDataAndType(apkUri,"application/vnd.android.package-archive")
+          .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+         try{startActivity(install)}catch(e:Exception){updateStatus.text="İndirildi. İndirme bildiriminden APK'yı aç."}
+        }
+       }else updateStatus.text="APK indirilemedi."
+      }
+     }
+     try{unregisterReceiver(this)}catch(_:Exception){}
+     downloadReceiver=null
+    }
+   }
+   val filter=IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+   if(Build.VERSION.SDK_INT>=33)registerReceiver(downloadReceiver,filter,Context.RECEIVER_NOT_EXPORTED)
+   else @Suppress("DEPRECATION") registerReceiver(downloadReceiver,filter)
+  }catch(e:Exception){updateStatus.text="Güncelleme indirilemedi: ${e.message}"}
+ }
+ override fun onDestroy(){
+  downloadReceiver?.let{try{unregisterReceiver(it)}catch(_:Exception){}}
+  downloadReceiver=null
+  super.onDestroy()
  }
 
 }
