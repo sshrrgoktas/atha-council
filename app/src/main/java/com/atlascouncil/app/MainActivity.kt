@@ -137,7 +137,7 @@ class MainActivity: Activity() {
     conn.outputStream.use {it.write(request.toByteArray(Charsets.UTF_8))}
     val statusCode=conn.responseCode
     val body=(if(statusCode in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use{it.readText()} ?: ""
-    if(statusCode !in 200..299)throw Exception("Model çağrısı reddedildi (HTTP $statusCode): "+JSONObject(body).optJSONObject("error")?.optString("message","Yetki veya model erişimi yok").orEmpty().take(220))
+    if(statusCode !in 200..299){ val detail=try{ val error=JSONObject(body).opt("error"); if(error is JSONObject) error.optString("message").ifBlank{error.toString()} else if(error is String) error else body }catch(_:Exception){body}; throw Exception("Model çağrısı reddedildi (HTTP $statusCode): "+detail.take(600)) }
     val obj=JSONObject(body)
     val output=obj.optJSONArray("output")
     val lines=mutableListOf<String>()
