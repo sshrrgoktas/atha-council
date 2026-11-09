@@ -10,6 +10,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebSettings
 import android.webkit.WebResourceRequest
+import android.webkit.JavascriptInterface
 import android.app.DownloadManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -45,6 +46,42 @@ class MainActivity: Activity() {
  private var downloadReceiver: BroadcastReceiver? = null
  @Volatile private var accessToken: String? = null
  private val random=SecureRandom()
+ private fun councilCallback(id:String,payload:JSONObject){
+  if(!::councilWeb.isInitialized)return
+  runOnUiThread { councilWeb.evaluateJavascript("window.atlasNativeResult&&window.atlasNativeResult("+JSONObject.quote(id)+","+payload.toString()+")",null) }
+ }
+ inner class CouncilBridge {
+  @JavascriptInterface fun connected():Boolean = !accessToken.isNullOrBlank()
+  @JavascriptInterface fun ask(id:String,message:String){
+   if(!id.matches(Regex("[A-Za-z0-9_-]{1,48}"))||message.length>4000||message.isBlank())return
+   runOnUiThread {
+    android.app.AlertDialog.Builder(this@MainActivity).setTitle("Atlas / ChatGPT isteği")
+     .setMessage("Bu mesajı bağlı ChatGPT hesabıyla göndermeyi onaylıyor musun?\\n\\n"+message.take(220))
+     .setNegativeButton("Vazgeç"){_,_->councilCallback(id,JSONObject().put("error","İstek onaylanmadı"))}
+     .setPositiveButton("Gönder"){_,_->callNativeModel(id,message)}.show()
+   }
+  }
+ }
+ private fun callNativeModel(id:String,message:String){
+  val bearer=accessToken
+  if(bearer.isNullOrBlank()){councilCallback(id,JSONObject().put("error","ChatGPT oturumu bağlı değil"));return}
+  Thread {
+   try {
+    val conn=URL("https://api.openai.com/v1/responses").openConnection() as HttpURLConnection
+    conn.requestMethod="POST";conn.doOutput=true;conn.connectTimeout=15000;conn.readTimeout=60000
+    conn.setRequestProperty("Authorization","Bearer $bearer");conn.setRequestProperty("Content-Type","application/json")
+    val input=org.json.JSONArray().put(JSONObject().put("role","user").put("content",org.json.JSONArray().put(JSONObject().put("type","input_text").put("text",message))))
+    conn.outputStream.use{it.write(JSONObject().put("model","gpt-6.1-sol").put("input",input).toString().toByteArray())}
+    val code=conn.responseCode
+    val raw=(if(code in 200..299)conn.inputStream else conn.errorStream)?.bufferedReader()?.use{it.readText()}?:""
+    if(code !in 200..299)throw Exception("OpenAI HTTP $code: "+raw.take(350))
+    val output=JSONObject(raw).optJSONArray("output")
+    val parts=mutableListOf<String>()
+    if(output!=null)for(i in 0 until output.length()){val content=output.optJSONObject(i)?.optJSONArray("content")?:continue;for(j in 0 until content.length()){val item=content.optJSONObject(j)?:continue;if(item.optString("type")=="output_text")parts.add(item.optString("text"))}}
+    councilCallback(id,JSONObject().put("text",parts.joinToString("\\n").ifBlank{"Model boş yanıt döndürdü"}))
+   }catch(e:Exception){councilCallback(id,JSONObject().put("error",e.message?:"Bağlantı hatası"))}
+  }.start()
+ }
  private fun token(n:Int=32):String { val b=ByteArray(n);random.nextBytes(b);return Base64.getUrlEncoder().withoutPadding().encodeToString(b) }
  private fun enc(s:String)=URLEncoder.encode(s,"UTF-8")
  private fun sha(s:String)=Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(s.toByteArray()))
@@ -66,6 +103,7 @@ class MainActivity: Activity() {
   val nativeToggle=Button(this).apply {text="ChatGPT bağlantısı / yerel ayarlar";setOnClickListener {nativeControls.visibility=if(nativeControls.visibility==android.view.View.VISIBLE)android.view.View.GONE else android.view.View.VISIBLE}}
   councilWeb=WebView(this).apply {
    settings.javaScriptEnabled=true
+   addJavascriptInterface(CouncilBridge(),"AtlasNative")
    settings.domStorageEnabled=true
    settings.cacheMode=WebSettings.LOAD_NO_CACHE
    clearHistory()
