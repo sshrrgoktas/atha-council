@@ -18,7 +18,7 @@ import org.json.JSONObject
 import com.nimbusds.jose.JWSAlgorithm
 import com.nimbusds.jose.jwk.source.RemoteJWKSet
 import com.nimbusds.jose.proc.JWSVerificationKeySelector
-import com.nimbusds.jose.proc.DefaultJWTProcessor
+import com.nimbusds.jwt.proc.DefaultJWTProcessor
 import com.nimbusds.jose.proc.SecurityContext
 
 class MainActivity: Activity() {
