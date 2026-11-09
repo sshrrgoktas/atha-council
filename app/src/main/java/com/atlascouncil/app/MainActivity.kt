@@ -8,6 +8,7 @@ import android.widget.*
 import android.graphics.Color
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebSettings
 import android.webkit.WebResourceRequest
 import android.app.DownloadManager
 import android.content.BroadcastReceiver
@@ -33,6 +34,7 @@ import com.nimbusds.jose.proc.SecurityContext
 class MainActivity: Activity() {
  private lateinit var status: TextView
  private lateinit var councilWeb: WebView
+ private var lastWebRefresh:Long=0L
  private lateinit var prompt: EditText
  private lateinit var reply: TextView
  private lateinit var updateStatus: TextView
@@ -61,6 +63,7 @@ class MainActivity: Activity() {
   councilWeb=WebView(this).apply {
    settings.javaScriptEnabled=true
    settings.domStorageEnabled=true
+   settings.cacheMode=WebSettings.LOAD_NO_CACHE
    webViewClient=object:WebViewClient(){
     override fun shouldOverrideUrlLoading(view:WebView?,request:WebResourceRequest?):Boolean{
      val u=request?.url?:return false
@@ -70,7 +73,7 @@ class MainActivity: Activity() {
      }
     }
    }
-   loadUrl("https://atlas-council.sshrrgoktas.workers.dev")
+   loadUrl("https://atlas-council.sshrrgoktas.workers.dev/?source=android")
   }
   layout.addView(title);layout.addView(nativeToggle);layout.addView(councilWeb,LinearLayout.LayoutParams(-1,0,1f));layout.addView(nativeControls);setContentView(layout)
   checkForUpdates(false)
@@ -223,6 +226,13 @@ class MainActivity: Activity() {
    if(Build.VERSION.SDK_INT>=33)registerReceiver(downloadReceiver,filter,Context.RECEIVER_NOT_EXPORTED)
    else @Suppress("DEPRECATION") registerReceiver(downloadReceiver,filter)
   }catch(e:Exception){updateStatus.text="Güncelleme indirilemedi: ${e.message}"}
+ }
+ override fun onResume(){
+  super.onResume()
+  if(::councilWeb.isInitialized && android.os.SystemClock.elapsedRealtime()-lastWebRefresh>10000L){
+   lastWebRefresh=android.os.SystemClock.elapsedRealtime()
+   councilWeb.post{councilWeb.reload()}
+  }
  }
  override fun onDestroy(){
   if(::councilWeb.isInitialized)councilWeb.destroy()
