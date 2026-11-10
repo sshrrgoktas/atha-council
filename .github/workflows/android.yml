@@ -5,7 +5,7 @@ on:
   pull_request:
   workflow_dispatch:
 concurrency:
-  group: atlas-council-android-release
+  group: atha-council-android-release
   cancel-in-progress: false
 jobs:
   build:
@@ -35,7 +35,7 @@ jobs:
         run: gradle :app:assembleDebug --stacktrace --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: atlas-council-debug-test
+          name: atha-council-debug-test
           path: app/build/outputs/apk/debug/*.apk
       # Repository signing secrets configured; trigger signed production artifact.
       - name: Check signing credentials
@@ -62,9 +62,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/release/app-release.apk atlas-council-debug.apk
+          cp app/build/outputs/apk/release/app-release.apk atha-council.apk
+          cp atha-council.apk atlas-council-debug.apk
           gh release view latest-debug >/dev/null 2>&1 || gh release create latest-debug --title "Atha Council Android" --notes "Signed Android release" --prerelease
-          gh release upload latest-debug atlas-council-debug.apk --clobber
+          gh release upload latest-debug atha-council.apk atlas-council-debug.apk --clobber
           gh release edit latest-debug --title "Atha Council Android" --notes "versionCode: ${GITHUB_RUN_NUMBER}"
       - name: Remove temporary signing key
         if: always()
