@@ -152,7 +152,7 @@ async function handleCopilotRoute(request,env) {
 }
 
 // Secure, short-lived GitHub OAuth handoff from the OAuth preview Worker
-// to the production Atlas Council Worker. The GitHub token is never sent in
+// to the production Atha Council Worker. The GitHub token is never sent in
 // plaintext to the user-agent. No external OAuth redirect URI is added.
 const HANDOFF_PREVIEW="https://atlas-council-copilot-preview.sshrrgoktas.workers.dev";
 const HANDOFF_PRODUCTION="https://atlas-council.sshrrgoktas.workers.dev";
