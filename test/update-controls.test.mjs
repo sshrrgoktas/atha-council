@@ -43,3 +43,12 @@ test("Legacy Android APK offers a real signed release link rather than a dead hi
   assert.match(html,/document\.getElementById\('legacyUpdateRow'\)\.hidden=false/);
   assert.doesNotMatch(html,/if\(confirm\('İmzalı Atlas Council APK güncellemesini Android yükleyicisinde açmak ister misin\?'\)\)/);
 });
+
+test("Backups restore both conversations and profile before any APK migration",()=>{
+  assert.match(html,/Tüm sohbetleri yedekle/);
+  assert.match(html,/JSON\.stringify\(\{version:1,profile,chats\}/);
+  assert.match(html,/const incomingProfile=/);
+  assert.match(html,/localStorage\.setItem\(profileKey,JSON\.stringify\(profile\)\)/);
+  assert.match(html,/Mevcut sohbetler silinmeyecek; varsa profil bilgisi yenilenecek/);
+  assert.match(html,/Profil bilgileri geri yüklendi/);
+});
