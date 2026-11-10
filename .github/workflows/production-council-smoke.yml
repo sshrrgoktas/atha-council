@@ -1,0 +1,25 @@
+name: Production Council Google-GitHub smoke tests
+on:
+  pull_request:
+    paths:
+      - 'worker/production.js'
+      - 'worker/production-smoke.test.mjs'
+      - '.github/workflows/production-council-smoke.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'worker/production.js'
+      - 'worker/production-smoke.test.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-http:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm live Gemini and GitHub bridge endpoints
+        run: node --test worker/production-smoke.test.mjs
