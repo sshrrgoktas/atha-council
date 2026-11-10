@@ -1,0 +1,25 @@
+name: Visible Android update controls
+on:
+  pull_request:
+    paths:
+      - 'worker/production.js'
+      - 'app/src/main/java/com/atlascouncil/app/MainActivity.kt'
+      - 'test/update-controls.test.mjs'
+      - '.github/workflows/update-controls.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'worker/production.js'
+      - 'app/src/main/java/com/atlascouncil/app/MainActivity.kt'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check-update-controls:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test test/update-controls.test.mjs

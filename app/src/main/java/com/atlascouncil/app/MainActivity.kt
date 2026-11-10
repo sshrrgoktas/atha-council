@@ -68,6 +68,10 @@ class MainActivity: Activity() {
     startActivity(Intent.createChooser(intent,"Atlas Council sohbetini paylaş"))
    }
   }
+  // Expose updates to the web drawer as well as the always-visible native toolbar.
+  @JavascriptInterface fun openUpdates(){
+   runOnUiThread{checkForUpdates(true)}
+  }
   @JavascriptInterface fun connected():Boolean = !accessToken.isNullOrBlank()
   @JavascriptInterface fun ask(id:String,message:String){
    if(!id.matches(Regex("[A-Za-z0-9_-]{1,48}"))||message.length>4000||message.isBlank())return
@@ -241,7 +245,9 @@ class MainActivity: Activity() {
    clearCache(true)
    loadUrl("https://atlas-council.sshrrgoktas.workers.dev/council-v2?source=android&refresh="+System.currentTimeMillis())
   }
-  layout.addView(councilWeb,LinearLayout.LayoutParams(-1,-1));setContentView(layout)
+  // Full-screen WebView: all update and connection actions live in the side menu.
+  layout.addView(councilWeb,LinearLayout.LayoutParams(-1,-1))
+  setContentView(layout)
   // Web UI updates arrive from Cloudflare; APK updates are checked only on request.
   val incoming=intent?.data;if(incoming?.scheme=="atlascouncil"&&incoming.host=="google-auth"){incoming.getQueryParameter("ticket")?.let{completeGoogleLogin(it)}}else if(incoming?.scheme=="atlascouncil"&&incoming.host=="github-auth"){incoming.getQueryParameter("ticket")?.let{completeGitHubLogin(it)}}
   // Future releases appear in-app without asking users to find or download an APK file.
