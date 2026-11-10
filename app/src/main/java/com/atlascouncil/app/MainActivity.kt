@@ -356,10 +356,10 @@ class MainActivity: Activity() {
   }
   Thread {
    try {
-    val conn=URL("https://api.github.com/repos/sshrrgoktas/atlas-council/releases/tags/latest-debug").openConnection() as HttpURLConnection
+    val conn=URL("https://api.github.com/repos/sshrrgoktas/atha-council/releases/tags/latest-debug").openConnection() as HttpURLConnection
     conn.connectTimeout=12000;conn.readTimeout=12000
     conn.setRequestProperty("Accept","application/vnd.github+json")
-    conn.setRequestProperty("User-Agent","AtlasCouncilAndroid")
+    conn.setRequestProperty("User-Agent","AthaCouncilAndroid")
     if(conn.responseCode!=200)throw Exception("Sürüm bilgisi alınamadı (HTTP ${conn.responseCode})")
     val json=JSONObject(conn.inputStream.bufferedReader().use{it.readText()})
     val version=Regex("versionCode:\\s*(\\d+)").find(json.optString("body"))?.groupValues?.get(1)?.toLongOrNull()
@@ -368,7 +368,8 @@ class MainActivity: Activity() {
     var downloadUrl:String?=null
     for(i in 0 until assets.length()){
      val a=assets.getJSONObject(i)
-     if(a.optString("name")=="atlas-council-debug.apk")downloadUrl=a.optString("browser_download_url")
+     val assetName=a.optString("name")
+     if(assetName=="atha-council.apk" || (downloadUrl.isNullOrBlank()&&assetName=="atlas-council-debug.apk"))downloadUrl=a.optString("browser_download_url")
     }
     if(downloadUrl.isNullOrBlank())throw Exception("APK sürüm dosyası bulunamadı")
     runOnUiThread{
@@ -397,7 +398,7 @@ class MainActivity: Activity() {
    val request=DownloadManager.Request(uri).setTitle("Atha Council güncellemesi")
      .setDescription("Android APK indiriliyor")
      .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-     .setDestinationInExternalFilesDir(this,Environment.DIRECTORY_DOWNLOADS,"atlas-council-update.apk")
+     .setDestinationInExternalFilesDir(this,Environment.DIRECTORY_DOWNLOADS,"atha-council-update.apk")
    val manager=getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
    downloadId=manager.enqueue(request)
    updateStatus.text="APK indiriliyor…"
