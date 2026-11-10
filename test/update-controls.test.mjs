@@ -12,7 +12,7 @@ test("Production worker and embedded page compile after adding APK update contro
   assert.match(html,/id="appUpdate"/);
 });
 test("Update control works in installed APK and degrades honestly for old APK and browser",()=>{
-  assert.match(html,/AtlasNative\.openUpdates/);
+  assert.match(html,/bridge\.openUpdates/);
   assert.match(html,/Bu eski APK sürümünde yerel güncelleme menüsü gizli kalmış/);
   assert.match(html,/tarayıcıdasın; web sürümü otomatik güncellenir/);
   assert.match(html,/github\.com\/sshrrgoktas\/atlas-council\/releases\/download\/latest-debug\/atlas-council-debug\.apk/);
