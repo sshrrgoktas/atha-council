@@ -1,0 +1,20 @@
+name: Copilot bridge safe protocol checks
+on:
+  pull_request:
+    paths:
+      - 'copilot-bridge/**'
+      - 'worker/copilot-routes*'
+      - '.github/workflows/copilot-bridge-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  protocol:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run offline protocol and Worker route tests
+        run: node --test copilot-bridge/protocol.test.mjs worker/copilot-routes.test.mjs
