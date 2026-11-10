@@ -5,23 +5,27 @@ const worker=readFileSync(new URL("../worker/production.js",import.meta.url),"ut
 const kotlin=readFileSync(new URL("../app/src/main/java/com/atlascouncil/app/MainActivity.kt",import.meta.url),"utf8");
 const htmlLiteral=worker.slice(worker.indexOf("const HTML=")+11,worker.lastIndexOf(";"));
 const html=JSON.parse(htmlLiteral);
-test("Production worker and embedded page compile after adding APK update control",()=>{
+test("Production worker and web UI compile",()=>{
   new Function(worker.replace("export default {","const runtime = {"));
-  const js=html.slice(html.indexOf("<script>")+8,html.lastIndexOf("</script>"));
-  new Function(js);
-  assert.match(html,/id="appUpdate"/);
+  new Function(html.slice(html.indexOf("<script>")+8,html.lastIndexOf("</script>")));
 });
-test("Update control works in installed APK and degrades honestly for old APK and browser",()=>{
+test("Existing left drawer opens Bağlantılar ve güncellemeler, including update actions",()=>{
+  assert.match(html,/data-drawer-tab="help">⚙ Bağlantılar ve güncellemeler/);
+  assert.match(html,/<h2>Bağlantılar ve güncellemeler<\/h2>/);
+  assert.match(html,/id="manageConnections"/);
+  assert.match(html,/id="appUpdate"/);
   assert.match(html,/bridge\.openUpdates/);
-  assert.match(html,/Bu eski APK sürümünde yerel güncelleme menüsü gizli kalmış/);
-  assert.match(html,/tarayıcıdasın; web sürümü otomatik güncellenir/);
+  assert.match(html,/show\('agents'\)/);
+});
+test("Old installed APK gets consent-based signed update fallback and browser is not misled",()=>{
+  assert.match(html,/Bu eski APK sürümünde güncelleme menüsü görünmüyor/);
+  assert.match(html,/Chrome tarayıcısında açık/);
   assert.match(html,/github\.com\/sshrrgoktas\/atlas-council\/releases\/download\/latest-debug\/atlas-council-debug\.apk/);
 });
-test("Native APK shows visible buttons with NoActionBar theme",()=>{
-  assert.match(kotlin,/text="↻ Güncelleme"/);
-  assert.match(kotlin,/setOnClickListener\{checkForUpdates\(true\)\}/);
-  assert.match(kotlin,/text="⚙ Bağlantılar"/);
+test("Native APK remains full-screen without new toolbar",()=>{
   assert.match(kotlin,/@JavascriptInterface fun openUpdates\(\)/);
-  assert.match(kotlin,/layout\.addView\(toolbar,/);
-  assert.match(kotlin,/layout\.addView\(councilWeb,LinearLayout\.LayoutParams\(-1,0,1f\)\)/);
+  assert.match(kotlin,/runOnUiThread\{checkForUpdates\(true\)\}/);
+  assert.doesNotMatch(kotlin,/val toolbar=/);
+  assert.doesNotMatch(kotlin,/layout\.addView\(toolbar,/);
+  assert.match(kotlin,/layout\.addView\(councilWeb,LinearLayout\.LayoutParams\(-1,-1\)\)/);
 });
