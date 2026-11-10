@@ -244,6 +244,8 @@ class MainActivity: Activity() {
   layout.addView(councilWeb,LinearLayout.LayoutParams(-1,-1));setContentView(layout)
   // Web UI updates arrive from Cloudflare; APK updates are checked only on request.
   val incoming=intent?.data;if(incoming?.scheme=="atlascouncil"&&incoming.host=="google-auth"){incoming.getQueryParameter("ticket")?.let{completeGoogleLogin(it)}}else if(incoming?.scheme=="atlascouncil"&&incoming.host=="github-auth"){incoming.getQueryParameter("ticket")?.let{completeGitHubLogin(it)}}
+  // Future releases appear in-app without asking users to find or download an APK file.
+  checkForUpdates(false)
  }
  private fun startLogin(){status.text="Deneysel yerel bağlantı hazırlanıyor…";Thread {
   var server:ServerSocket?=null
@@ -357,7 +359,7 @@ class MainActivity: Activity() {
       android.app.AlertDialog.Builder(this).setTitle("Atlas Council güncellemesi")
        .setMessage("Yeni sürüm #$version indirilsin mi? Android kurulum için ayrıca onay isteyecek.")
        .setNegativeButton("Sonra",null)
-       .setPositiveButton("İndir"){_,_->downloadUpdate(downloadUrl)}.show()
+       .setPositiveButton("Güncelle"){_,_->downloadUpdate(downloadUrl)}.show()
      }else if(showCurrent){updateStatus.text="Uygulama güncel (sürüm ${currentVersion()})."}
     }
    }catch(e:Exception){if(showCurrent)runOnUiThread{updateStatus.text="Güncelleme kontrolü başarısız: ${e.message}"}}
