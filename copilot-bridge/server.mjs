@@ -34,6 +34,7 @@ async function answerWithCopilot(data) {
     });
     await client.start();
     session = await client.createSession({
+      model:"auto",
       availableTools:[],
       onPermissionRequest:async () => ({kind:"reject"}),
       memory:{enabled:false},
