@@ -2,7 +2,8 @@
 // Worker secrets: GITHUB_OAUTH_CLIENT_ID, GITHUB_OAUTH_CLIENT_SECRET,
 // GITHUB_SESSION_SECRET, COPILOT_BRIDGE_SECRET, COPILOT_BRIDGE_URL.
 const noStore={"cache-control":"no-store","x-content-type-options":"nosniff"};
-const COOKIE="atlas_copilot_session", STATE="atlas_copilot_oauth_state";
+const COOKIE="atlas_copilot_session", STATE="atlas_copilot_oauth_state", PREVIEW_HANDOFF_COOKIE="atlas_gh_handoff_target";
+function validGHOAuthChallenge(value){return typeof value==="string"&&/^[A-Za-z0-9_-]{43}$/.test(value)}
 const failure=(status,error)=>Response.json({error,verified:false},{status,headers:noStore});
 const random=()=>crypto.randomUUID().replaceAll("-","");
 function cookie(request,name) {
@@ -55,13 +56,20 @@ export async function handleCopilotRoute(request,env) {
   if(!env.GITHUB_SESSION_SECRET||String(env.GITHUB_SESSION_SECRET).length<32)return failure(503,"GitHub session not configured");
   if(path==="/auth/github/start"&&request.method==="GET"){
     if(!env.GITHUB_OAUTH_CLIENT_ID||!env.GITHUB_OAUTH_CLIENT_SECRET)return failure(503,"GitHub OAuth App not configured");
+    const handoff=u.searchParams.get("handoff");
+    const challenge=u.searchParams.get("challenge");
+    if(handoff!==null&&(!["web","mobile"].includes(handoff)||!validGHOAuthChallenge(challenge)))return failure(400,"Invalid GitHub handoff challenge");
+    if(handoff&&!env.ATLAS_GITHUB_HANDOFF_SECRET)return failure(503,"OAuth transfer not configured");
     const state=random()+random();
     const auth=new URL("https://github.com/login/oauth/authorize");
     auth.searchParams.set("client_id",env.GITHUB_OAUTH_CLIENT_ID);
     auth.searchParams.set("redirect_uri",origin+"/auth/github/callback");
     auth.searchParams.set("scope","read:user");
     auth.searchParams.set("state",state);
-    return new Response(null,{status:302,headers:{"location":auth.toString(),"set-cookie":secureCookie(STATE,state,600,"/auth/github"),...noStore}});
+    const startHeaders=new Headers({location:auth.toString(),...noStore});
+    startHeaders.append("set-cookie",secureCookie(STATE,state,600,"/auth/github"));
+    if(handoff)startHeaders.append("set-cookie",secureCookie(PREVIEW_HANDOFF_COOKIE,handoff+"."+challenge,600,"/auth/github"));
+    return new Response(null,{status:302,headers:startHeaders});
   }
   if(path==="/auth/github/callback"&&request.method==="GET"){
     const state=cookie(request,STATE);
@@ -76,6 +84,20 @@ export async function handleCopilotRoute(request,env) {
       phase="exchange-decode";
       const data=await response.json();
       if(data.error||typeof data.access_token!=="string"||!/^(gho_|ghu_)/.test(data.access_token))return Response.json({error:"GitHub OAuth token was not granted",stage:"exchange-authorization",code:["bad_verification_code","incorrect_client_credentials","redirect_uri_mismatch","application_suspended"].includes(data.error)?data.error:"other",verified:false},{status:403,headers:noStore});
+      const targetCookie=cookie(request,PREVIEW_HANDOFF_COOKIE);
+      if(targetCookie){
+        const pieces=targetCookie.split(".");
+        const target=pieces[0],challenge=pieces[1];
+        if(!env.ATLAS_GITHUB_HANDOFF_SECRET||pieces.length!==2||!["web","mobile"].includes(target)||!validGHOAuthChallenge(challenge))return failure(403,"GitHub session transfer invalid");
+        phase="handoff-encrypt";
+        const ticket=await encrypt(JSON.stringify({v:1,issuer:"atlas-council-copilot-preview",audience:"atlas-council",target,challenge,expires:Date.now()+60000,token:data.access_token}),env.ATLAS_GITHUB_HANDOFF_SECRET);
+        const location=target==="mobile"?"atlascouncil://github-auth?ticket="+encodeURIComponent(ticket):"https://atlas-council.sshrrgoktas.workers.dev/auth/github/finish?ticket="+encodeURIComponent(ticket);
+        const headers=new Headers({location,"cache-control":"no-store","referrer-policy":"no-referrer"});
+        headers.append("set-cookie",secureCookie(COOKIE,await encrypt(data.access_token,env.GITHUB_SESSION_SECRET),3600));
+        headers.append("set-cookie",secureCookie(STATE,"",0,"/auth/github"));
+        headers.append("set-cookie",secureCookie(PREVIEW_HANDOFF_COOKIE,"",0,"/auth/github"));
+        return new Response(null,{status:302,headers});
+      }
       phase="session-encrypt";
       const token=await encrypt(data.access_token,env.GITHUB_SESSION_SECRET);
       phase="session-redirect";
