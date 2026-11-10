@@ -36,3 +36,16 @@ This is an isolated integration draft for the existing Cloudflare Worker and And
 OAuth App configuration, actual sign-in and quota, runtime installation and start, actual Copilot model reply, bridge HTTPS access, Worker import, Android/browser end-to-end operation. This PR does NOT mark Copilot as connected.
 
 Official docs: https://github.blog/changelog/2026-06-02-copilot-sdk-is-now-generally-available/ and https://docs.github.com/en/copilot/how-tos/copilot-sdk/setup/github-oauth .
+
+## 10 November 2026 — staging progress
+- The actual live Worker source was backed up from the connected Cloudflare account into `worker/live-snapshot-2026-11-10.js`.
+- `worker/council-copilot-preview.js` now combines the current web Council with the optional GitHub OAuth routes, a disconnected Copilot UI card, an explicit `@copilot` address and server-validated `speakerId`. Legacy saved messages without server-controlled metadata are tagged unknown rather than guessed from a display name.
+- An **independent** Worker named `atlas-council-copilot-preview` was uploaded and its workers.dev subdomain enabled. It received only a fresh random, preview-only encrypted-session binding; no Copilot OAuth app, model token or bridge URL has been configured.
+- The live production `atlas-council` Worker and Android APK are untouched.
+- Offline GitHub Actions tests have reported success in an earlier branch commit. Separate HTTP preview smoke tests are added; their final CI result must be checked before relying on preview access.
+- This does not constitute proof of Copilot Free entitlement for the actual connected user. No real model inference or payment operation has been performed.
+
+### Staging URL
+`https://atlas-council-copilot-preview.sshrrgoktas.workers.dev/council-v2`
+
+This is a **preview endpoint**, not the existing production URL. GitHub OAuth is intentionally unconfigured and Copilot will not answer until an OAuth App and supported Node SDK host are set up.
