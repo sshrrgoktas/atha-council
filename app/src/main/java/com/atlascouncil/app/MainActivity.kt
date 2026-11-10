@@ -245,29 +245,8 @@ class MainActivity: Activity() {
    clearCache(true)
    loadUrl("https://atlas-council.sshrrgoktas.workers.dev/council-v2?source=android&refresh="+System.currentTimeMillis())
   }
-  // The Activity theme is NoActionBar: native overflow menus never appear.
-  // Keep an explicit, accessible update control above the WebView instead.
-  val toolbar=LinearLayout(this).apply {
-   orientation=LinearLayout.HORIZONTAL
-   setPadding(12,6,12,6)
-   setBackgroundColor(Color.rgb(13,37,54))
-  }
-  val updateButton=Button(this).apply{
-   text="↻ Güncelleme"
-   contentDescription="Atlas Council güncellemelerini kontrol et"
-   textSize=13f
-   setOnClickListener{checkForUpdates(true)}
-  }
-  val settingsButton=Button(this).apply{
-   text="⚙ Bağlantılar"
-   contentDescription="Bağlantı ayarları"
-   textSize=13f
-   setOnClickListener{if(::nativeSettingsDialog.isInitialized)nativeSettingsDialog.show()}
-  }
-  toolbar.addView(updateButton,LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
-  toolbar.addView(settingsButton,LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
-  layout.addView(toolbar,LinearLayout.LayoutParams(-1,LinearLayout.LayoutParams.WRAP_CONTENT))
-  layout.addView(councilWeb,LinearLayout.LayoutParams(-1,0,1f))
+  // Full-screen WebView: all update and connection actions live in the side menu.
+  layout.addView(councilWeb,LinearLayout.LayoutParams(-1,-1))
   setContentView(layout)
   // Web UI updates arrive from Cloudflare; APK updates are checked only on request.
   val incoming=intent?.data;if(incoming?.scheme=="atlascouncil"&&incoming.host=="google-auth"){incoming.getQueryParameter("ticket")?.let{completeGoogleLogin(it)}}else if(incoming?.scheme=="atlascouncil"&&incoming.host=="github-auth"){incoming.getQueryParameter("ticket")?.let{completeGitHubLogin(it)}}
