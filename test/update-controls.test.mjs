@@ -56,13 +56,13 @@ test("Backups restore both conversations and profile before any APK migration",(
 test("AthalAI branding appears in page, menus, APK and model labels without old visible display names",()=>{
   const manifest=readFileSync(new URL("../app/src/main/AndroidManifest.xml",import.meta.url),"utf8");
   assert.match(html,/<title>AthalAI · Atha Council<\/title>/);
-  assert.match(html,/<strong>ATHALAI<\/strong>/);
+  assert.match(html,/<strong>Athal<span style="color:#28e3e9">AI<\/span><\/strong>/);
   assert.match(html,/Atha Council · Konsey çalışma alanı/);
   assert.match(html,/Atha Council APK güncellemesi/);
   assert.match(html,/Atha \/ ChatGPT/);
   assert.match(worker,/name:'Atha \/ ChatGPT'/);
   assert.match(manifest,/android:label="Atha Council"/);
-  assert.match(kotlin,/text="ATHALAI"/);
+  assert.match(kotlin,/text="AthalAI"/);
   assert.doesNotMatch(html,/<(?:strong|h1|h2|h3|title)[^>]*>[^<]*Atlas/i);
   assert.doesNotMatch(html,/Atlas Council uygulamanın adıdır/);
 });
