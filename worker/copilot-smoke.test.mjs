@@ -22,11 +22,17 @@ test("Unauthenticated Copilot chat never reaches a model",async()=>{
   const d=await r.json();
   assert.equal(d.verified,false);
 });
-test("OAuth start is disabled until GitHub OAuth App is configured",async()=>{
+test("GitHub OAuth start issues an authorization redirect with no repo scopes",async()=>{
   const r=await get("/auth/github/start");
-  assert.equal(r.status,503);
-  const d=await r.json();
-  assert.match(d.error,/not configured/i);
+  assert.equal(r.status,302, "Expected GitHub OAuth flow after secrets configured");
+  const dest = new URL(r.headers.get("location"));
+  assert.equal(dest.origin, "https://github.com");
+  assert.equal(dest.pathname, "/login/oauth/authorize");
+  assert.equal(dest.searchParams.get("scope"), "read:user");
+  assert.equal(dest.searchParams.get("redirect_uri"), base+"/auth/github/callback");
+  assert.equal(typeof dest.searchParams.get("client_id"), "string");
+  assert.ok(dest.searchParams.get("state")?.length >= 32);
+  assert.match(r.headers.get("set-cookie") || "", /Secure; HttpOnly; SameSite=Lax/);
 });
 test("Preview serves existing Council interface plus explicit Copilot status",async()=>{
   const r=await get("/council-v2");
