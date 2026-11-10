@@ -18,3 +18,5 @@ jobs:
           node-version: '22'
       - name: Run offline protocol and Worker route tests
         run: node --test copilot-bridge/protocol.test.mjs worker/copilot-routes.test.mjs
+      - name: Verify Copilot preview over public HTTPS (no model charges)
+        run: node --test worker/copilot-smoke.test.mjs
