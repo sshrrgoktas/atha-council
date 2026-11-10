@@ -22,7 +22,7 @@ test("Left menu is the only update entry, with visible result feedback",()=>{
 test("Browser explains difference from APK and old app never claims verified version",()=>{
   assert.match(html,/Chrome’da açık/);
   assert.match(html,/Bu yüklü APK, kendi sürümünü arayüze bildirmiyor/);
-  assert.match(html,/github\.com\/sshrrgoktas\/atlas-council\/releases\/download\/latest-debug\/atlas-council-debug\.apk/);
+  assert.match(html,/github\.com\/sshrrgoktas\/atha-council\/releases\/download\/latest-debug\/atha-council\.apk/);
 });
 test("New native update bridge reports actual installed version and all result states",()=>{
   assert.match(kotlin,/@JavascriptInterface fun installedVersion\(\):Long = currentVersion\(\)/);
@@ -38,7 +38,7 @@ test("New native update bridge reports actual installed version and all result s
 test("Legacy Android APK offers a real signed release link rather than a dead hidden menu",()=>{
   assert.match(html,/id="legacyUpdateRow" hidden/);
   assert.match(html,/id="legacyUpdateLink"/);
-  assert.match(html,/href="https:\/\/github\.com\/sshrrgoktas\/atlas-council\/releases\/download\/latest-debug\/atlas-council-debug\.apk"/);
+  assert.match(html,/href="https:\/\/github\.com\/sshrrgoktas\/atha-council\/releases\/download\/latest-debug\/atha-council\.apk"/);
   assert.match(html,/window\.AtlasNative&&typeof window\.AtlasNative\.openUpdates!=='function'/);
   assert.match(html,/document\.getElementById\('legacyUpdateRow'\)\.hidden=false/);
   assert.doesNotMatch(html,/if\(confirm\('İmzalı Atlas Council APK güncellemesini Android yükleyicisinde açmak ister misin\?'\)\)/);
@@ -65,4 +65,17 @@ test("AthalAI branding appears in page, menus, APK and model labels without old 
   assert.match(kotlin,/text="AthalAI"/);
   assert.doesNotMatch(html,/<(?:strong|h1|h2|h3|title)[^>]*>[^<]*Atlas/i);
   assert.doesNotMatch(html,/Atlas Council uygulamanın adıdır/);
+});
+
+test("Android launcher, existing package identity and new GitHub update location",()=>{
+  const manifest=readFileSync(new URL("../app/src/main/AndroidManifest.xml",import.meta.url),"utf8");
+  const gradle=readFileSync(new URL("../app/build.gradle.kts",import.meta.url),"utf8");
+  assert.match(manifest,/android:label="Atha Council"/);
+  assert.match(manifest,/@drawable\/atha_launcher/);
+  assert.match(gradle,/applicationId = "com\.atlascouncil\.app"/);
+  assert.match(kotlin,/api\.github\.com\/repos\/sshrrgoktas\/atha-council\/releases\/tags\/latest-debug/);
+  assert.match(kotlin,/assetName=="atha-council\.apk"/);
+  assert.match(kotlin,/assetName=="atlas-council-debug\.apk"/);
+  assert.match(kotlin,/AthaCouncilAndroid/);
+  assert.doesNotMatch(kotlin,/api\.github\.com\/repos\/sshrrgoktas\/atlas-council\/releases/);
 });
