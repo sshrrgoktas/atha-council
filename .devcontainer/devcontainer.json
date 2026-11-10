@@ -1,0 +1,21 @@
+{
+  "name": "Atlas Council Copilot Free Bridge",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "forwardPorts": [
+    8789
+  ],
+  "portsAttributes": {
+    "8789": {
+      "label": "Atlas Copilot bridge (authenticated HMAC)",
+      "onAutoForward": "ignore"
+    }
+  },
+  "postCreateCommand": "cd copilot-bridge && npm install --no-audit --no-fund",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint"
+      ]
+    }
+  }
+}
