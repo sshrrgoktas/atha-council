@@ -1,4 +1,4 @@
-# Atlas Council — Open-source Android prototype
+# Atha Council — Open-source Android prototype
 
 **Status: experimental, not connected to ChatGPT.** Independent project; does not modify existing games or education websites.
 

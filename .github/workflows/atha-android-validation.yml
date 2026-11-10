@@ -1,0 +1,36 @@
+name: Atha Council Android validation
+on:
+  push:
+    branches: [main, rebrand/atha-council-ui]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Install Android SDK platform
+        shell: bash
+        run: |
+          test -d "$ANDROID_HOME"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - name: Compile debug APK without signing secrets
+        run: gradle :app:assembleDebug --no-daemon
+      - name: Verify expected icon resource
+        run: |
+          test -s app/src/main/res/drawable-nodpi/atha_launcher.webp
+          grep -q '@drawable/atha_launcher' app/src/main/AndroidManifest.xml
+      - name: Verify worker JavaScript syntax
+        shell: bash
+        run: node --input-type=module --check < worker/production.js
