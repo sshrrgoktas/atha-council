@@ -1,0 +1,26 @@
+name: Atha Copilot SDK bridge tests
+on:
+  pull_request:
+    paths:
+      - 'copilot-bridge/**'
+      - '.github/workflows/atha-copilot-bridge-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned GitHub Copilot SDK without model authentication
+        working-directory: copilot-bridge
+        run: npm install --no-audit --no-fund
+      - name: Verify SDK package exports (no Copilot request)
+        working-directory: copilot-bridge
+        run: node -e "import('@github/copilot-sdk').then(m=>{if(typeof m.CopilotClient!=='function')process.exit(1)})"
+      - name: Verify HMAC, replay protection, Turkish UTF-8, and bridge safety
+        working-directory: copilot-bridge
+        run: npm test
