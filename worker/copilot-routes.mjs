@@ -47,7 +47,7 @@ async function signedBridgeRequest(url,secret,body){
   const bytes=new TextEncoder().encode(timestamp+"."+nonce+"."+body);
   const macKey=await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
   const signature=Array.from(new Uint8Array(await crypto.subtle.sign("HMAC",macKey,bytes))).map(x=>x.toString(16).padStart(2,"0")).join("");
-  return fetch(endpoint.toString(),{method:"POST",headers:{"content-type":"application/json","x-atlas-timestamp":timestamp,"x-atlas-nonce":nonce,"x-atlas-signature":signature},body,redirect:"error",signal:AbortSignal.timeout(90000)});
+  return fetch(endpoint.toString(),{method:"POST",headers:{"content-type":"application/json","x-atlas-timestamp":timestamp,"x-atlas-nonce":nonce,"x-atlas-signature":signature},body,redirect:"manual",signal:AbortSignal.timeout(90000)});
 }
 export async function handleCopilotRoute(request,env) {
   const u=new URL(request.url), path=u.pathname, origin=u.origin;
@@ -66,7 +66,7 @@ export async function handleCopilotRoute(request,env) {
   if(path==="/auth/github/callback"&&request.method==="GET"){
     const state=cookie(request,STATE);
     if(!state||state.length<32||state!==u.searchParams.get("state")||!u.searchParams.get("code"))return failure(400,"GitHub OAuth state invalid");
-    const response=await fetch("https://github.com/login/oauth/access_token",{method:"POST",headers:{"content-type":"application/json","accept":"application/json"},body:JSON.stringify({client_id:env.GITHUB_OAUTH_CLIENT_ID,client_secret:env.GITHUB_OAUTH_CLIENT_SECRET,code:u.searchParams.get("code"),redirect_uri:origin+"/auth/github/callback"}),redirect:"error"});
+    const response=await fetch("https://github.com/login/oauth/access_token",{method:"POST",headers:{"content-type":"application/json","accept":"application/json"},body:JSON.stringify({client_id:env.GITHUB_OAUTH_CLIENT_ID,client_secret:env.GITHUB_OAUTH_CLIENT_SECRET,code:u.searchParams.get("code"),redirect_uri:origin+"/auth/github/callback"}),redirect:"manual"});
     if(!response.ok)return failure(502,"GitHub OAuth token exchange failed");
     const data=await response.json();
     if(data.error||typeof data.access_token!=="string"||!/^(gho_|ghu_)/.test(data.access_token))return failure(403,"GitHub did not authorize Copilot account");
