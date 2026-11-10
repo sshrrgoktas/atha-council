@@ -204,7 +204,7 @@ class MainActivity: Activity() {
  private fun sha(s:String)=Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(s.toByteArray()))
  override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState)
   val layout=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setBackgroundColor(Color.rgb(9,19,33)) }
-  val title=TextView(this).apply { text="ATHALAI";textSize=28f;setTextColor(Color.rgb(77,214,193)) }
+  val title=TextView(this).apply { text="AthalAI";textSize=28f;setTextColor(Color.rgb(77,214,193)) }
   status=TextView(this).apply {text="ChatGPT bağlı değil. Giriş prototipi test edilmedi.";textSize=16f;setTextColor(Color.WHITE);setPadding(0,28,0,28)}
   loginButton=Button(this).apply {text="ChatGPT ile devam et (deneysel)";setOnClickListener{startLogin()} }
   authBadge=TextView(this).apply {text="ChatGPT bağlı değil";textSize=17f;setTextColor(Color.rgb(77,214,193));visibility=android.view.View.GONE}
