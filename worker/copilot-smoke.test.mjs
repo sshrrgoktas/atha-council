@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 
 const base = process.env.TEST_WORKER_URL || "https://atlas-council-copilot-preview.sshrrgoktas.workers.dev";
 const timeout = 20000;
@@ -61,4 +62,10 @@ test("GitHub OAuth callback handles an intentionally INVALID code without crashi
   assert.equal(body.verified,false);
   assert.equal(body.code,"bad_verification_code");
   assert.ok(!JSON.stringify(body).includes("gho_"));
+});
+
+test("Cloudflare preview must not use unsupported fetch redirect error mode",()=>{
+  const src=readFileSync(new URL("./council-copilot-preview.js",import.meta.url),"utf8");
+  assert.ok(!src.includes('redirect:"error"'),"Cloudflare Workers only accepts manual or follow");
+  assert.ok(src.includes('redirect:"manual"'));
 });
