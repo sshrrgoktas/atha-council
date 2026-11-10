@@ -388,7 +388,7 @@ class MainActivity: Activity() {
         updateStatus.text="İndirme tamamlandı. Kurulumu onayla."
         val apkUri=manager.getUriForDownloadedFile(downloadId)
         if(apkUri!=null){
-         val install=Intent(Intent.ACTION_VIEW).setDataAndType(apkUri,"application/vnd.android.package-archive")
+         val install=Intent(Intent.ACTION_INSTALL_PACKAGE).setData(apkUri)
           .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
          try{startActivity(install)}catch(e:Exception){updateStatus.text="İndirildi. İndirme bildiriminden APK'yı aç."}
         }
