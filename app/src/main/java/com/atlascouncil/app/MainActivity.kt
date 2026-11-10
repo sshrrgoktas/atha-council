@@ -44,6 +44,7 @@ class MainActivity: Activity() {
  private lateinit var nativeSettingsDialog: android.app.AlertDialog
  private var lastWebRefresh:Long=0L
  private var googleVerifier:String?=null
+ private var githubVerifier:String?=null
  private lateinit var prompt: EditText
  private lateinit var reply: TextView
  private lateinit var updateStatus: TextView
@@ -121,6 +122,45 @@ class MainActivity: Activity() {
    finally{conn?.disconnect()}
   }.start()
  }
+
+ private fun startGitHubLogin(){
+  val verifier=token(48)
+  githubVerifier=verifier
+  getPreferences(MODE_PRIVATE).edit().putString("github_pending_verifier",verifier).apply()
+  val url="https://atlas-council.sshrrgoktas.workers.dev/auth/github/start?mobile=1&challenge="+enc(sha(verifier))
+  try{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}catch(e:Exception){
+   runOnUiThread{Toast.makeText(this,"GitHub giriş tarayıcısı açılamadı",Toast.LENGTH_LONG).show()}
+  }
+ }
+ private fun completeGitHubLogin(ticket:String){
+  if(ticket.isBlank()||ticket.length>7000)return
+  val verifier=githubVerifier?:getPreferences(MODE_PRIVATE).getString("github_pending_verifier",null)?:return
+  githubVerifier=null
+  getPreferences(MODE_PRIVATE).edit().remove("github_pending_verifier").apply()
+  Thread {
+   var conn:HttpURLConnection?=null
+   try{
+    conn=URL("https://atlas-council.sshrrgoktas.workers.dev/auth/github/mobile-exchange").openConnection() as HttpURLConnection
+    conn.requestMethod="POST";conn.doOutput=true;conn.connectTimeout=12000;conn.readTimeout=12000
+    conn.setRequestProperty("Content-Type","application/json")
+    val body=JSONObject().put("ticket",ticket).put("verifier",verifier).toString()
+    conn.outputStream.use{it.write(body.toByteArray(Charsets.UTF_8))}
+    if(conn.responseCode!=200)throw Exception("GitHub doğrulaması reddedildi (HTTP "+conn.responseCode+")")
+    val result=JSONObject(conn.inputStream.bufferedReader().use{it.readText()})
+    val cookie=result.getString("cookie")
+    if(!cookie.startsWith("atlas_copilot_session=")||!result.optBoolean("connected"))throw Exception("GitHub oturum verisi geçersiz")
+    runOnUiThread{
+     CookieManager.getInstance().setAcceptCookie(true)
+     CookieManager.getInstance().setCookie("https://atlas-council.sshrrgoktas.workers.dev",cookie){saved->
+      if(saved){CookieManager.getInstance().flush();councilWeb.loadUrl("https://atlas-council.sshrrgoktas.workers.dev/council-v2?github=connected")}
+      else Toast.makeText(this,"GitHub oturumu uygulamaya aktarılamadı",Toast.LENGTH_LONG).show()
+     }
+    }
+   }catch(e:Exception){runOnUiThread{Toast.makeText(this,"Copilot GitHub bağlantısı: "+(e.message?:"Hata"),Toast.LENGTH_LONG).show()}}
+   finally{conn?.disconnect()}
+  }.start()
+ }
+
  private fun startGoogleLogin(){
   val verifier=token(48);googleVerifier=verifier;getPreferences(MODE_PRIVATE).edit().putString("google_pending_verifier",verifier).apply()
   val digest=sha(verifier)
@@ -153,7 +193,7 @@ class MainActivity: Activity() {
    finally{conn?.disconnect()}
   }.start()
  }
- override fun onNewIntent(intent:Intent){super.onNewIntent(intent);setIntent(intent);val uri=intent.data;if(uri?.scheme=="atlascouncil"&&uri.host=="google-auth"){val ticket=uri.getQueryParameter("ticket");if(!ticket.isNullOrBlank())completeGoogleLogin(ticket)}}
+ override fun onNewIntent(intent:Intent){super.onNewIntent(intent);setIntent(intent);val uri=intent.data;if(uri?.scheme=="atlascouncil"&&uri.host=="google-auth"){val ticket=uri.getQueryParameter("ticket");if(!ticket.isNullOrBlank())completeGoogleLogin(ticket)}else if(uri?.scheme=="atlascouncil"&&uri.host=="github-auth"){val ticket=uri.getQueryParameter("ticket");if(!ticket.isNullOrBlank())completeGitHubLogin(ticket)}}
  private fun token(n:Int=32):String { val b=ByteArray(n);random.nextBytes(b);return Base64.getUrlEncoder().withoutPadding().encodeToString(b) }
  private fun enc(s:String)=URLEncoder.encode(s,"UTF-8")
  private fun sha(s:String)=Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(s.toByteArray()))
@@ -183,7 +223,11 @@ class MainActivity: Activity() {
    webViewClient=object:WebViewClient(){
     override fun shouldOverrideUrlLoading(view:WebView?,request:WebResourceRequest?):Boolean{
      val u=request?.url?:return false
-     // Google login uses the external browser; a verified callback returns to this APK.
+     // Both OAuth providers use Chrome and return a verified, short-lived ticket to the APK.
+     if(u.scheme=="https"&&u.host=="atlas-council.sshrrgoktas.workers.dev"&&u.path=="/auth/github/start"){
+      startGitHubLogin()
+      return true
+     }
      if(u.scheme=="https"&&u.host=="atlas-council.sshrrgoktas.workers.dev"&&u.path=="/auth/google/start"){
       startGoogleLogin()
       return true
@@ -199,7 +243,7 @@ class MainActivity: Activity() {
   }
   layout.addView(councilWeb,LinearLayout.LayoutParams(-1,-1));setContentView(layout)
   // Web UI updates arrive from Cloudflare; APK updates are checked only on request.
-  val incoming=intent?.data;if(incoming?.scheme=="atlascouncil"&&incoming.host=="google-auth"){incoming.getQueryParameter("ticket")?.let{completeGoogleLogin(it)}}
+  val incoming=intent?.data;if(incoming?.scheme=="atlascouncil"&&incoming.host=="google-auth"){incoming.getQueryParameter("ticket")?.let{completeGoogleLogin(it)}}else if(incoming?.scheme=="atlascouncil"&&incoming.host=="github-auth"){incoming.getQueryParameter("ticket")?.let{completeGitHubLogin(it)}}
  }
  private fun startLogin(){status.text="Deneysel yerel bağlantı hazırlanıyor…";Thread {
   var server:ServerSocket?=null

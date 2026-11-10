@@ -1,0 +1,21 @@
+name: Unified Council GitHub handoff HTTP checks
+on:
+  pull_request:
+    paths:
+      - 'worker/council-production-unified.js'
+      - 'worker/github-handoff.mjs'
+      - 'worker/unified-smoke.test.mjs'
+      - '.github/workflows/unified-council-checks.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exercise isolated unified Worker over HTTPS
+        run: node --test worker/unified-smoke.test.mjs
