@@ -20,7 +20,7 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Verify SDK package exports (no Copilot request)
         working-directory: copilot-bridge
-        run: node -e "import('@github/copilot-sdk').then(m=>{if(typeof m.CopilotClient!=='function')process.exit(1)})"
+        run: node verify-sdk.mjs
       - name: Verify HMAC, replay protection, Turkish UTF-8, and bridge safety
         working-directory: copilot-bridge
         run: npm test
