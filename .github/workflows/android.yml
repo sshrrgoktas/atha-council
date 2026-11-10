@@ -1,4 +1,4 @@
-name: Android APK and signed release
+name: Atha Council Android APK and signed release
 on:
   push:
     branches: [main]
@@ -63,9 +63,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp app/build/outputs/apk/release/app-release.apk atlas-council-debug.apk
-          gh release view latest-debug >/dev/null 2>&1 || gh release create latest-debug --title "Atlas Council Android" --notes "Signed Android release" --prerelease
+          gh release view latest-debug >/dev/null 2>&1 || gh release create latest-debug --title "Atha Council Android" --notes "Signed Android release" --prerelease
           gh release upload latest-debug atlas-council-debug.apk --clobber
-          gh release edit latest-debug --notes "versionCode: ${GITHUB_RUN_NUMBER}"
+          gh release edit latest-debug --title "Atha Council Android" --notes "versionCode: ${GITHUB_RUN_NUMBER}"
       - name: Remove temporary signing key
         if: always()
         run: rm -f "$RUNNER_TEMP/atlas-council-release.jks"
