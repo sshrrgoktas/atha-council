@@ -67,9 +67,10 @@ async function handleCopilotRoute(request,env) {
     const state=cookie(request,STATE);
     if(!state||state.length<32||state!==u.searchParams.get("state")||!u.searchParams.get("code"))return failure(400,"GitHub OAuth state invalid");
     // GitHub's documented token exchange. Keep phase diagnostics free of tokens and secrets.
-    let phase="exchange-request";
+    let phase="exchange-form";
     try {
       const form=new URLSearchParams({client_id:env.GITHUB_OAUTH_CLIENT_ID,client_secret:env.GITHUB_OAUTH_CLIENT_SECRET,code:u.searchParams.get("code"),redirect_uri:origin+"/auth/github/callback"});
+      phase="exchange-fetch";
       const response=await fetch("https://github.com/login/oauth/access_token",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded","accept":"application/json","user-agent":"Atlas-Council-OAuth"},body:form.toString(),redirect:"error"});
       if(!response.ok)return Response.json({error:"GitHub token exchange HTTP error",stage:"exchange-http",verified:false},{status:502,headers:noStore});
       phase="exchange-decode";
@@ -84,7 +85,8 @@ async function handleCopilotRoute(request,env) {
       return new Response(null,{status:302,headers});
     } catch(error) {
       console.error("GitHub OAuth callback failure",phase,String(error?.name||"Error"));
-      return Response.json({error:"GitHub OAuth callback could not be completed",stage:phase,verified:false},{status:502,headers:noStore});
+      const type=String(error?.name||"Error");
+      return Response.json({error:"GitHub OAuth callback could not be completed",stage:phase,reason:["TypeError","ReferenceError","SecurityError","NetworkError","OperationError","SyntaxError"].includes(type)?type:"OtherError",verified:false},{status:502,headers:noStore});
     }
   }
   if(path==="/auth/github/logout"&&request.method==="GET"){
