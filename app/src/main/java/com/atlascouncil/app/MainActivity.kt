@@ -65,7 +65,7 @@ class MainActivity: Activity() {
      putExtra(Intent.EXTRA_SUBJECT,title.take(120))
      putExtra(Intent.EXTRA_TEXT,content)
     }
-    startActivity(Intent.createChooser(intent,"Atlas Council sohbetini paylaş"))
+    startActivity(Intent.createChooser(intent,"Atha Council sohbetini paylaş"))
    }
   }
   // Expose updates to the web drawer as well as the always-visible native toolbar.
@@ -77,7 +77,7 @@ class MainActivity: Activity() {
   @JavascriptInterface fun ask(id:String,message:String){
    if(!id.matches(Regex("[A-Za-z0-9_-]{1,48}"))||message.length>4000||message.isBlank())return
    runOnUiThread {
-    android.app.AlertDialog.Builder(this@MainActivity).setTitle("Atlas / ChatGPT isteği")
+    android.app.AlertDialog.Builder(this@MainActivity).setTitle("Atha / ChatGPT isteği")
      .setMessage("Bu mesajı bağlı ChatGPT hesabıyla göndermeyi onaylıyor musun?\\n\\n"+message.take(220))
      .setNegativeButton("Vazgeç"){_,_->councilCallback(id,JSONObject().put("error","İstek onaylanmadı"))}
      .setPositiveButton("Gönder"){_,_->callNativeModel(id,message)}.show()
@@ -204,16 +204,16 @@ class MainActivity: Activity() {
  private fun sha(s:String)=Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(s.toByteArray()))
  override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState)
   val layout=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setBackgroundColor(Color.rgb(9,19,33)) }
-  val title=TextView(this).apply { text="ATLAS COUNCIL";textSize=28f;setTextColor(Color.rgb(77,214,193)) }
+  val title=TextView(this).apply { text="AthalAI";textSize=28f;setTextColor(Color.rgb(77,214,193)) }
   status=TextView(this).apply {text="ChatGPT bağlı değil. Giriş prototipi test edilmedi.";textSize=16f;setTextColor(Color.WHITE);setPadding(0,28,0,28)}
   loginButton=Button(this).apply {text="ChatGPT ile devam et (deneysel)";setOnClickListener{startLogin()} }
   authBadge=TextView(this).apply {text="ChatGPT bağlı değil";textSize=17f;setTextColor(Color.rgb(77,214,193));visibility=android.view.View.GONE}
-  prompt=EditText(this).apply {hint="Atlas'a bir mesaj yaz";setHintTextColor(Color.LTGRAY);setTextColor(Color.WHITE);minLines=2}
+  prompt=EditText(this).apply {hint="Atha'ya bir mesaj yaz";setHintTextColor(Color.LTGRAY);setTextColor(Color.WHITE);minLines=2}
   reply=TextView(this).apply {text="Henüz yanıt yok";setTextColor(Color.WHITE);setPadding(0,18,0,18)}
   testButton=Button(this).apply {text="ChatGPT yanıtını test et";setOnClickListener{sendMessage()} }
   updateStatus=TextView(this).apply {text="Güncellemeler kontrol edilmedi";setTextColor(Color.LTGRAY)}
   val checkUpdates=Button(this).apply {text="Güncellemeleri kontrol et";setOnClickListener{checkForUpdates(true)} }
-  val web=Button(this).apply {text="Gemini / Atlas Council (tarayıcıda)";setOnClickListener{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://atlas-council.sshrrgoktas.workers.dev/council-v2")))} }
+  val web=Button(this).apply {text="Gemini / Atha Council (tarayıcıda)";setOnClickListener{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://atlas-council.sshrrgoktas.workers.dev/council-v2")))} }
   val nativeControls=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL}
   nativeControls.addView(status);nativeControls.addView(authBadge);nativeControls.addView(loginButton);nativeControls.addView(prompt);nativeControls.addView(testButton);nativeControls.addView(reply);nativeControls.addView(updateStatus);nativeControls.addView(checkUpdates);nativeControls.addView(web)
   val nativeScroll=ScrollView(this).apply {addView(nativeControls);setPadding(18,8,18,8)}
@@ -263,7 +263,7 @@ class MainActivity: Activity() {
    val hostId=getPreferences(MODE_PRIVATE).getString("host_id",null)?:"urn:uuid:${UUID.randomUUID()}".also{getPreferences(MODE_PRIVATE).edit().putString("host_id",it).apply()}
    val savedClient=getPreferences(MODE_PRIVATE).getString("client_id",null)
    val params=linkedMapOf("client_id" to (savedClient?:"dynamic_agent_client"),"ext_agent_host_id" to hostId,"response_type" to "code","redirect_uri" to redirect,"scope" to "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct","resource" to "https://api.openai.com/v1","state" to state,"nonce" to nonce,"code_challenge_method" to "S256","code_challenge" to sha(verifier))
-   if(savedClient==null)params["agent_name_hint"]="Atlas Council"
+   if(savedClient==null)params["agent_name_hint"]="Atha Council"
    val url="https://auth.openai.com/api/accounts/authorize?"+params.entries.joinToString("&"){enc(it.key)+"="+enc(it.value)}
    runOnUiThread{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)));status.text="Tarayıcıda giriş iznini onayla…"}
    val socket=server.accept();socket.soTimeout=15000
@@ -271,7 +271,7 @@ class MainActivity: Activity() {
    val path=request.split(" ").getOrNull(1)?:throw Exception("Hatalı dönüş")
    val uri=Uri.parse("http://127.0.0.1"+path)
    val valid=uri.path=="/auth/callback"&&uri.getQueryParameter("state")==state
-   val response=if(valid)"<h2>Atlas Council</h2><p>Giriş dönüşü alındı. Uygulamaya dönebilirsin.</p>" else "<h2>Geçersiz giriş dönüşü</h2>"
+   val response=if(valid)"<h2>Atha Council</h2><p>Giriş dönüşü alındı. Uygulamaya dönebilirsin.</p>" else "<h2>Geçersiz giriş dönüşü</h2>"
    val bytes=response.toByteArray();socket.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n").toByteArray()+bytes);socket.close()
    if(!valid)throw Exception("Giriş doğrulaması başarısız")
    uri.getQueryParameter("error")?.let{throw Exception("Yetki verilmedi: $it")}
@@ -375,7 +375,7 @@ class MainActivity: Activity() {
      if(version>currentVersion()){
       updateStatus.text="Yeni sürüm var: #$version"
       sendUpdateResult("available",version,"Yeni sürüm $version bulundu. Android kurulumu için onayın istenecek.")
-      android.app.AlertDialog.Builder(this).setTitle("Atlas Council güncellemesi")
+      android.app.AlertDialog.Builder(this).setTitle("Atha Council güncellemesi")
        .setMessage("Yeni sürüm #$version indirilsin mi? Android kurulum için ayrıca onay isteyecek.")
        .setNegativeButton("Sonra",null)
        .setPositiveButton("Güncelle"){_,_->downloadUpdate(downloadUrl)}.show()
@@ -394,7 +394,7 @@ class MainActivity: Activity() {
   try{
    val uri=Uri.parse(url)
    if(uri.scheme!="https"||uri.host!="github.com")throw Exception("Güvenilmeyen indirme adresi")
-   val request=DownloadManager.Request(uri).setTitle("Atlas Council güncellemesi")
+   val request=DownloadManager.Request(uri).setTitle("Atha Council güncellemesi")
      .setDescription("Android APK indiriliyor")
      .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
      .setDestinationInExternalFilesDir(this,Environment.DIRECTORY_DOWNLOADS,"atlas-council-update.apk")
