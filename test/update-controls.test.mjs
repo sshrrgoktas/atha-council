@@ -34,3 +34,12 @@ test("New native update bridge reports actual installed version and all result s
   assert.doesNotMatch(kotlin,/val toolbar=/);
   assert.match(kotlin,/layout\.addView\(councilWeb,LinearLayout\.LayoutParams\(-1,-1\)\)/);
 });
+
+test("Legacy Android APK offers a real signed release link rather than a dead hidden menu",()=>{
+  assert.match(html,/id="legacyUpdateRow" hidden/);
+  assert.match(html,/id="legacyUpdateLink"/);
+  assert.match(html,/href="https:\/\/github\.com\/sshrrgoktas\/atlas-council\/releases\/download\/latest-debug\/atlas-council-debug\.apk"/);
+  assert.match(html,/window\.AtlasNative&&typeof window\.AtlasNative\.openUpdates!=='function'/);
+  assert.match(html,/document\.getElementById\('legacyUpdateRow'\)\.hidden=false/);
+  assert.doesNotMatch(html,/if\(confirm\('İmzalı Atlas Council APK güncellemesini Android yükleyicisinde açmak ister misin\?'\)\)/);
+});
