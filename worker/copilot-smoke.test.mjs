@@ -44,3 +44,21 @@ test("Preview serves existing Council interface plus explicit Copilot status",as
   assert.match(html,/id="geminiStatus"/);
   assert.match(html,/id="send"/);
 });
+
+test("GitHub OAuth callback handles an intentionally INVALID code without crashing",async()=>{
+  const start=await get("/auth/github/start");
+  assert.equal(start.status,302);
+  const auth=new URL(start.headers.get("location"));
+  const state=auth.searchParams.get("state");
+  const cookieHeader=start.headers.get("set-cookie") || "";
+  const stateCookie=cookieHeader.split(";")[0];
+  assert.ok(stateCookie.startsWith("atlas_copilot_oauth_state="));
+  assert.ok(state?.length>=32);
+  const callback=await get("/auth/github/callback?state="+encodeURIComponent(state)+"&code=invalid-atlas-probe",{headers:{"cookie":stateCookie}});
+  const body=await callback.json();
+  assert.equal(callback.status,403, "Expected GitHub to deny intentionally invalid OAuth code; actual stage "+body.stage);
+  assert.equal(body.stage,"exchange-authorization");
+  assert.equal(body.verified,false);
+  assert.equal(body.code,"bad_verification_code");
+  assert.ok(!JSON.stringify(body).includes("gho_"));
+});
