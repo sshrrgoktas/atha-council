@@ -72,6 +72,7 @@ class MainActivity: Activity() {
   @JavascriptInterface fun openUpdates(){
    runOnUiThread{checkForUpdates(true)}
   }
+  @JavascriptInterface fun installedVersion():Long = currentVersion()
   @JavascriptInterface fun connected():Boolean = !accessToken.isNullOrBlank()
   @JavascriptInterface fun ask(id:String,message:String){
    if(!id.matches(Regex("[A-Za-z0-9_-]{1,48}"))||message.length>4000||message.isBlank())return
@@ -340,8 +341,19 @@ class MainActivity: Activity() {
   val info=packageManager.getPackageInfo(packageName,0)
   return if(Build.VERSION.SDK_INT>=28)info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
  }
+ private fun sendUpdateResult(state:String,latest:Long?,description:String){
+  runOnUiThread {
+   if(!::councilWeb.isInitialized)return@runOnUiThread
+   val data=JSONObject().put("state",state).put("installed",currentVersion())
+    .put("latest",latest?:JSONObject.NULL).put("message",description.take(250))
+   councilWeb.evaluateJavascript("window.atlasUpdateResult&&window.atlasUpdateResult("+data.toString()+")",null)
+  }
+ }
  private fun checkForUpdates(showCurrent:Boolean) {
-  if(showCurrent)updateStatus.text="Yeni sürüm kontrol ediliyor…"
+  if(showCurrent){
+   updateStatus.text="Yeni sürüm kontrol ediliyor…"
+   sendUpdateResult("checking",null,"Güncelleme kontrol ediliyor…")
+  }
   Thread {
    try {
     val conn=URL("https://api.github.com/repos/sshrrgoktas/atlas-council/releases/tags/latest-debug").openConnection() as HttpURLConnection
@@ -362,13 +374,20 @@ class MainActivity: Activity() {
     runOnUiThread{
      if(version>currentVersion()){
       updateStatus.text="Yeni sürüm var: #$version"
+      sendUpdateResult("available",version,"Yeni sürüm $version bulundu. Android kurulumu için onayın istenecek.")
       android.app.AlertDialog.Builder(this).setTitle("Atlas Council güncellemesi")
        .setMessage("Yeni sürüm #$version indirilsin mi? Android kurulum için ayrıca onay isteyecek.")
        .setNegativeButton("Sonra",null)
        .setPositiveButton("Güncelle"){_,_->downloadUpdate(downloadUrl)}.show()
-     }else if(showCurrent){updateStatus.text="Uygulama güncel (sürüm ${currentVersion()})."}
+     }else if(showCurrent){
+      updateStatus.text="Uygulama güncel (sürüm ${currentVersion()})."
+      sendUpdateResult("current",version,"Uygulaman güncel. Kurulu sürüm: ${currentVersion()}, yayınlanan sürüm: $version.")
+     }
     }
-   }catch(e:Exception){if(showCurrent)runOnUiThread{updateStatus.text="Güncelleme kontrolü başarısız: ${e.message}"}}
+   }catch(e:Exception){if(showCurrent)runOnUiThread{
+     updateStatus.text="Güncelleme kontrolü başarısız: ${e.message}"
+     sendUpdateResult("error",null,"Sürüm bilgisi alınamadı. İnternet veya GitHub erişimini kontrol et.")
+   }}
   }.start()
  }
  private fun downloadUpdate(url:String) {
