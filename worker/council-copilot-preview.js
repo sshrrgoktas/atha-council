@@ -47,7 +47,7 @@ async function signedBridgeRequest(url,secret,body){
   const bytes=new TextEncoder().encode(timestamp+"."+nonce+"."+body);
   const macKey=await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
   const signature=Array.from(new Uint8Array(await crypto.subtle.sign("HMAC",macKey,bytes))).map(x=>x.toString(16).padStart(2,"0")).join("");
-  return fetch(endpoint.toString(),{method:"POST",headers:{"content-type":"application/json","x-atlas-timestamp":timestamp,"x-atlas-nonce":nonce,"x-atlas-signature":signature},body,redirect:"error",signal:AbortSignal.timeout(90000)});
+  return fetch(endpoint.toString(),{method:"POST",headers:{"content-type":"application/json","x-atlas-timestamp":timestamp,"x-atlas-nonce":nonce,"x-atlas-signature":signature},body,redirect:"manual",signal:AbortSignal.timeout(90000)});
 }
 async function handleCopilotRoute(request,env) {
   const u=new URL(request.url), path=u.pathname, origin=u.origin;
@@ -71,7 +71,7 @@ async function handleCopilotRoute(request,env) {
     try {
       const form=new URLSearchParams({client_id:env.GITHUB_OAUTH_CLIENT_ID,client_secret:env.GITHUB_OAUTH_CLIENT_SECRET,code:u.searchParams.get("code"),redirect_uri:origin+"/auth/github/callback"});
       phase="exchange-fetch";
-      const response=await fetch("https://github.com/login/oauth/access_token",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded","accept":"application/json","user-agent":"Atlas-Council-OAuth"},body:form.toString(),redirect:"error"});
+      const response=await fetch("https://github.com/login/oauth/access_token",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded","accept":"application/json","user-agent":"Atlas-Council-OAuth"},body:form.toString(),redirect:"manual"});
       if(!response.ok)return Response.json({error:"GitHub token exchange HTTP error",stage:"exchange-http",verified:false},{status:502,headers:noStore});
       phase="exchange-decode";
       const data=await response.json();
