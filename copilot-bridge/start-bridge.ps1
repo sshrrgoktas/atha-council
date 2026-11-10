@@ -21,6 +21,7 @@ $env:PORT="8789"
 if ($CopySecret) {
   Set-Clipboard -Value $env:COPILOT_BRIDGE_SECRET
   Write-Host "Gizli anahtar panoya kopyalandi. SADECE Cloudflare COPILOT_BRIDGE_SECRET secret alanina yapistir; sohbete veya GitHub'a gonderme." -ForegroundColor Yellow
+  return
 }
 if (-not (Test-Path "node_modules\@github\copilot-sdk")) {
   Write-Host "GitHub Copilot SDK kuruluyor (ucretsiz paket; model istegi gonderilmiyor)..." -ForegroundColor Cyan
