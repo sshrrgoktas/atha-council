@@ -69,3 +69,22 @@ test("Cloudflare preview must not use unsupported fetch redirect error mode",()=
   assert.ok(!src.includes('redirect:"error"'),"Cloudflare Workers only accepts manual or follow");
   assert.ok(src.includes('redirect:"manual"'));
 });
+
+test("Preview health separates API uptime from model provider availability",async()=>{
+  const r=await get("/api/status");
+  assert.equal(r.status,200);
+  const d=await r.json();
+  assert.equal(d.ready,true);
+  assert.equal(d.ai,false,"A missing Cloudflare AI binding must not be shown as a network outage");
+  assert.equal(d.googleConfigured,false,"Preview must not advertise production Google OAuth credentials");
+  assert.equal(d.copilotBridgeConfigured,false,"SDK must remain unverified while Node bridge is unconfigured");
+});
+test("Preview UI shows honest online status and separate OAuth / SDK states",async()=>{
+  const r=await get("/council-v2");
+  assert.equal(r.status,200);
+  const h=await r.text();
+  assert.match(h,/● Önizleme çevrimiçi/);
+  assert.match(h,/Önizlemede yapılandırılmadı/);
+  assert.match(h,/GitHub hesabın bağlı, ancak Copilot SDK köprüsü çevrimdışı/);
+  assert.ok(!h.includes("○ Sunucuya ulaşılamıyor"));
+});
