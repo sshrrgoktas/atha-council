@@ -66,15 +66,28 @@ export async function handleCopilotRoute(request,env) {
   if(path==="/auth/github/callback"&&request.method==="GET"){
     const state=cookie(request,STATE);
     if(!state||state.length<32||state!==u.searchParams.get("state")||!u.searchParams.get("code"))return failure(400,"GitHub OAuth state invalid");
-    const response=await fetch("https://github.com/login/oauth/access_token",{method:"POST",headers:{"content-type":"application/json","accept":"application/json"},body:JSON.stringify({client_id:env.GITHUB_OAUTH_CLIENT_ID,client_secret:env.GITHUB_OAUTH_CLIENT_SECRET,code:u.searchParams.get("code"),redirect_uri:origin+"/auth/github/callback"}),redirect:"manual"});
-    if(!response.ok)return failure(502,"GitHub OAuth token exchange failed");
-    const data=await response.json();
-    if(data.error||typeof data.access_token!=="string"||!/^(gho_|ghu_)/.test(data.access_token))return failure(403,"GitHub did not authorize Copilot account");
-    const token=await encrypt(data.access_token,env.GITHUB_SESSION_SECRET);
-    const headers=new Headers({"location":"/council-v2?github=connected",...noStore});
-    headers.append("set-cookie",secureCookie(COOKIE,token,3600));
-    headers.append("set-cookie",secureCookie(STATE,"",0,"/auth/github"));
-    return new Response(null,{status:302,headers});
+    // GitHub's documented token exchange. Keep phase diagnostics free of tokens and secrets.
+    let phase="exchange-form";
+    try {
+      const form=new URLSearchParams({client_id:env.GITHUB_OAUTH_CLIENT_ID,client_secret:env.GITHUB_OAUTH_CLIENT_SECRET,code:u.searchParams.get("code"),redirect_uri:origin+"/auth/github/callback"});
+      phase="exchange-fetch";
+      const response=await fetch("https://github.com/login/oauth/access_token",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded","accept":"application/json","user-agent":"Atlas-Council-OAuth"},body:form.toString(),redirect:"manual"});
+      if(!response.ok)return Response.json({error:"GitHub token exchange HTTP error",stage:"exchange-http",verified:false},{status:502,headers:noStore});
+      phase="exchange-decode";
+      const data=await response.json();
+      if(data.error||typeof data.access_token!=="string"||!/^(gho_|ghu_)/.test(data.access_token))return Response.json({error:"GitHub OAuth token was not granted",stage:"exchange-authorization",code:["bad_verification_code","incorrect_client_credentials","redirect_uri_mismatch","application_suspended"].includes(data.error)?data.error:"other",verified:false},{status:403,headers:noStore});
+      phase="session-encrypt";
+      const token=await encrypt(data.access_token,env.GITHUB_SESSION_SECRET);
+      phase="session-redirect";
+      const headers=new Headers({"location":"/council-v2?github=connected",...noStore});
+      headers.append("set-cookie",secureCookie(COOKIE,token,3600));
+      headers.append("set-cookie",secureCookie(STATE,"",0,"/auth/github"));
+      return new Response(null,{status:302,headers});
+    } catch(error) {
+      console.error("GitHub OAuth callback failure",phase,String(error?.name||"Error"));
+      const type=String(error?.name||"Error");
+      return Response.json({error:"GitHub OAuth callback could not be completed",stage:phase,reason:["TypeError","ReferenceError","SecurityError","NetworkError","OperationError","SyntaxError"].includes(type)?type:"OtherError",verified:false},{status:502,headers:noStore});
+    }
   }
   if(path==="/auth/github/logout"&&request.method==="GET"){
     return new Response(null,{status:302,headers:{"location":"/council-v2","set-cookie":secureCookie(COOKIE,"",0),...noStore}});
