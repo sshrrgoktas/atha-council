@@ -1,0 +1,22 @@
+name: Copilot preview HTTP smoke checks
+on:
+  pull_request:
+    paths:
+      - 'worker/council-copilot-preview.js'
+      - 'worker/copilot-smoke.test.mjs'
+      - '.github/workflows/copilot-preview-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview-http:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Smoke-test deployed isolated preview (no model/API tokens)
+        env:
+          TEST_WORKER_URL: https://atlas-council-copilot-preview.sshrrgoktas.workers.dev
+        run: node --test worker/copilot-smoke.test.mjs
