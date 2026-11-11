@@ -51,3 +51,12 @@ test('New or locally deleted rooms use the same setup screen and never inherit o
 test('Signed-out rooms use that same setup view with a direct login explanation',async()=>{
  const h=invitationHarness({authenticated:false});await h.run();assert.deepEqual(h.views,['help']);assert.ok(!h.calls.includes('call'));assert.match(h.status.textContent,/GitHub ile giriş yap/);
 });
+test('Status distinguishes a verified account, an active chat and a chat with no grant',()=>{
+ const fn=js.slice(js.indexOf('function renderAthaControls('),js.indexOf('function openAthaSettings('));
+ const elements=new Map();const document={getElementById(id){if(!elements.has(id))elements.set(id,{});return elements.get(id)}};
+ const render=new Function('document','enabledAthaSyncRooms','currentChatId','councilAccountAuthenticated',fn+';return renderAthaControls')(document,new Set(['room']),'room',true);
+ render({automaticParticipation:true});assert.match(elements.get('athaSimpleStatus').textContent,/Bağlantı doğrulandı/);
+ render({participationMode:'paused',oauthConnected:false});assert.match(elements.get('athaSimpleStatus').textContent,/bağlı değil/);
+ render({accountScope:true,oauthConnected:true,eventSubscriptionActive:true,privateCloudSync:false});assert.match(elements.get('athaSimpleStatus').textContent,/Hesap bağlantısı doğrulandı.*yerel/);assert.equal(elements.get('athaSetupLink').hidden,true);
+ render({participationMode:'paused',oauthConnected:true});assert.equal(elements.get('athaSimpleStatus').textContent,'Atha durduruldu');
+});
