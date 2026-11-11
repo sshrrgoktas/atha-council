@@ -16,3 +16,11 @@ CREATE TABLE IF NOT EXISTS atha_sync_events (
 );
 CREATE INDEX IF NOT EXISTS idx_atha_sync_events_pending
  ON atha_sync_events(state,created_at);
+
+-- Scheduler heartbeat: tracks the last *successful* one-minute tick.
+-- No conversation text, tokens, or personal content are stored here.
+CREATE TABLE IF NOT EXISTS atha_sync_monitor (
+  id INTEGER PRIMARY KEY CHECK(id = 1),
+  last_tick_at INTEGER NOT NULL,
+  pending_event_count INTEGER NOT NULL DEFAULT 0
+);
