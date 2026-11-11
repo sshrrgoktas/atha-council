@@ -1,0 +1,20 @@
+name: Atha user-approved ChatGPT handoff tests
+on:
+  pull_request:
+    paths:
+      - 'worker/production.js'
+      - 'test/atha-chatgpt-handoff.test.mjs'
+      - '.github/workflows/atha-chatgpt-handoff.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check Atha invitation, privacy, chat provenance and conversation scope
+        run: node --test test/atha-chatgpt-handoff.test.mjs
