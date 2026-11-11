@@ -18,44 +18,36 @@ test("Chat and agents menus display the working Atha invite instead of a fake co
  assert.match(js,/document\.getElementById\('callAthaFromAgents'\)\.onclick/);
  assert.match(html,/Doğrudan API bağlantısı yok/);
 });
-test("Invite requires manual approval, allows context edits, and opens official ChatGPT URL",()=>{
- assert.match(js,/function buildAthaHandoffContext\(chat\)/);
- assert.match(js,/slice\(-12\)/);
- assert.match(js,/Yalnızca bağlam/mi);
- assert.match(js,/navigator\.clipboard/);
- assert.match(js,/window\.location\.href='https:\/\/chatgpt\.com\/'/);
- assert.doesNotMatch(js,/https:\/\/chatgpt\.com\/\?q=/);
- assert.match(js,/Özel bilgileri paylaşmadan önce metinden çıkar/);
-});
-test("Assistant reply is user imported, not misrepresented as API verified, and stays in selected chat",()=>{
- assert.match(js,/currentChatId!==roomId/);
- assert.match(js,/if\(!confirm\('Bu metni kullanıcı tarafından aktarılmış Atha/);
- assert.match(js,/source='user-imported-chatgpt'/);
- assert.match(js,/recordItem\(label,reply,false,\[\], 'unknown'\)/);
- assert.match(js,/msgs\.push\(\{role:'assistant',content:reply,speaker:'unknown'\}\)/);
- assert.match(js,/el\.append\(name,document\.createTextNode\(reply\)\)/);
-});
 test("Old room-storage keys and other existing providers remain unchanged",()=>{
  assert.match(html,/const storageKey='atlasCouncilChatsV1'/);
  assert.match(html,/const profileKey='atlasCouncilProfileV1'/);
  assert.match(html,/id="geminiConnect"/);
  assert.match(html,/id="copilotConnect"/);
 });
-test("Context is limited to selected chat, 12 messages, and excludes untrusted system-only entries",()=>{
- const start=js.indexOf("function buildAthaHandoffContext(");
- const end=js.indexOf("function openAthaInvitation()",start);
- assert.ok(start>=0&&end>start);
- const fragment=js.slice(start,end);
- const make=new Function(fragment+";return buildAthaHandoffContext")();
- const items=[
-   {role:"user",content:"Do not include this old message"},
-   ...Array.from({length:15},(_,i)=>({role:i%2?"assistant":"user",name:i%2?"Gemini":"Seher",content:"Mesaj "+i})),
-   {role:"system",content:"This secret system entry should never leave"}
- ];
- const prompt=make({title:"Konsey oturumu",items});
- assert.doesNotMatch(prompt,/Do not include this old message/);
- assert.doesNotMatch(prompt,/This secret system entry/);
- assert.match(prompt,/Mesaj 14/);
- assert.match(prompt,/Son 12 mesaj:/);
- assert.match(prompt,/Konsey oturumu/);
+const start=js.indexOf('async function openAthaInvitation()');
+const end=js.indexOf("document.getElementById('callAtha').onclick",start);
+const invite=js.slice(start,end);
+function invitationHarness(response,consented=false){
+ const chat={id:'new_room',items:[{role:'user',content:'Yeni mesaj'}]};
+ const enabled=new Set(consented?[chat.id]:[]),calls=[],views=[],status={textContent:''};
+ const run=new Function('chats','currentChatId','enabledAthaSyncRooms','fetch','renderCouncilAccount','saveAthaSyncConsent','renderAthaMcpStatus','sendAthaCall','show','athaSyncStatus','updateAthaSyncControls',"let athaCurrentConnection=null;"+invite+';return openAthaInvitation')(
+  [chat],chat.id,enabled,async url=>{calls.push(url);return Response.json(response)},()=>{},()=>{},()=>{},async()=>calls.push('call'),view=>views.push(view),status,()=>{}
+ );
+ return {run,chat,enabled,calls,views,status};
+}
+test('Authorized existing rooms call Atha without a transcript or clipboard screen',async()=>{
+ const h=invitationHarness({authenticated:true,connection:{privateCloudSync:true}});const before=JSON.stringify(h.chat.items);
+ await h.run();assert.ok(h.calls.includes('call'));assert.equal(h.views.length,0);assert.ok(h.enabled.has('new_room'));
+ assert.equal(JSON.stringify(h.chat.items),before,'existing permission must not restore old messages');
+ assert.doesNotMatch(invite,/clipboard|textarea|buildAthaHandoff|user-imported-chatgpt/);
+});
+test('New or locally deleted rooms use the same setup screen and never inherit old conversations',async()=>{
+ for(const staleConsent of [false,true]){
+  const h=invitationHarness({authenticated:true,connection:null},staleConsent);await h.run();
+  assert.deepEqual(h.views,['help']);assert.ok(!h.calls.includes('call'));assert.ok(!h.enabled.has('new_room'));assert.equal(h.chat.items.length,1);
+  assert.match(h.status.textContent,/yeni sohbet için eşitleme izni/);
+ }
+});
+test('Signed-out rooms use that same setup view with a direct login explanation',async()=>{
+ const h=invitationHarness({authenticated:false});await h.run();assert.deepEqual(h.views,['help']);assert.ok(!h.calls.includes('call'));assert.match(h.status.textContent,/GitHub ile giriş yap/);
 });

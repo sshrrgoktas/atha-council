@@ -183,13 +183,13 @@ test("Private response inbox is owner-scoped, read-only and deleted with room",a
  assert.equal(d1.replies.size,0);
  assert.equal((await request(room+"/replies",{user:"1"})).status,404);
 });
-test("Invitation uses short synced room command and reply inbox deduplicates source IDs",()=>{
+test("Invitation uses authorized calls and reply inbox deduplicates source IDs",()=>{
  const k=source.indexOf("const HTML="),html=JSON.parse(source.slice(k+11,source.lastIndexOf(";")));
  assert.match(html,/id="athaSyncCheckReplies"/);
  assert.match(html,/function receiveAthaReplies/);
- assert.match(html,/enabledAthaSyncRooms\.has\(chat\.id\)\?/);
- assert.match(html,/Oda kimliği:/);
- assert.match(html,/atha_sync_replies tablosuna/);
+ assert.match(html,/async function openAthaInvitation/);
+ assert.match(html,/await sendAthaCall\(\)/);
+ assert.doesNotMatch(html,/buildAthaHandoffContext/);
  assert.match(html,/setInterval\(\(\)=>\{if\(!document\.hidden\)receiveAthaReplies/);
  assert.match(html,/stored\.has\(reply\.replyId\)/);
  assert.match(html,/source:"cloudflare-connector-user-approved"/);
