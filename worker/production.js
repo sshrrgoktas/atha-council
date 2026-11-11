@@ -428,7 +428,7 @@ async function mcpSignedFetch(sub,secret,body,id,env){
   if(old&&old!==secret){const oldKey=await crypto.subtle.importKey('raw',mcpSigningBytes(old),{name:'HMAC',hash:'SHA-256'},false,['sign']);
    const mac=new Uint8Array(await crypto.subtle.sign('HMAC',oldKey,mcpEncoder.encode(id+'.'+timestamp+'.'+body)));signatures+=' v1,'+btoa(String.fromCharCode(...mac));}
  }
- return fetch(url,{method:'POST',redirect:'error',signal:AbortSignal.timeout(8000),headers:{'content-type':'application/json','webhook-id':id,'webhook-timestamp':timestamp,'webhook-signature':signatures,'X-MCP-Subscription-Id':sub.subscription_id},body});
+ return fetch(url,{method:'POST',redirect:'manual',signal:AbortSignal.timeout(8000),headers:{'content-type':'application/json','webhook-id':id,'webhook-timestamp':timestamp,'webhook-signature':signatures,'X-MCP-Subscription-Id':sub.subscription_id},body});
 }
 async function mcpSubscriptionId(who,callback){return 'sub_'+await mcpHash(JSON.stringify([who.owner_id,callback,'message.created',{room_id:who.room_id}]))}
 // Bounded, owner-scoped protocol diagnostics. Store only the callback origin,
@@ -444,7 +444,7 @@ async function mcpSubscribe(params,who,env){
  const id=await mcpSubscriptionId(who,callback);
  const challenge=mcpId(),body=JSON.stringify({type:'verification',challenge});
  let response;
- try{response=await mcpSignedFetch({callback_url:callback,subscription_id:id},secret,body,'verify_'+mcpId(),env)}catch{throw mcpError('Callback verification failed',-32015,'timeout')}
+ try{response=await mcpSignedFetch({callback_url:callback,subscription_id:id},secret,body,'verify_'+mcpId(),env)}catch(e){throw mcpError('Callback verification failed',-32015,e.name==='TimeoutError'||e.name==='AbortError'?'timeout':'transport_error')}
  if(!response.ok)throw mcpError('Callback verification failed',-32015,'challenge_failed');
  let answer;try{answer=JSON.parse(await mcpBody(response,2048))}catch{throw mcpError('Callback verification failed',-32015,'challenge_failed')}
  if(!await mcpEqual(challenge,answer?.challenge))throw mcpError('Callback verification failed',-32015,'challenge_failed');
