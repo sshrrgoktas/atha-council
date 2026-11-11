@@ -27,6 +27,23 @@ test("Invite requires manual approval, allows context edits, and opens official 
  assert.doesNotMatch(js,/https:\/\/chatgpt\.com\/\?q=/);
  assert.match(js,/Özel bilgileri paylaşmadan önce metinden çıkar/);
 });
+test("Atha invitation uses Android native share sheet before web share and clipboard fallback",()=>{
+ const start=js.indexOf("copyAndOpen.onclick=async()=>{");
+ const end=js.indexOf("const openChatGPT=",start);
+ assert.ok(start>=0&&end>start);
+ const action=js.slice(start,end);
+ const native=action.indexOf("window.AtlasNative.shareText(");
+ const web=action.indexOf("navigator.share(");
+ const fallback=action.indexOf("navigator.clipboard.writeText(");
+ assert.ok(native>=0&&web>native&&fallback>web,"native -> Web Share -> clipboard priority must be preserved");
+ assert.match(action,/inviteText=draft\.value/);
+ assert.match(action,/e\.name==='AbortError'/);
+ assert.match(action,/window\.location\.href='https:\/\/chatgpt\.com\/'/);
+ // Native Android already has a real system share intent, not a simulated send.
+ const nativeFile=readFileSync(new URL("../app/src/main/java/com/atlascouncil/app/MainActivity.kt",import.meta.url),"utf8");
+ assert.match(nativeFile,/@JavascriptInterface fun shareText\(title:String,content:String\)/);
+ assert.match(nativeFile,/Intent\(Intent.ACTION_SEND\)/);
+});
 test("Assistant reply is user imported, not misrepresented as API verified, and stays in selected chat",()=>{
  assert.match(js,/currentChatId!==roomId/);
  assert.match(js,/if\(!confirm\('Bu metni kullanıcı tarafından aktarılmış Atha/);
