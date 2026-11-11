@@ -16,9 +16,7 @@ import android.webkit.WebSettings
 import android.webkit.WebResourceRequest
 import android.webkit.JavascriptInterface
 import android.app.DownloadManager
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.IntentFilter
 import android.os.Build
 import android.os.Environment
 import android.speech.tts.TextToSpeech
@@ -94,7 +92,8 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
  private lateinit var updateStatus: TextView
  private var downloadId: Long = -1L
  private var downloadInProgress = false
- private var downloadReceiver: BroadcastReceiver? = null
+ private val updatePollHandler=android.os.Handler(android.os.Looper.getMainLooper())
+ private var updatePoll:Runnable?=null
  @Volatile private var accessToken: String? = null
  private val random=SecureRandom()
  private fun councilCallback(id:String,payload:JSONObject){
@@ -459,22 +458,79 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
  }
  private fun openDownloadedUpdate(manager:DownloadManager,id:Long) {
   val uri=manager.getUriForDownloadedFile(id)
-  if(uri==null){updateStatus.text="APK dosyası bulunamadı; yeniden indirmeyi dene.";return}
-  try{
-   val install=Intent(Intent.ACTION_INSTALL_PACKAGE).setData(uri)
-    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-   startActivity(install)
-  }catch(e:Exception){updateStatus.text="Kurulum açılmadı. İndirme bildiriminden APK'yı aç."}
- }
- private fun downloadUpdate(url:String,version:Long) {
-  if(downloadInProgress){
-   updateStatus.text="APK zaten indiriliyor; ikinci kopya oluşturulmadı."
-   sendUpdateResult("checking",version,"APK zaten indiriliyor.")
-   return
+  if(uri==null){
+   updateStatus.text="APK dosyası bulunamadı; yeniden indirmeyi dene."
+   sendUpdateResult("error",null,"APK dosyası bulunamadı. APK’yı tarayıcıyla indir seçeneğini kullanabilirsin.");return
   }
   try{
+   if(Build.VERSION.SDK_INT>=26&&!packageManager.canRequestPackageInstalls()){
+    sendUpdateResult("downloaded",null,"APK indirildi. Android ekranında bu uygulamadan kuruluma izin ver; sonra güncelleme düğmesine yeniden dokun.")
+    startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+packageName)))
+    return
+   }
+   val install=Intent(Intent.ACTION_INSTALL_PACKAGE).setDataAndType(uri,"application/vnd.android.package-archive")
+    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+   sendUpdateResult("installing",null,"APK indirildi. Android kurulum ekranındaki onayı tamamla.")
+   startActivity(install)
+  }catch(e:Exception){
+   updateStatus.text="Kurulum açılamadı. İndirme bildiriminden APK’yı aç."
+   sendUpdateResult("error",null,"APK indirildi ama kurulum açılmadı. Android indirme bildiriminden dosyayı aç.")
+  }
+ }
+ private fun watchUpdateDownload(manager:DownloadManager,id:Long,version:Long){
+  updatePoll?.let{updatePollHandler.removeCallbacks(it)}
+  val poll=object:Runnable {
+   override fun run(){
+    var keepWatching=false
+    try{
+     manager.query(DownloadManager.Query().setFilterById(id))?.use{cursor->
+      if(!cursor.moveToFirst())throw IllegalStateException("İndirme kaydı bulunamadı")
+      val state=cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+      when(state){
+       DownloadManager.STATUS_SUCCESSFUL -> {
+        downloadInProgress=false
+        updateStatus.text="İndirme tamamlandı. Android kurulumuna onay ver."
+        sendUpdateResult("downloaded",version,"APK #$version indirildi. Android kurulum ekranı açılıyor…")
+        openDownloadedUpdate(manager,id)
+       }
+       DownloadManager.STATUS_FAILED -> {
+        downloadInProgress=false
+        val reason=cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
+        val message=when(reason){
+         DownloadManager.ERROR_INSUFFICIENT_SPACE -> "Telefonda indirme için yeterli boş alan yok."
+         DownloadManager.ERROR_FILE_ALREADY_EXISTS -> "Önceki indirme dosyası kaldı. Yeniden indirerek düzeltebilirsin."
+         else -> "APK indirilemedi (Android kodu $reason). APK’yı tarayıcıyla indir seçeneğini kullanabilirsin."
+        }
+        updateStatus.text=message;sendUpdateResult("error",version,message)
+       }
+       DownloadManager.STATUS_PAUSED -> {
+        downloadInProgress=true;keepWatching=true
+        updateStatus.text="APK indirmesi ağ bağlantısı bekliyor."
+        sendUpdateResult("paused",version,"APK indirmesi durakladı; ağ bağlantısı bekleniyor. Tarayıcıyla indirmeyi de deneyebilirsin.")
+       }
+       else -> {
+        downloadInProgress=true;keepWatching=true
+        val total=cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+        val received=cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+        val progress=if(total>0)" · %"+((received*100/total).coerceIn(0,100)) else ""
+        val message="Android #$version indiriliyor$progress"
+        updateStatus.text=message;sendUpdateResult("downloading",version,message)
+       }
+      }
+     }?:throw IllegalStateException("İndirme durumu okunamadı")
+    }catch(e:Exception){
+     downloadInProgress=false
+     sendUpdateResult("error",version,"İndirme durumu okunamadı. Güncelleme düğmesine yeniden dokunabilir veya APK’yı tarayıcıyla indirebilirsin.")
+    }
+    if(keepWatching)updatePollHandler.postDelayed(this,1000) else updatePoll=null
+   }
+  }
+  updatePoll=poll;updatePollHandler.post(poll)
+ }
+ private fun downloadUpdate(url:String,version:Long) {
+  try{
    val uri=Uri.parse(url)
-   if(uri.scheme!="https"||uri.host!="github.com")throw Exception("Güvenilmeyen indirme adresi")
+   if(uri.scheme!="https"||uri.host!="github.com"||!uri.path.orEmpty().startsWith("/sshrrgoktas/atha-council/releases/download/latest-debug/"))throw Exception("Güvenilmeyen indirme adresi")
    val manager=getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
    val prefs=getPreferences(MODE_PRIVATE)
    val previousVersion=prefs.getLong("last_atha_download_version",-1L)
@@ -483,51 +539,40 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
     manager.query(DownloadManager.Query().setFilterById(previousId))?.use{cursor->
      if(cursor.moveToFirst()){
       val state=cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
-      if(state==DownloadManager.STATUS_SUCCESSFUL){
-       updateStatus.text="Bu sürüm daha önce indirildi; mevcut APK açılıyor."
+      if(state==DownloadManager.STATUS_SUCCESSFUL&&manager.getUriForDownloadedFile(previousId)!=null){
+       downloadInProgress=false
+       updatePoll?.let{updatePollHandler.removeCallbacks(it)};updatePoll=null
        openDownloadedUpdate(manager,previousId)
        return
       }
       if(state==DownloadManager.STATUS_RUNNING||state==DownloadManager.STATUS_PENDING||state==DownloadManager.STATUS_PAUSED){
-       updateStatus.text="Bu sürüm zaten indiriliyor. Yeniden indirme başlatılmadı."
+       downloadId=previousId;watchUpdateDownload(manager,previousId,version)
        return
       }
      }
     }
+    // Remove only the failed/missing update download, never app data or history.
+    manager.remove(previousId)
    }
+   val updateDir=getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?:throw Exception("İndirme klasörüne erişilemiyor")
+   val destination=java.io.File(updateDir,"atha-council-update-"+version+".apk")
+   if(destination.exists()&&!destination.delete())throw Exception("Eski güncelleme dosyası temizlenemedi")
    val request=DownloadManager.Request(uri).setTitle("Atha Council güncellemesi")
      .setDescription("Android sürüm "+version+" indiriliyor")
+     .addRequestHeader("User-Agent","AthaCouncilAndroid-Updater")
+     .setAllowedOverMetered(true)
      .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
      .setDestinationInExternalFilesDir(this,Environment.DIRECTORY_DOWNLOADS,"atha-council-update-"+version+".apk")
    downloadInProgress=true
    downloadId=manager.enqueue(request)
    prefs.edit().putLong("last_atha_download_version",version)
     .putLong("last_atha_download_id",downloadId).apply()
-   updateStatus.text="Android sürüm "+version+" indiriliyor…"
-   downloadReceiver?.let{try{unregisterReceiver(it)}catch(_:Exception){}}
-   downloadReceiver=object:BroadcastReceiver(){
-    override fun onReceive(context:Context,intent:Intent){
-     if(intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID,-1L)!=downloadId)return
-     downloadInProgress=false
-     manager.query(DownloadManager.Query().setFilterById(downloadId))?.use{cursor->
-      if(cursor.moveToFirst()){
-       val state=cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
-       if(state==DownloadManager.STATUS_SUCCESSFUL){
-        updateStatus.text="İndirme tamamlandı. Android kurulumuna onay ver."
-        openDownloadedUpdate(manager,downloadId)
-       }else updateStatus.text="APK indirilemedi; yeniden deneyebilirsin."
-      }
-     }
-     try{unregisterReceiver(this)}catch(_:Exception){}
-     downloadReceiver=null
-    }
-   }
-   val filter=IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-   if(Build.VERSION.SDK_INT>=33)registerReceiver(downloadReceiver,filter,Context.RECEIVER_NOT_EXPORTED)
-   else @Suppress("DEPRECATION") registerReceiver(downloadReceiver,filter)
+   sendUpdateResult("downloading",version,"APK #$version indirmesi başlatıldı…")
+   watchUpdateDownload(manager,downloadId,version)
   }catch(e:Exception){
    downloadInProgress=false
    updateStatus.text="Güncelleme indirilemedi: "+e.message
+   sendUpdateResult("error",version,"İndirme başlatılamadı: "+(e.message?:"Android indirme hizmeti yanıt vermedi")+". APK’yı tarayıcıyla indir seçeneğini kullanabilirsin.")
   }
  }
  override fun onCreateOptionsMenu(menu:Menu):Boolean {
@@ -546,8 +591,7 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
   speechEngine?.stop();speechEngine?.shutdown();speechEngine=null
   pendingSpeech=null;speechRequestId=null
   if(::councilWeb.isInitialized)councilWeb.destroy()
-  downloadReceiver?.let{try{unregisterReceiver(it)}catch(_:Exception){}}
-  downloadReceiver=null
+  updatePoll?.let{updatePollHandler.removeCallbacks(it)};updatePoll=null
   super.onDestroy()
  }
 
