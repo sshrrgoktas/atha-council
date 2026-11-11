@@ -8,7 +8,7 @@ const secret="test-sync-GitHub-session-secret-random-64-characters-long";
 const oldFetch=globalThis.fetch;
 
 class FakeD1 {
- constructor(){this.rows=new Map();this.replies=new Map();this.events=new Map()}
+ constructor(){this.rows=new Map();this.replies=new Map();this.events=new Map();this.monitor=null}
  prepare(sql){
   let args=[];
   return {
@@ -34,7 +34,12 @@ FakeD1.prototype.prepare=function(sql){
     .sort((a,b)=>b.created_at-a.created_at).slice(0,40).map(r=>({reply_id:r.reply_id,content:r.content,created_at:r.created_at})):
    [...database.rows.values()].filter(r=>r.owner_id===args[0])
     .sort((a,b)=>b.updated_at-a.updated_at).map(r=>({room_id:r.room_id,title:r.title,updated_at:r.updated_at}))}),
-  first:async()=>{const r=database.rows.get(args[0]+"|"+args[1]);return r?sql.includes("SELECT room_id")?{room_id:r.room_id}:{title:r.title,snapshot:r.snapshot,updated_at:r.updated_at}:null},
+  first:async()=>{
+   if(sql.includes("FROM atha_sync_monitor"))return database.monitor?{last_tick_at:database.monitor.last_tick_at}:null;
+   if(sql.includes("FROM atha_sync_events"))return {count:[...database.events.values()].filter(e=>e.state==="pending"&&(!sql.includes("owner_id=?")||e.owner_id===args[0])).length};
+   const r=database.rows.get(args[0]+"|"+args[1]);
+   return r?sql.includes("SELECT room_id")?{room_id:r.room_id}:{title:r.title,snapshot:r.snapshot,updated_at:r.updated_at}:null;
+  },
   run:async()=>{
    if(sql.startsWith("DELETE FROM atha_sync_events")){
     for(const [k,v] of database.events)if(v.owner_id===args[0]&&v.room_id===args[1])database.events.delete(k);
@@ -45,6 +50,9 @@ FakeD1.prototype.prepare=function(sql){
     const [owner_id,room_id,event_id,created_at]=args;
     const key=owner_id+"|"+room_id+"|"+event_id;
     if(!database.events.has(key))database.events.set(key,{owner_id,room_id,event_id,created_at,state:"pending"});
+   }
+   else if(sql.startsWith("INSERT INTO atha_sync_monitor")){
+    database.monitor={last_tick_at:args[0],pending_event_count:args[1]};
    }
    else if(sql.startsWith("INSERT")){const [owner_id,room_id,title,snapshot,updated_at]=args;database.rows.set(owner_id+"|"+room_id,{owner_id,room_id,title,snapshot,updated_at})}
    else throw Error("Unexpected SQL");
@@ -209,4 +217,22 @@ test("Human messages are queued immediately, deduplicated and deleted with room"
  const erase=await request(path,{method:"DELETE",user:"1"});
  assert.equal(erase.status,200);
  assert.equal(d1.events.size,0,"Revoked room consent removes queued events");
+});
+
+test("Minute scheduler persists a heartbeat without impersonating an AI response",async()=>{
+ const eventId="evt_scheduler_test";
+ const key="github:101|test_room|"+eventId;
+ d1.events.set(key,{owner_id:"github:101",room_id:"test_room",event_id:eventId,state:"pending"});
+ const originalReplyCount=d1.replies.size;
+ await worker.scheduled({cron:"* * * * *"},env,{});
+ assert.ok(d1.monitor?.last_tick_at>0);
+ assert.equal(d1.monitor.pending_event_count,1);
+ assert.equal(d1.replies.size,originalReplyCount,"Heartbeat must not create fake ChatGPT messages");
+ const status=await request("/api/atha-sync/status",{user:"1"});
+ assert.equal(status.status,200);
+ const details=await status.json();
+ assert.ok(details.monitor.lastTickAt>0);
+ assert.equal(details.monitor.pendingEvents,1);
+ assert.equal(details.monitor.modelDeliveryConnected,false);
+ d1.events.delete(key);
 });
