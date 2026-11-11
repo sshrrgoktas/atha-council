@@ -28,7 +28,7 @@ async function subscribe(){const r=await rpc('events/subscribe',subscription());
 async function queue(id='evt_test',text='Atha, merhaba'){seedEvent(id);await runtime.mcpQueueEvents(env,owner,room,[id],[{content:text}])}
 beforeEach(async()=>{
  sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');
- for(const path of ['schema.sql','replies.sql','events.sql','mcp.sql'])sql.exec(readFileSync(new URL('../worker/atha-sync/'+path,import.meta.url),'utf8'));
+ for(const path of ['schema.sql','replies.sql','events.sql','mcp.sql','mcp-diagnostics.sql'])sql.exec(readFileSync(new URL('../worker/atha-sync/'+path,import.meta.url),'utf8'));
  db=new D1(sql);env={ATHA_SYNC_DB:db,GITHUB_SESSION_SECRET:'test-only-session-secret-with-more-than-32-characters',ATHA_MCP_CALLBACK_ORIGINS:'https://callbacks.openai.com'};
  sql.prepare('INSERT INTO atha_sync_rooms VALUES(?,?,?,?,?)').run(owner,room,'Test',JSON.stringify({version:1,title:'Test',items:[{role:'user',name:'Sen',content:'Atha selam',speakerId:'human'},{role:'assistant',name:'Google Gemini',content:'Merhaba',speakerId:'gemini'}]}),now());
  sql.prepare('INSERT INTO atha_mcp_grants(grant_id,owner_id,room_id,client_id,expires_at) VALUES(?,?,?,?,?)').run('grant_test',owner,room,'client_test',now()+86400000);
@@ -160,4 +160,14 @@ test('Authorized browser sync atomically creates event and delivery; next snapsh
  const model=[...items,{role:'assistant',name:'Atha / ChatGPT · MCP',speakerId:'chatgpt',content:'Only a fixture.'}];assert.equal((await (await sync(model)).json()).queuedEvents,0);
  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_mcp_delivery').get().n,1);
  const pause=await request('/api/atha-sync/rooms/'+room+'/participation','PUT',{mode:'paused'},null,{cookie,origin,'x-atha-sync':'1'});assert.equal(pause.status,200);const count=callbackCalls.length;await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,count);assert.equal(count,2);
+});
+test('Event diagnostics distinguish an arriving subscription without storing callback secrets or paths',async()=>{
+ env.ATHA_MCP_CALLBACK_ORIGINS='';
+ const r=await rpc('events/subscribe',subscription('https://callbacks.openai.com/private-path?secret=never-store'));
+ assert.equal(r.error.data.reason,'origin_not_approved');
+ const diagnostic=sql.prepare('SELECT * FROM atha_mcp_event_diagnostics').get();
+ assert.equal(diagnostic.callback_origin,'https://callbacks.openai.com');assert.equal(diagnostic.reason,'origin_not_approved');assert.equal(diagnostic.attempt_count,1);
+ const text=JSON.stringify(diagnostic);assert.doesNotMatch(text,/private-path|never-store|whsec_/);
+ assert.equal((await runtime.mcpStatus(env,owner,room)).eventDiagnostic.callback_origin,'https://callbacks.openai.com');
+ sql.prepare('DELETE FROM atha_sync_rooms').run();assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_mcp_event_diagnostics').get().n,0);
 });
