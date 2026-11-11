@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {createHmac} from 'node:crypto';
 const source=readFileSync(new URL('../worker/production.js',import.meta.url),'utf8');
-const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt};').toString('base64'));
+const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply};').toString('base64'));
 const worker=runtime.default,origin='https://atlas-council.sshrrgoktas.workers.dev',resource=origin+'/mcp';
 const owner='github:101',room='room_one',now=()=>Date.now();
 const oldFetch=globalThis.fetch;
@@ -45,6 +45,55 @@ beforeEach(async()=>{
  };
 });
 afterEach(()=>{globalThis.fetch=oldFetch;sql.close()});
+async function dialogueSetup(){
+ await subscribe();
+ const providerFetch=globalThis.fetch;
+ globalThis.fetch=async(url,options)=>String(url)==='https://api.github.com/user'?Response.json({id:101}):providerFetch(url,options);
+ const cookie='atlas_copilot_session='+await runtime.encrypt('gho_test_token_1234567890',env.GITHUB_SESSION_SECRET);
+ const req=new Request(origin+'/api/google/chat',{headers:{cookie}});
+ sql.prepare('INSERT INTO atha_mcp_participation VALUES(?,?,?,?)').run(owner,room,'dialogue',now()-1000);
+ sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,'mcp_evt_current','Gemini, ne düşünüyorsun?',now());
+ return {req,body:{dialogue:{room_id:room,parent_reply_id:'mcp_evt_current'}}};
+}
+test('Controlled real-model dialogue is owner-scoped, current-parent-only and idempotent',async()=>{
+ const {req,body}=await dialogueSetup();
+ await assert.rejects(runtime.beginCouncilDialogue(new Request(origin),env,body),/GitHub/);
+ await assert.rejects(runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:'foreign',parent_reply_id:'mcp_evt_current'}}),/inactive/);
+ await assert.rejects(runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:'mcp_evt_old'}}),/current/);
+ const turn=await runtime.beginCouncilDialogue(req,env,body);
+ await assert.rejects(runtime.beginCouncilDialogue(req,env,body),/claimed/);
+ assert.equal(callbackCalls.length,1,'reservation must not call a model or webhook');
+ assert.equal(await runtime.finishCouncilDialogue(env,turn,'Bence kısa yanıtlar iyi. Sıra sende.',null),true);
+ assert.equal(await runtime.finishCouncilDialogue(env,turn,'Tekrar.',null),false);
+ await runtime.mcpDeliver(env);
+ assert.equal(callbackCalls.length,2);
+ assert.equal(callbackCalls[1].body.data.source,'controlled-dialogue');
+ const read=await rpc('tools/call',{name:'council_read',arguments:{room_id:room}});
+ assert.equal(read.result.structuredContent.events[0].controlledDialogue.speakerId,'gemini');
+});
+test('Dialogue stops after three Gemini turns, expires and suppresses replies after pause',async()=>{
+ const {req,body}=await dialogueSetup();
+ for(let i=0;i<3;i++){
+  const parent='mcp_evt_round_'+i;
+  sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,parent,'Gerçek Atha yanıtı',now()+i+1);
+  const turn=await runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:parent}});
+  await runtime.finishCouncilDialogue(env,turn,'Kısa bir Gemini yanıtı.',null);
+ }
+ sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,'mcp_evt_fourth','Sıradaki',now()+10);
+ await assert.rejects(runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:'mcp_evt_fourth'}}),/limit/);
+ sql.prepare('UPDATE atha_mcp_participation SET updated_at=?').run(now()-21*60000);
+ await assert.rejects(runtime.beginCouncilDialogue(req,env,body),/expired/);
+});
+test('An intervening user turn or stop cancels a reserved dialogue; short text stays bounded',async()=>{
+ const {req,body}=await dialogueSetup();const turn=await runtime.beginCouncilDialogue(req,env,body);
+ sql.prepare('UPDATE atha_mcp_participation SET updated_at=updated_at+1').run();
+ await assert.rejects(runtime.finishCouncilDialogue(env,turn,'Geç kalan yanıt.',null),/superseded/);
+ sql.prepare("UPDATE atha_mcp_participation SET mode='paused'").run();
+ await assert.rejects(runtime.finishCouncilDialogue(env,turn,'Durduktan sonra.',null),/stopped/);
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_mcp_delivery').get().n,0);
+ assert.equal(runtime.councilShortReply('Bir. İki! Üç?'),'Bir. İki!');
+ assert.ok(runtime.councilShortReply('Kelime '.repeat(150)).length<=500);
+});
 test('MCP requires OAuth, advertises tools/events, denies foreign origin and room',async()=>{
  const unauth=await request('/mcp','POST',{jsonrpc:'2.0',method:'initialize',id:1},null);assert.equal(unauth.status,401);assert.match(unauth.headers.get('www-authenticate'),/oauth-protected-resource\/mcp/);
  assert.deepEqual((await rpc('initialize')).result.capabilities,{tools:{},events:{}});
