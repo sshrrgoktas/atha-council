@@ -8,7 +8,7 @@ const secret="test-sync-GitHub-session-secret-random-64-characters-long";
 const oldFetch=globalThis.fetch;
 
 class FakeD1 {
- constructor(){this.rows=new Map()}
+ constructor(){this.rows=new Map();this.replies=new Map()}
  prepare(sql){
   let args=[];
   return {
@@ -29,17 +29,25 @@ FakeD1.prototype.prepare=function(sql){
  const database=this;let args=[];
  const stmt={
   bind(...values){args=values;return stmt},
-  all:async()=>({results:[...database.rows.values()].filter(r=>r.owner_id===args[0])
+  all:async()=>({results:sql.includes("FROM atha_sync_replies")?
+   [...database.replies.values()].filter(r=>r.owner_id===args[0]&&r.room_id===args[1])
+    .sort((a,b)=>b.created_at-a.created_at).slice(0,40).map(r=>({reply_id:r.reply_id,content:r.content,created_at:r.created_at})):
+   [...database.rows.values()].filter(r=>r.owner_id===args[0])
     .sort((a,b)=>b.updated_at-a.updated_at).map(r=>({room_id:r.room_id,title:r.title,updated_at:r.updated_at}))}),
-  first:async()=>{const r=database.rows.get(args[0]+"|"+args[1]);return r?{title:r.title,snapshot:r.snapshot,updated_at:r.updated_at}:null},
+  first:async()=>{const r=database.rows.get(args[0]+"|"+args[1]);return r?sql.includes("SELECT room_id")?{room_id:r.room_id}:{title:r.title,snapshot:r.snapshot,updated_at:r.updated_at}:null},
   run:async()=>{
-   if(sql.startsWith("DELETE"))database.rows.delete(args[0]+"|"+args[1]);
+   if(sql.startsWith("DELETE FROM atha_sync_replies")){
+    for(const [k,v] of database.replies)if(v.owner_id===args[0]&&v.room_id===args[1])database.replies.delete(k);
+   }else if(sql.startsWith("DELETE"))database.rows.delete(args[0]+"|"+args[1]);
    else if(sql.startsWith("INSERT")){const [owner_id,room_id,title,snapshot,updated_at]=args;database.rows.set(owner_id+"|"+room_id,{owner_id,room_id,title,snapshot,updated_at})}
    else throw Error("Unexpected SQL");
    return {success:true};
   }
  };
  return stmt;
+};
+FakeD1.prototype.batch=async function(statements){
+ const results=[];for(const statement of statements)results.push(await statement.run());return results;
 };
 async function cookie(id){
  const iv=crypto.getRandomValues(new Uint8Array(12));
@@ -127,4 +135,42 @@ test("Client default is off, requires permission, keeps history, and supports de
  assert.match(html,/scheduleAthaSync\(c\.id\)/);
  assert.match(html,/GitHub hesabınla giriş gerekir/);
  assert.match(html,/ChatGPT'nin bu alana doğrudan erişimi henüz bağlanmadı/);
+});
+
+
+test("Private response inbox is owner-scoped, read-only and deleted with room",async()=>{
+ const room="/api/atha-sync/rooms/c99993333";
+ const snapshot={consent:true,title:"Test room",items:[{role:"user",name:"Sen",content:"Bir soru",speakerId:"human"}]};
+ const wrote=await request(room,{method:"PUT",user:"1",body:snapshot});
+ assert.equal(wrote.status,200);
+ const owner="github:101",roomId="c99993333",replyId="atha_response_123456789";
+ d1.replies.set(owner+"|"+roomId+"|"+replyId,{owner_id:owner,room_id:roomId,reply_id:replyId,content:"Atha cevabı 🌷",created_at:Date.now()});
+ const other=await request(room+"/replies",{user:"2"});
+ assert.equal(other.status,404);
+ const unauth=await request(room+"/replies");
+ assert.equal(unauth.status,401);
+ const denied=await request(room+"/replies",{method:"PUT",user:"1",body:{content:"Sahte yanıt"}});
+ assert.equal(denied.status,405);
+ const valid=await request(room+"/replies",{user:"1"});
+ assert.equal(valid.status,200);
+ const body=await valid.json();
+ assert.equal(body.verifiedModel,false);
+ assert.equal(body.replies.length,1);
+ assert.equal(body.replies[0].content,"Atha cevabı 🌷");
+ const erased=await request(room,{method:"DELETE",user:"1"});
+ assert.equal((await erased.json()).deleted,true);
+ assert.equal(d1.replies.size,0);
+ assert.equal((await request(room+"/replies",{user:"1"})).status,404);
+});
+test("Invitation uses short synced room command and reply inbox deduplicates source IDs",()=>{
+ const k=source.indexOf("const HTML="),html=JSON.parse(source.slice(k+11,source.lastIndexOf(";")));
+ assert.match(html,/id="athaSyncCheckReplies"/);
+ assert.match(html,/function receiveAthaReplies/);
+ assert.match(html,/enabledAthaSyncRooms\.has\(chat\.id\)\?/);
+ assert.match(html,/Oda kimliği:/);
+ assert.match(html,/atha_sync_replies tablosuna/);
+ assert.match(html,/setInterval\(\(\)=>\{if\(!document\.hidden\)receiveAthaReplies/);
+ assert.match(html,/stored\.has\(reply\.replyId\)/);
+ assert.match(html,/source:"cloudflare-connector-user-approved"/);
+ assert.match(html,/scheduleAthaSync\(roomId\)/);
 });
