@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {createHmac} from 'node:crypto';
 const source=readFileSync(new URL('../worker/production.js',import.meta.url),'utf8');
-const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues};').toString('base64'));
+const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues,councilStopIntent};').toString('base64'));
 const worker=runtime.default,origin='https://atlas-council.sshrrgoktas.workers.dev',resource=origin+'/mcp';
 const owner='github:101',room='room_one',now=()=>Date.now();
 const oldFetch=globalThis.fetch;
@@ -71,18 +71,18 @@ test('Controlled real-model dialogue is owner-scoped, current-parent-only and id
  const read=await rpc('tools/call',{name:'council_read',arguments:{room_id:room}});
  assert.equal(read.result.structuredContent.events[0].controlledDialogue.speakerId,'gemini');
 });
-test('Dialogue stops after three Gemini turns, expires and suppresses replies after pause',async()=>{
- const {req,body}=await dialogueSetup();
- for(let i=0;i<3;i++){
+test('Dialogue continues beyond three turns and twenty minutes until explicitly paused',async()=>{
+ const {req}=await dialogueSetup();
+ sql.prepare('UPDATE atha_mcp_participation SET updated_at=?').run(now()-24*3600000);
+ for(let i=0;i<8;i++){
   const parent='mcp_evt_round_'+i;
-  sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,parent,'Gerçek Atha yanıtı',now()+i+1);
+  sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,parent,'Atha yanıtı '+i,now()+i+1);
   const turn=await runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:parent}});
-  await runtime.finishCouncilDialogue(env,turn,'Kısa bir Gemini yanıtı '+i+'.',null);
+  assert.equal(await runtime.finishCouncilDialogue(env,turn,'Gemini turu '+i+'.',null),true);
  }
- sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,'mcp_evt_fourth','Sıradaki',now()+10);
- await assert.rejects(runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:'mcp_evt_fourth'}}),/limit/);
- sql.prepare('UPDATE atha_mcp_participation SET updated_at=?').run(now()-21*60000);
- await assert.rejects(runtime.beginCouncilDialogue(req,env,body),/expired/);
+ assert.equal(sql.prepare('SELECT count(*) n FROM atha_mcp_delivery').get().n,8);
+ sql.prepare("UPDATE atha_mcp_participation SET mode='paused'").run();
+ await assert.rejects(runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:'mcp_evt_round_7'}}),/inactive/);
 });
 test('An intervening user turn or stop cancels a reserved dialogue; short text stays bounded',async()=>{
  const {req,body}=await dialogueSetup();const turn=await runtime.beginCouncilDialogue(req,env,body);
@@ -349,18 +349,18 @@ test('Server hands Atha to Gemini and back for multiple turns without any browse
  // First real provider call is initiated by the server, with no UI involved.
  await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),1);
  let event=callbackCalls.at(-1).body.data;assert.equal(event.source,'controlled-dialogue');
- for(let n=0;n<2;n++){
+ for(let n=0;n<6;n++){
   // A real authenticated ChatGPT client posts its own reply; that alone starts Gemini.
   const reply=await rpc('tools/call',{name:'council_reply',arguments:{room_id:room,event_id:event.event_id,content:'Atha yanıtı '+n}});
   assert.ok(reply.result,JSON.stringify(reply));assert.equal(h.generations(),n+2);
   event=callbackCalls.at(-1).body.data;
  }
- await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),3,'same parent is never called twice');
+ await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),7,'same parent is never called twice');
  const ciphertext=sql.prepare('SELECT cookie_cipher FROM atha_dialogue_sessions').get().cookie_cipher;
  assert.doesNotMatch(ciphertext,/provider-test-access|gho_test/);
  // Owner-scoped polling recovers both identities in chronological order.
  const response=await request('/api/atha-sync/rooms/'+room+'/replies','GET',undefined,null,{cookie:h.request.headers.get('cookie')});
- const data=await response.json();assert.equal(data.serverDialogue,true);assert.equal(data.replies.filter(r=>r.speakerId==='gemini').length,3);
+ const data=await response.json();assert.equal(data.serverDialogue,true);assert.equal(data.replies.filter(r=>r.speakerId==='gemini').length,7);
  assert.ok(data.replies.every((r,i)=>!i||r.createdAt>=data.replies[i-1].createdAt));
 });
 test('Failed provider calls retry without a user message and concurrent runners never duplicate',async()=>{
@@ -402,4 +402,43 @@ test('First live user send in a new synced room triggers Atha once; history-only
  let r=await request('/api/atha-sync/rooms/'+newRoom,'PUT',body,null,headers);assert.equal(r.status,200);assert.equal(callbackCalls.length,2);
  await request('/api/atha-sync/rooms/'+newRoom,'PUT',body,null,headers);assert.equal(callbackCalls.length,2);
  delete body.live_turn;await request('/api/atha-sync/rooms/history_import_room','PUT',body,null,headers);assert.equal(callbackCalls.length,2);
+});
+test('Natural farewells stop the room silently and cancel in-flight automatic delivery',async()=>{
+ const {req,body}=await dialogueSetup();const turn=await runtime.beginCouncilDialogue(req,env,body);
+ await queue('evt_pending_before_farewell','Atha merhaba');
+ seedEvent('evt_farewell');await runtime.mcpQueueEvents(env,owner,room,['evt_farewell'],[{role:'user',content:'Tamam artık susalım, yeter. İyi geceler 💚'}]);
+ assert.equal(sql.prepare('SELECT mode FROM atha_mcp_participation').get().mode,'paused');
+ await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,1,'no farewell reply or pending delivery');
+ await assert.rejects(runtime.finishCouncilDialogue(env,turn,'Geç gelen Gemini yanıtı',null),/stopped/);
+ assert.equal(sql.prepare('SELECT active FROM atha_mcp_subscriptions').get().active,1,'connection stays available');
+});
+test('Farewell detection ignores quotes, questions, model messages and requests to keep talking',async()=>{
+ for(const text of ['Artık susalım','Yeter!','İyi geceler herkese 😘','Tamam, bu kadar yeter','Hadi görüşürüz','Ben yatıyorum','Konuşmayı durdur'])assert.equal(runtime.councilStopIntent(text),true,text);
+ for(const text of ['Tamam','İyi geceler dersem susar mısınız?','“İyi geceler” İngilizce ne demek','İyi geceler ama siz devam edin','Yeter kelimesini açıkla','İyi geceler gibi vedalar hakkında konuşalım'])assert.equal(runtime.councilStopIntent(text),false,text);
+ await dialogueSetup();seedEvent('evt_model_goodnight');
+ await runtime.mcpQueueEvents(env,owner,room,['evt_model_goodnight'],[{role:'assistant',speakerId:'gemini',controlledDialogue:true,content:'İyi geceler'}]);
+ assert.equal(sql.prepare('SELECT mode FROM atha_mcp_participation').get().mode,'dialogue');
+});
+test('Farewell in one account room leaves other rooms and the shared subscription running',async()=>{
+ await accountSubscription();addRoom('other_running_room');
+ seedEvent('evt_bye');await runtime.mcpQueueEvents(env,owner,room,['evt_bye'],[{role:'user',content:'İyi geceler'}]);
+ sql.prepare('INSERT INTO atha_sync_events(owner_id,room_id,event_id,created_at) VALUES(?,?,?,?)').run(owner,'other_running_room','evt_other_running',now());
+ await runtime.mcpQueueEvents(env,owner,'other_running_room',['evt_other_running'],[{role:'user',content:'Merhaba'}]);await runtime.mcpDeliver(env);
+ assert.equal(callbackCalls.length,2);assert.equal(callbackCalls.at(-1).body.data.room_id,'other_running_room');
+});
+test('A first-message farewell is transactional and never starts a new model conversation',async()=>{
+ await accountSubscription();const base=globalThis.fetch;
+ globalThis.fetch=async(u,o)=>String(u)==='https://api.github.com/user'?Response.json({id:101}):base(u,o);
+ const cookie='atlas_copilot_session='+await runtime.encrypt('gho_test_token_1234567890',env.GITHUB_SESSION_SECRET);
+ const body={consent:true,title:'Good night',items:[{role:'user',name:'Sen',speakerId:'human',content:'İyi geceler'}],live_turn:{request_id:'first_bye_1234567890',content:'İyi geceler'}};
+ const r=await request('/api/atha-sync/rooms/first_farewell','PUT',body,null,{cookie,origin,'x-atha-sync':'1'});
+ assert.equal(r.status,200);assert.equal(callbackCalls.length,1);
+ assert.equal(sql.prepare('SELECT mode FROM atha_mcp_participation WHERE room_id=?').get('first_farewell').mode,'paused');
+});
+test('A server provider session is bound to authorization expiry instead of conversation age',async()=>{
+ const h=await serverDialogueSetup();sql.prepare('UPDATE atha_mcp_participation SET updated_at=?').run(now()-24*3600000);
+ assert.equal(await runtime.rememberCouncilDialogue(h.request,env,owner,room),true);
+ const saved=sql.prepare('SELECT expires_at FROM atha_dialogue_sessions').get().expires_at;
+ const auth=sql.prepare('SELECT MIN(s.expires_at,g.expires_at) expires_at FROM atha_mcp_subscriptions s JOIN atha_mcp_grants g ON g.grant_id=s.grant_id').get().expires_at;
+ assert.equal(saved,auth);assert.ok(saved>now());
 });
