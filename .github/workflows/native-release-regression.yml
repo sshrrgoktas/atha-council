@@ -1,0 +1,21 @@
+name: Atha Council update-release regression
+on:
+  pull_request:
+    paths:
+      - 'app/**'
+      - '.github/workflows/android.yml'
+      - '.github/workflows/native-release-regression.yml'
+      - 'test/android-release-policy.test.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check native-only release filter and deduplicated Android update policy
+        run: node --test test/android-release-policy.test.mjs
