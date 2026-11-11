@@ -1,0 +1,20 @@
+name: Gemini response integrity
+on:
+  pull_request:
+    paths:
+      - 'worker/production.js'
+      - 'test/google-upstream-response.test.mjs'
+      - '.github/workflows/gemini-response-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  errors-and-success:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify Google HTML failures produce JSON errors; successful replies still work
+        run: node --test test/google-upstream-response.test.mjs
