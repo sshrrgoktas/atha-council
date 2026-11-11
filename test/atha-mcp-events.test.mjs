@@ -94,6 +94,31 @@ test('An intervening user turn or stop cancels a reserved dialogue; short text s
  assert.equal(runtime.councilShortReply('Bir. İki! Üç?'),'Bir. İki!');
  assert.ok(runtime.councilShortReply('Kelime '.repeat(150)).length<=500);
 });
+test('Manual Atha calls are authenticated, room-scoped, CSRF-protected and deduplicated',async()=>{
+ const {req}=await dialogueSetup();
+ const headers={cookie:req.headers.get('cookie'),origin,'x-atha-sync':'1'};
+ const body={request_id:'request_once_1234567890'};
+ const path='/api/atha-sync/rooms/'+room+'/call';
+ assert.equal((await request(path,'PUT',body,null)).status,403);
+ assert.equal((await request(path,'PUT',body,null,{...headers,origin:'https://foreign.example'})).status,403);
+ assert.equal((await request('/api/atha-sync/rooms/foreign/call','PUT',body,null,headers)).status,409);
+ const first=await request(path,'PUT',body,null,headers);assert.equal(first.status,200);const event=await first.json();
+ assert.equal((await (await request(path,'PUT',body,null,headers)).json()).event_id,event.event_id);
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_sync_events').get().n,1);
+ const read=await rpc('tools/call',{name:'council_read',arguments:{room_id:room}});
+ assert.equal(read.result.structuredContent.events[0].manualRequest.kind,'call');
+ assert.equal(callbackCalls.filter(c=>c.body.name==='message.created').length,1);
+});
+test('Retry creates a fresh real-model event for the latest reply; it never overwrites content',async()=>{
+ const {req}=await dialogueSetup();const headers={cookie:req.headers.get('cookie'),origin,'x-atha-sync':'1'};
+ const path='/api/atha-sync/rooms/'+room+'/retry',body={request_id:'retry_request_1234567890',parent_reply_id:'mcp_evt_current'};
+ assert.equal((await request(path,'PUT',{...body,parent_reply_id:'mcp_evt_old'},null,headers)).status,409);
+ const r=await request(path,'PUT',body,null,headers);assert.equal(r.status,200);
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_sync_replies').get().n,1);
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_sync_events').get().n,1);
+ sql.prepare("UPDATE atha_mcp_participation SET mode='paused'").run();
+ assert.equal((await request(path,'PUT',{...body,request_id:'different_retry_1234567890'},null,headers)).status,409);
+});
 test('MCP requires OAuth, advertises tools/events, denies foreign origin and room',async()=>{
  const unauth=await request('/mcp','POST',{jsonrpc:'2.0',method:'initialize',id:1},null);assert.equal(unauth.status,401);assert.match(unauth.headers.get('www-authenticate'),/oauth-protected-resource\/mcp/);
  assert.deepEqual((await rpc('initialize')).result.capabilities,{tools:{},events:{}});
