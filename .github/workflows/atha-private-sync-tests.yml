@@ -1,0 +1,21 @@
+name: Atha private sync access and consent tests
+on:
+  pull_request:
+    paths:
+      - 'worker/production.js'
+      - 'worker/atha-sync/**'
+      - 'test/atha-private-sync.test.mjs'
+      - '.github/workflows/atha-private-sync-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  privacy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify consent, GitHub OAuth isolation and private room deletion (fake D1, no account data)
+        run: node --test test/atha-private-sync.test.mjs
