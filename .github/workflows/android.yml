@@ -4,7 +4,7 @@ name: Atha Council Android APK and signed release
 on:
   push:
     branches: [main]
-    paths: &native_sources
+    paths:
       - 'app/**'
       - 'gradle/**'
       - 'gradlew'
@@ -14,7 +14,15 @@ on:
       - 'gradle.properties'
       - '.github/workflows/android.yml'
   pull_request:
-    paths: *native_sources
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'settings.gradle.kts'
+      - 'build.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/android.yml'
   workflow_dispatch:
 concurrency:
   group: atha-council-android-release
