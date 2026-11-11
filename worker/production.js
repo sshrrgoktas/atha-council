@@ -431,8 +431,15 @@ async function mcpSignedFetch(sub,secret,body,id,env){
  return fetch(url,{method:'POST',redirect:'error',signal:AbortSignal.timeout(8000),headers:{'content-type':'application/json','webhook-id':id,'webhook-timestamp':timestamp,'webhook-signature':signatures,'X-MCP-Subscription-Id':sub.subscription_id},body});
 }
 async function mcpSubscriptionId(who,callback){return 'sub_'+await mcpHash(JSON.stringify([who.owner_id,callback,'message.created',{room_id:who.room_id}]))}
+// Bounded, owner-scoped protocol diagnostics. Store only the callback origin,
+// never the callback path, query, signing secret, tokens or conversation text.
+async function mcpEventDiagnostic(env,who,reason,origin=null){
+ await env.ATHA_SYNC_DB.prepare('INSERT INTO atha_mcp_event_diagnostics(owner_id,room_id,reason,callback_origin,last_seen,attempt_count) VALUES(?,?,?,?,?,1) ON CONFLICT(owner_id,room_id) DO UPDATE SET reason=excluded.reason,callback_origin=COALESCE(excluded.callback_origin,callback_origin),last_seen=excluded.last_seen,attempt_count=attempt_count+CASE WHEN excluded.reason=\'attempt_received\' THEN 1 ELSE 0 END').bind(who.owner_id,who.room_id,reason,origin,Date.now()).run();
+}
 async function mcpSubscribe(params,who,env){
  if(params?.name!=='message.created'||!mcpObject(params.arguments)||Object.keys(params.arguments).join(',')!=='room_id'||params.arguments.room_id!==who.room_id||params.cursor!=null||params.delivery?.mode!=='webhook')throw mcpError('Invalid or unauthorized subscription');
+ let candidate=null;try{candidate=new URL(params.delivery.url).origin}catch{}
+ await mcpEventDiagnostic(env,who,'attempt_received',candidate);
  const callback=mcpCallback(params.delivery.url,env),secret=params.delivery.secret;mcpSigningBytes(secret);
  const id=await mcpSubscriptionId(who,callback);
  const challenge=mcpId(),body=JSON.stringify({type:'verification',challenge});
@@ -463,8 +470,9 @@ async function mcpStatus(env,owner,room){
  const active=subs.some(s=>s.active===1&&s.expires_at>now);
  const mode=await db.prepare('SELECT mode FROM atha_mcp_participation WHERE owner_id=? AND room_id=?').bind(owner,room).first();
  const reply=await db.prepare("SELECT created_at FROM atha_sync_replies WHERE owner_id=? AND room_id=? AND reply_id LIKE 'mcp_evt_%' ORDER BY created_at DESC LIMIT 1").bind(owner,room).first();
+ const eventDiagnostic=await db.prepare('SELECT reason,callback_origin,last_seen,attempt_count FROM atha_mcp_event_diagnostics WHERE owner_id=? AND room_id=?').bind(owner,room).first();
  const callbackReady=!!String(env.ATHA_MCP_CALLBACK_ORIGINS||'').trim();
- return {privateCloudSync:true,mcpServerReady:true,oauthConnected:!!grant,callbackConfigured:callbackReady,eventSubscriptionActive:active,participationMode:mode?.mode||'mentions',automaticParticipation:!!grant&&active&&callbackReady&&mode?.mode!=='paused',lastSuccessfulReplyAt:reply?.created_at||null,lastDeliveryAt:Math.max(0,...subs.map(s=>s.last_delivery_at||0))||null,lastError:subs[0]?.last_error||null};
+ return {eventDiagnostic:eventDiagnostic||null,privateCloudSync:true,mcpServerReady:true,oauthConnected:!!grant,callbackConfigured:callbackReady,eventSubscriptionActive:active,participationMode:mode?.mode||'mentions',automaticParticipation:!!grant&&active&&callbackReady&&mode?.mode!=='paused',lastSuccessfulReplyAt:reply?.created_at||null,lastDeliveryAt:Math.max(0,...subs.map(s=>s.last_delivery_at||0))||null,lastError:subs[0]?.last_error||null};
 }
 async function mcpTool(params,who,env){
  const a=params?.arguments,name=params?.name,definition=mcpTools.find(t=>t.name===name);
@@ -527,7 +535,7 @@ async function handleAthaMcp(req,env){
    else if(rpc.method==='tools/list')result={tools:mcpTools};
    else if(rpc.method==='tools/call')result=await mcpTool(params,who,env);
    else if(rpc.method==='events/list')result={events:[{name:'message.created',description:'A new user message addressed to Atha in the authorized Council room. No AI response loops. Read full context with council_read.',delivery:['webhook'],inputSchema:mcpRoomSchema,payloadSchema:{type:'object',properties:{room_id:{type:'string'},event_id:{type:'string'},url:{type:'string'}},required:['room_id','event_id','url'],additionalProperties:false}}]};
-   else if(rpc.method==='events/subscribe')result=await mcpSubscribe(params,who,env);
+   else if(rpc.method==='events/subscribe'){try{result=await mcpSubscribe(params,who,env);await mcpEventDiagnostic(env,who,'verified')}catch(e){await mcpEventDiagnostic(env,who,e.reason||'invalid_subscription');throw e}}
    else if(rpc.method==='events/unsubscribe'){
     if(params.name!=='message.created'||!mcpObject(params.arguments)||Object.keys(params.arguments).join(',')!=='room_id'||params.arguments.room_id!==who.room_id||params.delivery?.mode!=='webhook')throw mcpError('Invalid subscription');
     const id=await mcpSubscriptionId(who,mcpCallback(params.delivery.url,env));

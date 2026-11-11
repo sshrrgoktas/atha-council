@@ -1,6 +1,6 @@
 # Atha Council MCP Events — deployment and account handoff
 
-Status: server implementation, not yet an installed ChatGPT plugin. No paid inference API.
+Status: installed ChatGPT plugin; Selam room OAuth and real MCP read/status calls verified. Event subscription still fails in the ChatGPT task service; automatic participation is not active. No paid inference API.
 
 ## Endpoint and OAuth
 - Server: https://atlas-council.sshrrgoktas.workers.dev/mcp
@@ -34,7 +34,7 @@ The synced-room invitation UI shows connection state instead of copying conversa
 Controlled Gemini↔Atha alternating dialogue is **not implemented** by this release. The two models do not automatically reply to each other's messages. Do not enable a general AI-message trigger to approximate it; a bounded, explicitly authorized turn state machine and genuine Gemini execution must be added and tested separately.
 
 ## Validation and required account test
-53 local tests passed, including real SQLite foreign keys, OAuth/PKCE and CSRF, real HMAC calculation on exact bytes, callback forgery, owner isolation, deduplication, retry, cancellation, expiry, immediate user sync and no AI feedback loop. They use a simulated receiver and test-client reply text. They are not evidence of a real ChatGPT event run.
+54 local tests passed, including real SQLite foreign keys, OAuth/PKCE and CSRF, real HMAC calculation on exact bytes, callback forgery, owner isolation, deduplication, retry, cancellation, expiry, immediate user sync and no AI feedback loop. They use a simulated receiver and test-client reply text. They are not evidence of a real ChatGPT event run.
 
 Still required in the user's signed-in ChatGPT Work web/desktop Cloud session:
 1. Add the endpoint as a plugin and authorize the already-synced Selam room.
@@ -44,7 +44,9 @@ Still required in the user's signed-in ChatGPT Work web/desktop Cloud session:
 5. Send two real Council user calls, verify actual host receipt, generated responses, correct room identity, no repeated consent, no loops.
 6. Unsubscribe in ChatGPT and verify further calls stop.
 
-The cloud browser inspected in this task was signed out of ChatGPT; account-specific feature access and the installed-plugin lifecycle have not been verified. Keep automatic participation visibly inactive until a genuine host subscription exists.
+The account was signed in and plugin_asdk_app_6af4c744367c8191840a2de1416bfe9a was installed. GitHub device verification and room-scoped OAuth completed. ChatGPT discovered all four tools and message.created, then made real council_read/status calls in Work chat 6af4ca95-1ddc-83ed-b347-1983d9b3370f. Two native subscription attempts returned “The task service returned an unexpected error” without a callback origin. No active subscription exists. Keep automatic participation inactive until a genuine host subscription is verified.
+
+Apply mcp-diagnostics.sql before the diagnostic Worker update. The bounded owner/room row records only subscription attempt count, reason, timestamp and callback origin. It never stores the callback path/query, tokens, signing secrets or conversation text. council_connection_status exposes this safe diagnostic, distinguishing a request which reaches events/subscribe from failure before that point.
 
 ## Rollback
 Previous production version: 88fd1ffa-6414-4a13-aee8-f379c1953062 (v90).
