@@ -28,7 +28,7 @@ async function subscribe(){const r=await rpc('events/subscribe',subscription());
 async function queue(id='evt_test',text='Atha, merhaba'){seedEvent(id);await runtime.mcpQueueEvents(env,owner,room,[id],[{content:text}])}
 beforeEach(async()=>{
  sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');
- for(const path of ['schema.sql','replies.sql','events.sql','mcp.sql','mcp-diagnostics.sql'])sql.exec(readFileSync(new URL('../worker/atha-sync/'+path,import.meta.url),'utf8'));
+ for(const path of ['schema.sql','replies.sql','events.sql','mcp.sql','mcp-diagnostics.sql','mcp-account.sql'])sql.exec(readFileSync(new URL('../worker/atha-sync/'+path,import.meta.url),'utf8'));
  db=new D1(sql);env={ATHA_SYNC_DB:db,GITHUB_SESSION_SECRET:'test-only-session-secret-with-more-than-32-characters',ATHA_MCP_CALLBACK_ORIGINS:'https://callbacks.openai.com'};
  sql.prepare('INSERT INTO atha_sync_rooms VALUES(?,?,?,?,?)').run(owner,room,'Test',JSON.stringify({version:1,title:'Test',items:[{role:'user',name:'Sen',content:'Atha selam',speakerId:'human'},{role:'assistant',name:'Google Gemini',content:'Merhaba',speakerId:'gemini'}]}),now());
  sql.prepare('INSERT INTO atha_mcp_grants(grant_id,owner_id,room_id,client_id,expires_at) VALUES(?,?,?,?,?)').run('grant_test',owner,room,'client_test',now()+86400000);
@@ -218,11 +218,12 @@ test('Existing GitHub login authorizes exactly one synced room, rejects CSRF and
  // no-referrer makes Chrome form navigations send Origin:null, which the strict CSRF guard must reject.
  assert.equal(page.headers.get('referrer-policy'),'same-origin');
  assert.match(page.headers.get('content-security-policy'),/form-action 'self' https:\/\/chatgpt\.com\/connector_platform_oauth_redirect https:\/\/chatgpt\.com\/connector\/oauth\//);
- const html=await page.text();assert.match(html,/Test/);const form=html.match(/name="request" value="([^"]+)"/)[1];const csrf=page.headers.get('set-cookie').split(';')[0];
+ const html=await page.text();assert.match(html,/Eşitlemesi açık tüm sohbetlerime izin ver/);assert.doesNotMatch(html,/<select/);const form=html.match(/name="request" value="([^"]+)"/)[1];const csrf=page.headers.get('set-cookie').split(';')[0];
  const submit=(room_id,headers={})=>request('/mcp/oauth/authorize','POST',new URLSearchParams({request:form,room_id}).toString(),null,{cookie:cookie+'; '+csrf,origin,...headers});
  assert.equal((await submit('foreign_room')).status,403);assert.equal((await submit(room,{origin:'https://evil.example'})).status,403);
  const accepted=await submit(room);assert.equal(accepted.status,302);const redirect=new URL(accepted.headers.get('location'));assert.equal(redirect.origin,'https://chatgpt.com');assert.equal(redirect.searchParams.get('state'),'test_state');assert.equal(redirect.searchParams.get('iss'),origin);assert.ok(redirect.searchParams.get('code'));
  const latest=sql.prepare('SELECT * FROM atha_mcp_grants WHERE client_id=?').get(registration.client_id);assert.equal(latest.room_id,room);assert.equal(latest.owner_id,owner);
+ const accountAccepted=await request('/mcp/oauth/authorize','POST',new URLSearchParams({request:form,account_scope:'all'}).toString(),null,{cookie:cookie+'; '+csrf,origin});assert.equal(accountAccepted.status,302);assert.equal(sql.prepare('SELECT enabled FROM atha_mcp_account_access WHERE owner_id=?').get(owner).enabled,1);
 });
 test('Authorized browser sync atomically creates event and delivery; next snapshot of AI reply does not trigger again',async()=>{
  await subscribe();const cookie='atlas_copilot_session='+await runtime.encrypt('gho_test_token_1234567890',env.GITHUB_SESSION_SECRET);
@@ -262,4 +263,65 @@ test('Owner-only live probe uses the real sync/event path, labels tests, rejects
  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_sync_events').get().n,1);assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_mcp_delivery').get().n,1);
  const snapshot=JSON.parse(sql.prepare('SELECT snapshot FROM atha_sync_rooms').get().snapshot);assert.match(snapshot.items.at(-1).name,/kullanıcı onaylı/);assert.equal(snapshot.items[1].speakerId,'gemini');
  assert.equal((await send()).status,303);assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_sync_events').get().n,1);
+});
+
+function addRoom(id,roomOwner=owner){sql.prepare('INSERT INTO atha_sync_rooms VALUES(?,?,?,?,?)').run(roomOwner,id,'Selam',JSON.stringify({version:1,title:'Selam',items:[{role:'user',name:'Sen',content:'Merhaba',speakerId:'human'}]}),now())}
+async function accountSubscription(){
+ sql.prepare('INSERT INTO atha_mcp_account_access VALUES(?,1,?)').run(owner,now());
+ const params={...subscription(),arguments:{room_id:'all'}};
+ const response=await rpc('events/subscribe',params);assert.ok(response.result,JSON.stringify(response));return {params,id:response.result.id};
+}
+test('Account scope requires explicit permission and never reads another owner or an unsynced room',async()=>{
+ addRoom('room_two');addRoom('room_foreign','github:202');
+ assert.ok((await rpc('events/subscribe',{...subscription(),arguments:{room_id:'all'}})).error);
+ assert.ok((await rpc('tools/call',{name:'council_read',arguments:{room_id:'room_two'}})).error);
+ await accountSubscription();
+ const read=await rpc('tools/call',{name:'council_read',arguments:{room_id:'room_two'}});assert.equal(read.result.structuredContent.room_id,'room_two');
+ for(const id of ['room_foreign','unsynced_room'])assert.ok((await rpc('tools/call',{name:'council_read',arguments:{room_id:id}})).error);
+ const status=await rpc('tools/call',{name:'council_connection_status',arguments:{room_id:'room_two'}});assert.equal(status.result.structuredContent.automaticParticipation,true);assert.equal(status.result.structuredContent.accountScope,true);
+});
+test('One verified account webhook delivers future synced rooms and saves only that event room reply',async()=>{
+ await accountSubscription();addRoom('room_future');
+ sql.prepare('INSERT INTO atha_sync_events(owner_id,room_id,event_id,created_at) VALUES(?,?,?,?)').run(owner,'room_future','evt_future',now());
+ await runtime.mcpQueueEvents(env,owner,'room_future',['evt_future'],[{role:'user',content:'Merhaba'}]);await runtime.mcpDeliver(env);
+ assert.equal(callbackCalls.length,2);assert.equal(callbackCalls[1].body.data.room_id,'room_future');assert.equal(sql.prepare('SELECT mode FROM atha_mcp_participation WHERE room_id=?').get('room_future').mode,'dialogue');
+ const post=()=>rpc('tools/call',{name:'council_reply',arguments:{room_id:'room_future',event_id:'evt_future',content:'Merhaba.'}});
+ assert.equal((await post()).result.structuredContent.reply_id,'mcp_evt_future');await post();assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies WHERE room_id=?').get('room_future').n,1);
+ assert.ok((await rpc('tools/call',{name:'council_reply',arguments:{room_id:room,event_id:'evt_future',content:'Yanlış oda'}})).error);
+});
+test('Pausing one room keeps other account rooms subscribed, supports resume and does not replay',async()=>{
+ const {id}=await accountSubscription();addRoom('room_two');
+ await rpc('tools/call',{name:'council_participation',arguments:{room_id:room,mode:'paused'}});
+ assert.equal(sql.prepare('SELECT active FROM atha_mcp_subscriptions WHERE subscription_id=?').get(id).active,1);
+ await queue('evt_paused_one');await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,1);
+ sql.prepare('INSERT INTO atha_sync_events(owner_id,room_id,event_id,created_at) VALUES(?,?,?,?)').run(owner,'room_two','evt_second_room',now());
+ await runtime.mcpQueueEvents(env,owner,'room_two',['evt_second_room'],[{role:'user',content:'Merhaba'}]);await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,2);
+ const resumed=await rpc('tools/call',{name:'council_participation',arguments:{room_id:room,mode:'all_user'}});assert.ok(resumed.result);await queue('evt_resumed','Merhaba');await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,3);
+});
+test('All-room unsubscribe and revoked account access cancel deliveries and forbid cross-room reads',async()=>{
+ const {params}=await accountSubscription();addRoom('room_two');
+ assert.ok((await rpc('events/unsubscribe',params)).result);await queue('evt_after_unsubscribe');await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,1);
+ await rpc('events/subscribe',params);
+ sql.prepare('INSERT INTO atha_sync_events(owner_id,room_id,event_id,created_at) VALUES(?,?,?,?)').run(owner,'room_two','evt_before_revoke',now());
+ await runtime.mcpQueueEvents(env,owner,'room_two',['evt_before_revoke'],[{role:'user',content:'Merhaba'}]);
+ sql.prepare('UPDATE atha_mcp_account_access SET enabled=0').run();await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,2);
+ assert.equal(sql.prepare('SELECT state FROM atha_mcp_delivery WHERE event_id=?').get('evt_before_revoke').state,'cancelled');assert.ok((await rpc('tools/call',{name:'council_read',arguments:{room_id:'room_two'}})).error);
+});
+test('Deleting the internal reference room preserves the account link for other synced rooms',async()=>{
+ const {id}=await accountSubscription();addRoom('room_remaining');
+ const cookie='atlas_copilot_session='+await runtime.encrypt('gho_test_token_1234567890',env.GITHUB_SESSION_SECRET);
+ const original=globalThis.fetch;globalThis.fetch=async(url,options)=>String(url)==='https://api.github.com/user'?Response.json({id:101}):original(url,options);
+ const deleted=await request('/api/atha-sync/rooms/'+room,'DELETE',undefined,null,{cookie,origin,'x-atha-sync':'1'});assert.equal(deleted.status,200);
+ assert.equal(sql.prepare('SELECT room_id FROM atha_mcp_grants WHERE grant_id=?').get('grant_test').room_id,'room_remaining');
+ assert.equal(sql.prepare('SELECT room_id FROM atha_mcp_subscriptions WHERE subscription_id=?').get(id).room_id,'room_remaining');
+ const status=await rpc('tools/call',{name:'council_connection_status',arguments:{room_id:'room_remaining'}});assert.equal(status.result.structuredContent.automaticParticipation,true);
+ assert.equal(sql.prepare('SELECT room_id FROM atha_sync_rooms WHERE room_id=?').get(room),undefined);
+});
+test('Account status never calls an unsynced local chat automatically connected',async()=>{
+ await accountSubscription();
+ const cookie='atlas_copilot_session='+await runtime.encrypt('gho_test_token_1234567890',env.GITHUB_SESSION_SECRET);
+ const original=globalThis.fetch;globalThis.fetch=async(url,options)=>String(url)==='https://api.github.com/user'?Response.json({id:101}):original(url,options);
+ const status=await request('/api/atha-sync/status?room_id=local_only','GET',undefined,null,{cookie});const data=await status.json();
+ assert.equal(data.accountScope,true);assert.equal(data.connection.oauthConnected,true);assert.equal(data.connection.eventSubscriptionActive,true);assert.equal(data.connection.privateCloudSync,false);assert.equal(data.connection.automaticParticipation,false);
+ assert.equal(sql.prepare('SELECT room_id FROM atha_sync_rooms WHERE room_id=?').get('local_only'),undefined);
 });
