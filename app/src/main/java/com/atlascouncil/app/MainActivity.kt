@@ -21,6 +21,9 @@ import android.content.Context
 import android.content.IntentFilter
 import android.os.Build
 import android.os.Environment
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import java.util.Locale
 import java.net.ServerSocket
 import java.net.HttpURLConnection
 import java.net.URL
@@ -36,7 +39,47 @@ import com.nimbusds.jose.proc.JWSVerificationKeySelector
 import com.nimbusds.jwt.proc.DefaultJWTProcessor
 import com.nimbusds.jose.proc.SecurityContext
 
-class MainActivity: Activity() {
+class MainActivity: Activity(), TextToSpeech.OnInitListener {
+ private var speechEngine:TextToSpeech?=null
+ private var speechReady=false
+ private var pendingSpeech:Pair<String,String>?=null
+ private var speechRequestId:String?=null
+ private fun speechResult(id:String,state:String,error:String?=null){
+  val payload=JSONObject().put("state",state)
+  if(error!=null)payload.put("error",error)
+  runOnUiThread {
+   if(::councilWeb.isInitialized)councilWeb.evaluateJavascript("window.athaSpeechResult&&window.athaSpeechResult("+JSONObject.quote(id)+","+payload.toString()+")",null)
+  }
+ }
+ private fun speakPending(){
+  val pending=pendingSpeech?:return
+  pendingSpeech=null
+  val chunks=pending.second.chunked(3000)
+  for((index,chunk) in chunks.withIndex()){
+   val id=if(index==chunks.lastIndex)pending.first else pending.first+"_part_"+index
+   val result=speechEngine?.speak(chunk,if(index==0)TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,null,id)
+   if(result!=TextToSpeech.SUCCESS){speechEngine?.stop();speechResult(pending.first,"error","Seslendirme başlatılamadı.");return}
+  }
+  speechResult(pending.first,"speaking")
+ }
+ override fun onInit(initStatus:Int){
+  runOnUiThread {
+   val language=if(initStatus==TextToSpeech.SUCCESS)speechEngine?.setLanguage(Locale("tr","TR")) else TextToSpeech.LANG_NOT_SUPPORTED
+   speechReady=language!=null&&language!=TextToSpeech.LANG_MISSING_DATA&&language!=TextToSpeech.LANG_NOT_SUPPORTED
+   if(!speechReady){
+    pendingSpeech?.let{speechResult(it.first,"error","Türkçe ses bulunamadı. Telefonun metin okuma ayarlarını kontrol et.")}
+    pendingSpeech=null
+    speechEngine?.shutdown();speechEngine=null
+    return@runOnUiThread
+   }
+   speechEngine?.setOnUtteranceProgressListener(object:UtteranceProgressListener(){
+    override fun onStart(id:String){if(id==speechRequestId)speechResult(id,"speaking")}
+    override fun onDone(id:String){if(id==speechRequestId)speechResult(id,"done")}
+    @Deprecated("Android callback compatibility") override fun onError(id:String){if(id==speechRequestId)speechResult(id,"error","Seslendirme tamamlanamadı.")}
+   })
+   speakPending()
+  }
+ }
  private lateinit var status: TextView
  private lateinit var loginButton: Button
  private lateinit var testButton: Button
@@ -59,6 +102,22 @@ class MainActivity: Activity() {
   runOnUiThread { councilWeb.evaluateJavascript("window.atlasNativeResult&&window.atlasNativeResult("+JSONObject.quote(id)+","+payload.toString()+")",null) }
  }
  inner class CouncilBridge {
+  @JavascriptInterface fun startSpeech(id:String,content:String){
+   if(!id.matches(Regex("[A-Za-z0-9_-]{1,80}"))||content.isBlank()||content.length>12000)return
+   runOnUiThread {
+    val page=Uri.parse(councilWeb.url?:"")
+    if(page.scheme!="https"||page.host!="atlas-council.sshrrgoktas.workers.dev"||page.path!="/council-v2")return@runOnUiThread
+    speechRequestId=id;pendingSpeech=Pair(id,content)
+    if(speechEngine==null)speechEngine=TextToSpeech(this@MainActivity,this@MainActivity)
+    else if(speechReady)speakPending()
+   }
+  }
+  @JavascriptInterface fun stopSpeech(){
+   runOnUiThread {
+    speechEngine?.stop();pendingSpeech=null
+    speechRequestId?.let{speechResult(it,"stopped")};speechRequestId=null
+   }
+  }
   @JavascriptInterface fun shareText(title:String,content:String){
    if(content.length>1000000)return
    runOnUiThread {
@@ -484,6 +543,8 @@ class MainActivity: Activity() {
   return super.onOptionsItemSelected(item)
  }
  override fun onDestroy(){
+  speechEngine?.stop();speechEngine?.shutdown();speechEngine=null
+  pendingSpeech=null;speechRequestId=null
   if(::councilWeb.isInitialized)councilWeb.destroy()
   downloadReceiver?.let{try{unregisterReceiver(it)}catch(_:Exception){}}
   downloadReceiver=null
