@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {createHmac} from 'node:crypto';
 const source=readFileSync(new URL('../worker/production.js',import.meta.url),'utf8');
-const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply};').toString('base64'));
+const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues};').toString('base64'));
 const worker=runtime.default,origin='https://atlas-council.sshrrgoktas.workers.dev',resource=origin+'/mcp';
 const owner='github:101',room='room_one',now=()=>Date.now();
 const oldFetch=globalThis.fetch;
@@ -28,7 +28,7 @@ async function subscribe(){const r=await rpc('events/subscribe',subscription());
 async function queue(id='evt_test',text='Atha, merhaba'){seedEvent(id);await runtime.mcpQueueEvents(env,owner,room,[id],[{content:text}])}
 beforeEach(async()=>{
  sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');
- for(const path of ['schema.sql','replies.sql','events.sql','mcp.sql','mcp-diagnostics.sql','mcp-account.sql'])sql.exec(readFileSync(new URL('../worker/atha-sync/'+path,import.meta.url),'utf8'));
+ for(const path of ['schema.sql','replies.sql','events.sql','mcp.sql','mcp-diagnostics.sql','mcp-account.sql','dialogue.sql'])sql.exec(readFileSync(new URL('../worker/atha-sync/'+path,import.meta.url),'utf8'));
  db=new D1(sql);env={ATHA_SYNC_DB:db,GITHUB_SESSION_SECRET:'test-only-session-secret-with-more-than-32-characters',ATHA_MCP_CALLBACK_ORIGINS:'https://callbacks.openai.com'};
  sql.prepare('INSERT INTO atha_sync_rooms VALUES(?,?,?,?,?)').run(owner,room,'Test',JSON.stringify({version:1,title:'Test',items:[{role:'user',name:'Sen',content:'Atha selam',speakerId:'human'},{role:'assistant',name:'Google Gemini',content:'Merhaba',speakerId:'gemini'}]}),now());
  sql.prepare('INSERT INTO atha_mcp_grants(grant_id,owner_id,room_id,client_id,expires_at) VALUES(?,?,?,?,?)').run('grant_test',owner,room,'client_test',now()+86400000);
@@ -77,7 +77,7 @@ test('Dialogue stops after three Gemini turns, expires and suppresses replies af
   const parent='mcp_evt_round_'+i;
   sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,parent,'Gerçek Atha yanıtı',now()+i+1);
   const turn=await runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:parent}});
-  await runtime.finishCouncilDialogue(env,turn,'Kısa bir Gemini yanıtı.',null);
+  await runtime.finishCouncilDialogue(env,turn,'Kısa bir Gemini yanıtı '+i+'.',null);
  }
  sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,'mcp_evt_fourth','Sıradaki',now()+10);
  await assert.rejects(runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:'mcp_evt_fourth'}}),/limit/);
@@ -324,4 +324,82 @@ test('Account status never calls an unsynced local chat automatically connected'
  const status=await request('/api/atha-sync/status?room_id=local_only','GET',undefined,null,{cookie});const data=await status.json();
  assert.equal(data.accountScope,true);assert.equal(data.connection.oauthConnected,true);assert.equal(data.connection.eventSubscriptionActive,true);assert.equal(data.connection.privateCloudSync,false);assert.equal(data.connection.automaticParticipation,false);
  assert.equal(sql.prepare('SELECT room_id FROM atha_sync_rooms WHERE room_id=?').get('local_only'),undefined);
+});
+
+async function serverDialogueSetup(){
+ const {req}=await dialogueSetup();env.GOOGLE_CLIENT_ID='test';env.GOOGLE_CLIENT_SECRET='provider-test-secret-with-more-than-32-characters';
+ const key=await crypto.subtle.importKey('raw',await crypto.subtle.digest('SHA-256',new TextEncoder().encode(env.GOOGLE_CLIENT_SECRET)),'AES-GCM',false,['encrypt']);
+ const iv=crypto.getRandomValues(new Uint8Array(12));const encrypted=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(JSON.stringify({access_token:'provider-test-access',exp:now()+3600000})));
+ const google=Buffer.concat([Buffer.from(iv),Buffer.from(encrypted)]).toString('base64url');
+ const request=new Request(origin+'/api/atha-sync/rooms/'+room,{headers:{cookie:req.headers.get('cookie')+'; atlas_google='+google}});
+ const baseFetch=globalThis.fetch;let generations=0,unavailable=false;
+ globalThis.fetch=async(url,options)=>{
+  if(String(url).includes('generativelanguage.googleapis.com')){
+   if(unavailable)return new Response('unavailable',{status:503});
+   if(String(url).includes('pageSize'))return Response.json({models:[{name:'models/gemini-2.5-flash',supportedGenerationMethods:['generateContent']}]});
+   generations++;return Response.json({candidates:[{content:{parts:[{text:'Gemini gerçek sağlayıcı turu '+generations+'.'}]}}]});
+  }
+  return baseFetch(url,options);
+ };
+ assert.equal(await runtime.rememberCouncilDialogue(request,env,owner,room),true);
+ return {request,generations:()=>generations,setUnavailable:v=>{unavailable=v}};
+}
+test('Server hands Atha to Gemini and back for multiple turns without any browser polling',async()=>{
+ const h=await serverDialogueSetup();
+ // First real provider call is initiated by the server, with no UI involved.
+ await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),1);
+ let event=callbackCalls.at(-1).body.data;assert.equal(event.source,'controlled-dialogue');
+ for(let n=0;n<2;n++){
+  // A real authenticated ChatGPT client posts its own reply; that alone starts Gemini.
+  const reply=await rpc('tools/call',{name:'council_reply',arguments:{room_id:room,event_id:event.event_id,content:'Atha yanıtı '+n}});
+  assert.ok(reply.result,JSON.stringify(reply));assert.equal(h.generations(),n+2);
+  event=callbackCalls.at(-1).body.data;
+ }
+ await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),3,'same parent is never called twice');
+ const ciphertext=sql.prepare('SELECT cookie_cipher FROM atha_dialogue_sessions').get().cookie_cipher;
+ assert.doesNotMatch(ciphertext,/provider-test-access|gho_test/);
+ // Owner-scoped polling recovers both identities in chronological order.
+ const response=await request('/api/atha-sync/rooms/'+room+'/replies','GET',undefined,null,{cookie:h.request.headers.get('cookie')});
+ const data=await response.json();assert.equal(data.serverDialogue,true);assert.equal(data.replies.filter(r=>r.speakerId==='gemini').length,3);
+ assert.ok(data.replies.every((r,i)=>!i||r.createdAt>=data.replies[i-1].createdAt));
+});
+test('Failed provider calls retry without a user message and concurrent runners never duplicate',async()=>{
+ const h=await serverDialogueSetup();h.setUnavailable(true);
+ await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),0);
+ assert.equal(sql.prepare('SELECT attempts FROM atha_dialogue_sessions').get().attempts,1);
+ assert.equal(JSON.parse(sql.prepare("SELECT message_excerpt FROM atha_sync_events WHERE event_id LIKE 'evt_dlg_%'").get().message_excerpt).phase,'failed');
+ h.setUnavailable(false);sql.prepare('UPDATE atha_dialogue_sessions SET next_at=0').run();
+ await Promise.all([runtime.runCouncilDialogue(env,owner,room),runtime.runCouncilDialogue(env,owner,room)]);
+ assert.equal(h.generations(),1);assert.equal(callbackCalls.length,2);
+});
+test('Server dialogue respects pause, revoked subscriptions and expired authorization',async()=>{
+ const h=await serverDialogueSetup();
+ sql.prepare("UPDATE atha_mcp_participation SET mode='paused'").run();await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),0);
+ sql.prepare("UPDATE atha_mcp_participation SET mode='dialogue'").run();sql.prepare('UPDATE atha_mcp_grants SET revoked=1').run();await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),0);
+ sql.prepare('UPDATE atha_mcp_grants SET revoked=0').run();sql.prepare('UPDATE atha_dialogue_sessions SET expires_at=0').run();await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),0);
+});
+test('Repeated Gemini output stops the automatic chain instead of sending another event',async()=>{
+ const {req,body}=await dialogueSetup();let turn=await runtime.beginCouncilDialogue(req,env,body);
+ await runtime.finishCouncilDialogue(env,turn,'Aynı yanıt.',null);
+ sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,'mcp_evt_followup','Yeni Atha yanıtı.',now()+1);
+ turn=await runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:'mcp_evt_followup'}});
+ await assert.rejects(runtime.finishCouncilDialogue(env,turn,'Aynı yanıt.',null),/Repeating/);
+ assert.equal(sql.prepare('SELECT count(*) n FROM atha_mcp_delivery').get().n,1);
+});
+test('Server cannot reuse another room provider session or execute an expired turn',async()=>{
+ const h=await serverDialogueSetup();
+ const wrong=await runtime.mcpSeal(JSON.stringify({owner:'github:999',room,google:'private',github:'private'}),env);
+ sql.prepare('UPDATE atha_dialogue_sessions SET cookie_cipher=?').run(wrong);
+ await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),0);
+ assert.equal(sql.prepare('SELECT last_error FROM atha_dialogue_sessions').get().last_error,'SESSION_SCOPE');
+});
+test('First live user send in a new synced room triggers Atha once; history-only sync does not',async()=>{
+ await accountSubscription();
+ const cookie='atlas_copilot_session='+await runtime.encrypt('gho_test_token_1234567890',env.GITHUB_SESSION_SECRET);
+ const base=globalThis.fetch;globalThis.fetch=async(u,o)=>String(u)==='https://api.github.com/user'?Response.json({id:101}):base(u,o);
+ const headers={cookie,origin,'x-atha-sync':'1'},newRoom='first_live_room';
+ const body={consent:true,title:'Fresh',items:[{role:'user',name:'Sen',speakerId:'human',content:'Selam'}],live_turn:{request_id:'first_send_1234567890',content:'Selam'}};
+ let r=await request('/api/atha-sync/rooms/'+newRoom,'PUT',body,null,headers);assert.equal(r.status,200);assert.equal(callbackCalls.length,2);
+ await request('/api/atha-sync/rooms/'+newRoom,'PUT',body,null,headers);assert.equal(callbackCalls.length,2);
+ delete body.live_turn;await request('/api/atha-sync/rooms/history_import_room','PUT',body,null,headers);assert.equal(callbackCalls.length,2);
 });

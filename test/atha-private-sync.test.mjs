@@ -29,7 +29,7 @@ FakeD1.prototype.prepare=function(sql){
  const database=this;let args=[];
  const stmt={
   bind(...values){args=values;return stmt},
-  all:async()=>({results:sql.includes("FROM atha_sync_replies")?
+  all:async()=>({results:sql.includes("FROM atha_sync_events")?[...database.events.values()].filter(e=>e.owner_id===args[0]&&e.room_id===args[1]&&String(e.message_excerpt||'').startsWith('{"kind":"dialogue",')):sql.includes("FROM atha_sync_replies")?
    [...database.replies.values()].filter(r=>r.owner_id===args[0]&&r.room_id===args[1])
     .sort((a,b)=>b.created_at-a.created_at).slice(0,40).map(r=>({reply_id:r.reply_id,content:r.content,created_at:r.created_at})):
    [...database.rows.values()].filter(r=>r.owner_id===args[0])
