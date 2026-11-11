@@ -1,0 +1,27 @@
+name: Atha MCP OAuth and Events
+on:
+  pull_request:
+    paths:
+      - 'worker/production.js'
+      - 'worker/atha-sync/**'
+      - 'test/**'
+      - '.github/workflows/atha-mcp-events.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'worker/production.js'
+      - 'worker/atha-sync/**'
+      - 'test/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mcp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify OAuth, callback signatures, owner isolation, retries and cancellation with real SQLite
+        run: node --test test/*.test.mjs copilot-bridge/*.test.mjs

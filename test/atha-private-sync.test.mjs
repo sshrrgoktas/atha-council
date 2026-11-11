@@ -151,11 +151,11 @@ test("Client default is off, requires permission, keeps history, and supports de
  assert.match(html,/panel\.setAttribute\("aria-modal","true"\)/);
  assert.match(html,/accept\.onclick=\(\)=>finish\(true\)/);
  assert.match(html,/cancel\.onclick=\(\)=>finish\(false\)/);
- assert.match(html,/await fetch\("\/api\/atha-sync\/status"/);
+ assert.match(html,/await fetch\("\/api\/atha-sync\/status\?room_id="/);
  assert.match(html,/method:"DELETE",credentials:"same-origin"/);
  assert.match(html,/scheduleAthaSync\(c\.id\)/);
- assert.match(html,/GitHub hesabınla giriş gerekir/);
- assert.match(html,/ChatGPT'nin bu alana doğrudan erişimi henüz bağlanmadı/);
+ assert.match(html,/ChatGPT OAuth bağlantısı/);
+ assert.match(html,/Olay aboneliği/);
 });
 
 
