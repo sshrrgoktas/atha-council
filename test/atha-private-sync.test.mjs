@@ -8,7 +8,7 @@ const secret="test-sync-GitHub-session-secret-random-64-characters-long";
 const oldFetch=globalThis.fetch;
 
 class FakeD1 {
- constructor(){this.rows=new Map();this.replies=new Map()}
+ constructor(){this.rows=new Map();this.replies=new Map();this.events=new Map()}
  prepare(sql){
   let args=[];
   return {
@@ -36,9 +36,16 @@ FakeD1.prototype.prepare=function(sql){
     .sort((a,b)=>b.updated_at-a.updated_at).map(r=>({room_id:r.room_id,title:r.title,updated_at:r.updated_at}))}),
   first:async()=>{const r=database.rows.get(args[0]+"|"+args[1]);return r?sql.includes("SELECT room_id")?{room_id:r.room_id}:{title:r.title,snapshot:r.snapshot,updated_at:r.updated_at}:null},
   run:async()=>{
-   if(sql.startsWith("DELETE FROM atha_sync_replies")){
+   if(sql.startsWith("DELETE FROM atha_sync_events")){
+    for(const [k,v] of database.events)if(v.owner_id===args[0]&&v.room_id===args[1])database.events.delete(k);
+   }else if(sql.startsWith("DELETE FROM atha_sync_replies")){
     for(const [k,v] of database.replies)if(v.owner_id===args[0]&&v.room_id===args[1])database.replies.delete(k);
    }else if(sql.startsWith("DELETE"))database.rows.delete(args[0]+"|"+args[1]);
+   else if(sql.startsWith("INSERT OR IGNORE INTO atha_sync_events")){
+    const [owner_id,room_id,event_id,created_at]=args;
+    const key=owner_id+"|"+room_id+"|"+event_id;
+    if(!database.events.has(key))database.events.set(key,{owner_id,room_id,event_id,created_at,state:"pending"});
+   }
    else if(sql.startsWith("INSERT")){const [owner_id,room_id,title,snapshot,updated_at]=args;database.rows.set(owner_id+"|"+room_id,{owner_id,room_id,title,snapshot,updated_at})}
    else throw Error("Unexpected SQL");
    return {success:true};
@@ -179,4 +186,27 @@ test("Invitation uses short synced room command and reply inbox deduplicates sou
  assert.match(html,/stored\.has\(reply\.replyId\)/);
  assert.match(html,/source:"cloudflare-connector-user-approved"/);
  assert.match(html,/scheduleAthaSync\(roomId\)/);
+});
+
+test("Human messages are queued immediately, deduplicated and deleted with room",async()=>{
+ const path="/api/atha-sync/rooms/c99990000";
+ const base={consent:true,title:"Atha events test",items:[{role:"user",name:"Sen",content:"Selam",speakerId:"human"}]};
+ const first=await request(path,{method:"PUT",user:"1",body:base});
+ assert.equal(first.status,200);
+ assert.equal((await first.json()).queuedEvents,0,"First sync must not replay historic messages");
+ const withUser={...base,items:[...base.items,{role:"assistant",name:"Gemini",content:"Merhaba",speakerId:"gemini"},
+     {role:"user",name:"Sen",content:"Atha, nasılsın?",speakerId:"human"}]};
+ const next=await request(path,{method:"PUT",user:"1",body:withUser});
+ assert.equal((await next.json()).queuedEvents,1);
+ assert.equal(d1.events.size,1);
+ const retry=await request(path,{method:"PUT",user:"1",body:withUser});
+ assert.equal((await retry.json()).queuedEvents,0);
+ assert.equal(d1.events.size,1);
+ const model={...withUser,items:[...withUser.items,{role:"assistant",name:"Gemini",content:"Ben de buradayım",speakerId:"gemini"}]};
+ const modelResult=await request(path,{method:"PUT",user:"1",body:model});
+ assert.equal((await modelResult.json()).queuedEvents,0,"AI response cannot trigger another event");
+ assert.equal(d1.events.size,1);
+ const erase=await request(path,{method:"DELETE",user:"1"});
+ assert.equal(erase.status,200);
+ assert.equal(d1.events.size,0,"Revoked room consent removes queued events");
 });
