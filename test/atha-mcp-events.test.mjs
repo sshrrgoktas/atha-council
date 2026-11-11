@@ -36,7 +36,7 @@ beforeEach(async()=>{
  sql.prepare('INSERT INTO atha_mcp_tokens VALUES(?,?,?,?)').run(await runtime.mcpHash(access),'grant_test','access',now()+3600000);
  callbackCalls=[];
  globalThis.fetch=async(url,options={})=>{
-  assert.equal(String(url),'https://callbacks.openai.com/test');assert.equal(options.redirect,'error');
+  assert.equal(String(url),'https://callbacks.openai.com/test');assert.equal(options.redirect,'manual');
   const h=options.headers,b=JSON.parse(options.body),sig=createHmac('sha256',Buffer.from(secret.slice(6),'base64')).update(h['webhook-id']+'.'+h['webhook-timestamp']+'.'+options.body).digest('base64');
   assert.ok(h['webhook-signature'].split(' ').includes('v1,'+sig),'standard webhook signature must cover exact bytes');
   assert.ok(Math.abs(Number(h['webhook-timestamp'])-Date.now()/1000)<5);
@@ -170,4 +170,9 @@ test('Event diagnostics distinguish an arriving subscription without storing cal
  const text=JSON.stringify(diagnostic);assert.doesNotMatch(text,/private-path|never-store|whsec_/);
  assert.equal((await runtime.mcpStatus(env,owner,room)).eventDiagnostic.callback_origin,'https://callbacks.openai.com');
  sql.prepare('DELETE FROM atha_sync_rooms').run();assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_mcp_event_diagnostics').get().n,0);
+});
+
+test('Worker-compatible manual mode refuses callback redirects without following them',async()=>{
+ let calls=0;globalThis.fetch=async(url,options)=>{calls++;assert.equal(options.redirect,'manual');return new Response(null,{status:302,headers:{location:'https://evil.example/steal'}})};
+ const r=await rpc('events/subscribe',subscription());assert.equal(r.error.data.reason,'challenge_failed');assert.equal(calls,1);assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_mcp_subscriptions').get().n,0);
 });
