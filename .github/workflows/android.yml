@@ -1,8 +1,28 @@
 name: Atha Council Android APK and signed release
+# Atha Council web, Gemini, Copilot UI and ChatGPT handoff are served directly
+# by Cloudflare. Never publish a new Android APK for web-only changes.
 on:
   push:
     branches: [main]
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'settings.gradle.kts'
+      - 'build.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/android.yml'
   pull_request:
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'settings.gradle.kts'
+      - 'build.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/android.yml'
   workflow_dispatch:
 concurrency:
   group: atha-council-android-release

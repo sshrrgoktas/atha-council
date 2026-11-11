@@ -49,6 +49,7 @@ class MainActivity: Activity() {
  private lateinit var reply: TextView
  private lateinit var updateStatus: TextView
  private var downloadId: Long = -1L
+ private var downloadInProgress = false
  private var downloadReceiver: BroadcastReceiver? = null
  @Volatile private var accessToken: String? = null
  private val random=SecureRandom()
@@ -375,11 +376,13 @@ class MainActivity: Activity() {
     runOnUiThread{
      if(version>currentVersion()){
       updateStatus.text="Yeni sürüm var: #$version"
-      sendUpdateResult("available",version,"Yeni sürüm $version bulundu. Android kurulumu için onayın istenecek.")
-      android.app.AlertDialog.Builder(this).setTitle("Atha Council güncellemesi")
-       .setMessage("Yeni sürüm #$version indirilsin mi? Android kurulum için ayrıca onay isteyecek.")
-       .setNegativeButton("Sonra",null)
-       .setPositiveButton("Güncelle"){_,_->downloadUpdate(downloadUrl)}.show()
+      if(showCurrent){
+       sendUpdateResult("available",version,"Android sürümü $version hazır. İstersen indirip kurabilirsin.")
+       android.app.AlertDialog.Builder(this).setTitle("Atha Council Android güncellemesi")
+        .setMessage("Yeni Android sürümü #$version mevcut. Yalnızca yerel uygulama değiştiğinde indirilir. Kurulsun mu?")
+        .setNegativeButton("Şimdi değil",null)
+        .setPositiveButton("Bir kez indir"){_,_->downloadUpdate(downloadUrl,version)}.show()
+      }
      }else if(showCurrent){
       updateStatus.text="Uygulama güncel (sürüm ${currentVersion()})."
       sendUpdateResult("current",version,"Uygulaman güncel. Kurulu sürüm: ${currentVersion()}, yayınlanan sürüm: $version.")
@@ -391,34 +394,65 @@ class MainActivity: Activity() {
    }}
   }.start()
  }
- private fun downloadUpdate(url:String) {
+ private fun openDownloadedUpdate(manager:DownloadManager,id:Long) {
+  val uri=manager.getUriForDownloadedFile(id)
+  if(uri==null){updateStatus.text="APK dosyası bulunamadı; yeniden indirmeyi dene.";return}
+  try{
+   val install=Intent(Intent.ACTION_INSTALL_PACKAGE).setData(uri)
+    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+   startActivity(install)
+  }catch(e:Exception){updateStatus.text="Kurulum açılmadı. İndirme bildiriminden APK'yı aç."}
+ }
+ private fun downloadUpdate(url:String,version:Long) {
+  if(downloadInProgress){
+   updateStatus.text="APK zaten indiriliyor; ikinci kopya oluşturulmadı."
+   sendUpdateResult("checking",version,"APK zaten indiriliyor.")
+   return
+  }
   try{
    val uri=Uri.parse(url)
    if(uri.scheme!="https"||uri.host!="github.com")throw Exception("Güvenilmeyen indirme adresi")
-   val request=DownloadManager.Request(uri).setTitle("Atha Council güncellemesi")
-     .setDescription("Android APK indiriliyor")
-     .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-     .setDestinationInExternalFilesDir(this,Environment.DIRECTORY_DOWNLOADS,"atha-council-update.apk")
    val manager=getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+   val prefs=getPreferences(MODE_PRIVATE)
+   val previousVersion=prefs.getLong("last_atha_download_version",-1L)
+   val previousId=prefs.getLong("last_atha_download_id",-1L)
+   if(previousVersion==version && previousId>0){
+    manager.query(DownloadManager.Query().setFilterById(previousId))?.use{cursor->
+     if(cursor.moveToFirst()){
+      val state=cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+      if(state==DownloadManager.STATUS_SUCCESSFUL){
+       updateStatus.text="Bu sürüm daha önce indirildi; mevcut APK açılıyor."
+       openDownloadedUpdate(manager,previousId)
+       return
+      }
+      if(state==DownloadManager.STATUS_RUNNING||state==DownloadManager.STATUS_PENDING||state==DownloadManager.STATUS_PAUSED){
+       updateStatus.text="Bu sürüm zaten indiriliyor. Yeniden indirme başlatılmadı."
+       return
+      }
+     }
+    }
+   }
+   val request=DownloadManager.Request(uri).setTitle("Atha Council güncellemesi")
+     .setDescription("Android sürüm "+version+" indiriliyor")
+     .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+     .setDestinationInExternalFilesDir(this,Environment.DIRECTORY_DOWNLOADS,"atha-council-update-"+version+".apk")
+   downloadInProgress=true
    downloadId=manager.enqueue(request)
-   updateStatus.text="APK indiriliyor…"
-   downloadReceiver?.let{unregisterReceiver(it)}
+   prefs.edit().putLong("last_atha_download_version",version)
+    .putLong("last_atha_download_id",downloadId).apply()
+   updateStatus.text="Android sürüm "+version+" indiriliyor…"
+   downloadReceiver?.let{try{unregisterReceiver(it)}catch(_:Exception){}}
    downloadReceiver=object:BroadcastReceiver(){
     override fun onReceive(context:Context,intent:Intent){
      if(intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID,-1L)!=downloadId)return
-     val query=DownloadManager.Query().setFilterById(downloadId)
-     manager.query(query)?.use{cursor->
+     downloadInProgress=false
+     manager.query(DownloadManager.Query().setFilterById(downloadId))?.use{cursor->
       if(cursor.moveToFirst()){
        val state=cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
        if(state==DownloadManager.STATUS_SUCCESSFUL){
-        updateStatus.text="İndirme tamamlandı. Kurulumu onayla."
-        val apkUri=manager.getUriForDownloadedFile(downloadId)
-        if(apkUri!=null){
-         val install=Intent(Intent.ACTION_INSTALL_PACKAGE).setData(apkUri)
-          .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-         try{startActivity(install)}catch(e:Exception){updateStatus.text="İndirildi. İndirme bildiriminden APK'yı aç."}
-        }
-       }else updateStatus.text="APK indirilemedi."
+        updateStatus.text="İndirme tamamlandı. Android kurulumuna onay ver."
+        openDownloadedUpdate(manager,downloadId)
+       }else updateStatus.text="APK indirilemedi; yeniden deneyebilirsin."
       }
      }
      try{unregisterReceiver(this)}catch(_:Exception){}
@@ -428,7 +462,10 @@ class MainActivity: Activity() {
    val filter=IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
    if(Build.VERSION.SDK_INT>=33)registerReceiver(downloadReceiver,filter,Context.RECEIVER_NOT_EXPORTED)
    else @Suppress("DEPRECATION") registerReceiver(downloadReceiver,filter)
-  }catch(e:Exception){updateStatus.text="Güncelleme indirilemedi: ${e.message}"}
+  }catch(e:Exception){
+   downloadInProgress=false
+   updateStatus.text="Güncelleme indirilemedi: "+e.message
+  }
  }
  override fun onCreateOptionsMenu(menu:Menu):Boolean {
   menu.add(0,100,0,"Bağlantılar ve güncellemeler")
