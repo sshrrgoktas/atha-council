@@ -25,17 +25,18 @@ async function ask(){
 const htmlError=()=>new Response("<!DOCTYPE html><title>upstream unavailable</title>",{status:503,headers:{"content-type":"text/html"}});
 const modelList=()=>Response.json({models:[{name:"models/gemini-2.5-flash",supportedGenerationMethods:["generateContent"]}]});
 
-test("Google model listing HTML failures produce sanitized JSON API errors",async()=>{
+test("Google model listing HTML failures still trigger safe candidate retries and JSON errors",async()=>{
   const realFetch=globalThis.fetch;
-  globalThis.fetch=async()=>htmlError();
+  let attempted=0;
+  globalThis.fetch=async url=>{if(!String(url).includes("pageSize=100"))attempted++;return htmlError()};
   try{
     const response=await ask();
     assert.equal(response.status,502);
     assert.match(response.headers.get("content-type")||"",/application\/json/);
     const body=await response.json();
-    assert.equal(body.code,"GEMINI_UPSTREAM_UNAVAILABLE");
-    assert.equal(body.stage,"listModels");
+    assert.equal(body.stage,"generateContent");
     assert.equal(body.retryable,true);
+    assert.equal(attempted,3);
     assert.doesNotMatch(JSON.stringify(body),/DOCTYPE|access-in-test-not-real|local-test-secret/i);
   }finally{globalThis.fetch=realFetch}
 });
@@ -61,6 +62,48 @@ test("Valid Gemini JSON replies are still delivered with real provider identity"
     assert.equal(result.identity,"Google Gemini");
     assert.equal(result.text,"Merhaba! 🌷");
     assert.equal(result.complete,true);
+  }finally{globalThis.fetch=realFetch}
+});
+test("When the fastest Gemini model is unavailable, another authorized fast model answers",async()=>{
+  const realFetch=globalThis.fetch;
+  const attempts=[];
+  globalThis.fetch=async url=>{
+    const u=String(url);
+    if(u.includes("pageSize=100"))return Response.json({models:[
+      {name:"models/gemini-3.8-flash",supportedGenerationMethods:["generateContent"]},
+      {name:"models/gemini-3.5-flash-lite",supportedGenerationMethods:["generateContent"]},
+      {name:"models/gemini-3.5-flash",supportedGenerationMethods:["generateContent"]},
+      {name:"models/gemini-3.5-flash-preview",supportedGenerationMethods:["generateContent"]}
+    ]});
+    attempts.push(u);
+    if(attempts.length===1)return Response.json({error:{status:"NOT_FOUND",message:"No access"}},{status:404});
+    return Response.json({candidates:[{content:{parts:[{text:"Merhaba, buradayım! 💚"}]}}]});
+  };
+  try{
+    const response=await ask();
+    assert.equal(response.status,200);
+    const result=await response.json();
+    assert.equal(result.text,"Merhaba, buradayım! 💚");
+    assert.equal(result.model,"gemini-3.8-flash");
+    assert.equal(attempts.length,2);
+    assert.ok(attempts[0].includes("gemini-3.5-flash-lite"));
+    assert.ok(attempts[1].includes("gemini-3.8-flash"));
+  }finally{globalThis.fetch=realFetch}
+});
+test("Gemini model list failure does not block successful direct model response",async()=>{
+  const realFetch=globalThis.fetch;
+  let count=0;
+  globalThis.fetch=async url=>{
+    if(String(url).includes("pageSize=100"))return htmlError();
+    count++;
+    return Response.json({candidates:[{content:{parts:[{text:"Yedek hızlı model çalıştı."}]}}]});
+  };
+  try{
+    const response=await ask();
+    assert.equal(response.status,200);
+    const data=await response.json();
+    assert.equal(data.text,"Yedek hızlı model çalıştı.");
+    assert.equal(count,1);
   }finally{globalThis.fetch=realFetch}
 });
 test("Browser catches HTML responses before attempting JSON parse",()=>{
