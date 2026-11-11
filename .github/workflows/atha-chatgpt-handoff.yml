@@ -4,6 +4,7 @@ on:
     paths:
       - 'worker/production.js'
       - 'test/atha-chatgpt-handoff.test.mjs'
+      - 'test/optional-models.test.mjs'
       - '.github/workflows/atha-chatgpt-handoff.yml'
   workflow_dispatch:
 permissions:
@@ -17,4 +18,4 @@ jobs:
         with:
           node-version: '22'
       - name: Check Atha invitation, privacy, chat provenance and conversation scope
-        run: node --test test/atha-chatgpt-handoff.test.mjs
+        run: node --test test/atha-chatgpt-handoff.test.mjs test/optional-models.test.mjs
