@@ -176,3 +176,16 @@ test('Worker-compatible manual mode refuses callback redirects without following
  let calls=0;globalThis.fetch=async(url,options)=>{calls++;assert.equal(options.redirect,'manual');return new Response(null,{status:302,headers:{location:'https://evil.example/steal'}})};
  const r=await rpc('events/subscribe',subscription());assert.equal(r.error.data.reason,'challenge_failed');assert.equal(calls,1);assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_mcp_subscriptions').get().n,0);
 });
+test('Owner-only live probe uses the real sync/event path, labels tests, rejects CSRF and deduplicates',async()=>{
+ await subscribe();const cookie='atlas_copilot_session='+await runtime.encrypt('gho_test_token_1234567890',env.GITHUB_SESSION_SECRET);
+ const original=globalThis.fetch;globalThis.fetch=async(url,options)=>String(url)==='https://api.github.com/user'?Response.json({id:101}):original(url,options);
+ assert.equal((await request('/mcp/check?room_id='+room,'GET',undefined,null)).status,401);
+ assert.equal((await request('/mcp/check?room_id=foreign_room','GET',undefined,null,{cookie})).status,404);
+ const page=await request('/mcp/check?room_id='+room,'GET',undefined,null,{cookie});assert.equal(page.status,200);const html=await page.text();assert.match(html,/Test 1 mesajını gönder/);
+ const proof=html.match(/name="proof" value="([^"]+)"/)[1],csrf=page.headers.get('set-cookie').split(';')[0];
+ const send=(site=origin)=>request('/mcp/check','POST',new URLSearchParams({proof,probe:'1'}).toString(),null,{cookie:cookie+'; '+csrf,origin:site});
+ assert.equal((await send('https://evil.example')).status,403);assert.equal((await send()).status,303);
+ assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_sync_events').get().n,1);assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_mcp_delivery').get().n,1);
+ const snapshot=JSON.parse(sql.prepare('SELECT snapshot FROM atha_sync_rooms').get().snapshot);assert.match(snapshot.items.at(-1).name,/kullanıcı onaylı/);assert.equal(snapshot.items[1].speakerId,'gemini');
+ assert.equal((await send()).status,303);assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_sync_events').get().n,1);
+});
