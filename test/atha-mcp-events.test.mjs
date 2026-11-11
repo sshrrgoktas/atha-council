@@ -141,6 +141,9 @@ test('Existing GitHub login authorizes exactly one synced room, rejects CSRF and
  const registration=await (await request('/mcp/oauth/register','POST',{redirect_uris:['https://chatgpt.com/connector_platform_oauth_redirect']})).json();
  const authUrl='/mcp/oauth/authorize?'+new URLSearchParams({client_id:registration.client_id,redirect_uri:'https://chatgpt.com/connector_platform_oauth_redirect',response_type:'code',resource,state:'test_state',code_challenge:'k'.repeat(43),code_challenge_method:'S256',scope:'council:read council:reply council:events'});
  const page=await request(authUrl,'GET',undefined,null,{cookie});assert.equal(page.status,200);
+ // no-referrer makes Chrome form navigations send Origin:null, which the strict CSRF guard must reject.
+ assert.equal(page.headers.get('referrer-policy'),'same-origin');
+ assert.match(page.headers.get('content-security-policy'),/form-action 'self'/);
  const html=await page.text();assert.match(html,/Test/);const form=html.match(/name="request" value="([^"]+)"/)[1];const csrf=page.headers.get('set-cookie').split(';')[0];
  const submit=(room_id,headers={})=>request('/mcp/oauth/authorize','POST',new URLSearchParams({request:form,room_id}).toString(),null,{cookie:cookie+'; '+csrf,origin,...headers});
  assert.equal((await submit('foreign_room')).status,403);assert.equal((await submit(room,{origin:'https://evil.example'})).status,403);
