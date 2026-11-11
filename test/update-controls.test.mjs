@@ -35,8 +35,9 @@ test("New native update bridge reports actual installed version and all result s
   assert.match(kotlin,/layout\.addView\(councilWeb,LinearLayout\.LayoutParams\(-1,-1\)\)/);
 });
 
-test("Legacy Android APK offers a real signed release link rather than a dead hidden menu",()=>{
-  assert.match(html,/id="legacyUpdateRow" hidden/);
+test("Every Android APK offers a visible recovery download link",()=>{
+  assert.match(html,/id="legacyUpdateRow" style=/);
+  assert.doesNotMatch(html,/id="legacyUpdateRow" hidden/);
   assert.match(html,/id="legacyUpdateLink"/);
   assert.match(html,/href="https:\/\/github\.com\/sshrrgoktas\/atha-council\/releases\/download\/latest-debug\/atha-council\.apk"/);
   assert.match(html,/window\.AtlasNative&&typeof window\.AtlasNative\.openUpdates!=='function'/);
