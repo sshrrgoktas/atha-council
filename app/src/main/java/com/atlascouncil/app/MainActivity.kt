@@ -11,6 +11,7 @@ import android.graphics.Color
 import android.webkit.WebView
 import android.webkit.CookieManager
 import android.webkit.WebViewClient
+import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebResourceRequest
 import android.webkit.JavascriptInterface
@@ -226,6 +227,9 @@ class MainActivity: Activity() {
    settings.cacheMode=WebSettings.LOAD_NO_CACHE
    clearHistory()
    clearCache(true)
+   // Enable standard JavaScript confirmation/alert dialogs inside Android WebView.
+   // Without WebChromeClient, window.confirm() silently returns false.
+   webChromeClient=WebChromeClient()
    webViewClient=object:WebViewClient(){
     override fun shouldOverrideUrlLoading(view:WebView?,request:WebResourceRequest?):Boolean{
      val u=request?.url?:return false

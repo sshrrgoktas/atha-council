@@ -129,7 +129,13 @@ test("Client default is off, requires permission, keeps history, and supports de
  assert.match(html,/id="athaSyncEnable"/);
  assert.match(html,/id="athaSyncDelete"/);
  assert.match(html,/enabledAthaSyncRooms=new Set/);
- assert.match(html,/if\(!confirm\("Yalnızca/);
+ assert.match(html,/function confirmAthaSyncAction\(title,message,approveLabel\)/);
+ assert.match(html,/if\(!await confirmAthaSyncAction\("Özel sohbet eşitleme izni"/);
+ assert.match(html,/if\(!await confirmAthaSyncAction\("Buluttaki kopyayı sil"/);
+ assert.doesNotMatch(html,/if\(!confirm\("Yalnızca/);
+ assert.match(html,/panel\.setAttribute\("aria-modal","true"\)/);
+ assert.match(html,/accept\.onclick=\(\)=>finish\(true\)/);
+ assert.match(html,/cancel\.onclick=\(\)=>finish\(false\)/);
  assert.match(html,/await fetch\("\/api\/atha-sync\/status"/);
  assert.match(html,/method:"DELETE",credentials:"same-origin"/);
  assert.match(html,/scheduleAthaSync\(c\.id\)/);
