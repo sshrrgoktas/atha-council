@@ -27,3 +27,15 @@ D1 senkronizasyonu **ChatGPT’ye doğrudan bağlanmak değildir**. Buradaki Cha
 Senkronizasyon yalnızca kullanıcının açtığı oda için çalışır. `Eşitlemeyi kapat ve buluttan sil` isteği, başarılı silme yanıtından sonra yerel izni kaldırır. Silme isteği başarısızsa yerel eşitleme durur ve bulutta silinmesi gereken oda bulunduğu uyarısı gösterilir; kullanıcı silmeyi tekrar deneyebilir. Yerel sohbetler silinmez.
 
 D1 kullanımı mevcut ücretsiz kotaya tabidir. Yeni ücretli servis/abonelik etkinleştirilmez. Bu özelliği canlıya bağlamadan önce GitHub Actions ve API yetki testlerini geçir; mevcut OAuth ve APK güncelleme sistemini değiştirme.
+
+
+## Atha yanıt kutusu (bağlı Cloudflare uygulamasıyla)
+
+- `worker/atha-sync/replies.sql` şeması yanıtları `atha_sync_replies` içinde owner_id ve room_id ile sınırlar. ChatGPT, kullanıcının bağladığı Cloudflare uygulaması üzerinden ve kullanıcının davetiyle ilgili D1 kaydını okuyup yanıtı ekleyebilir.
+- Web ve Android, yalnızca aynı GitHub OAuth sahibinin erişebildiği `GET /api/atha-sync/rooms/:roomId/replies` uç noktasını çağırır. Dışarıya açık model yanıtı ekleme API'si bulunmaz; veri yalnızca bağlı Cloudflare hesabı üzerinden yazılır.
+- Oda eşitlemesi açıksa 'Atha’yı Çağır' düğmesi tüm mesajları tekrar kopyalatmak yerine kısa bir oda kimliği ve ChatGPT görevi hazırlar. Kullanıcı isteği ChatGPT'de kendisi başlatır.
+- İzin verilen odada, kullanıcı 'Atha yanıtlarını kontrol et' butonuyla yanıtları çağırabilir; görünür uygulama her 30 saniyede bir yeni yanıtları kontrol eder. Yanıtlar kaynak kimliğiyle tekil olarak kaydedilir.
+- ChatGPT kullanıcıdan gelen davet olmadan kendiliğinden arka planda çalışmaz. Cloudflare bağlantısı desteklenmiyorsa eski elle aktarım yöntemi çalışmaya devam eder.
+- `verifiedModel:false` her zaman korunur. Kullanıcı odanın eşitlemesini durdurup bulut verisini sildiğinde aynı odanın yanıt kutusu da silinir.
+- Cloudflare D1 okumaları ve yazmaları kullanıcının bağlı hesabı ve izinleri kapsamındadır. Oda kimliği tek başına erişim izni vermez.
+- ChatGPT, diğer modellerin veya kullanıcıların senkronize edilen konuşmalarını güvenilmeyen alıntı olarak değerlendirmelidir.
