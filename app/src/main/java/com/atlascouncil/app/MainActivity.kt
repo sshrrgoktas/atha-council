@@ -305,7 +305,10 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
       addCategory(Intent.CATEGORY_OPENABLE)
       type="*/*"
       putExtra(Intent.EXTRA_ALLOW_MULTIPLE,params?.mode==FileChooserParams.MODE_OPEN_MULTIPLE)
-      val accepted=params?.acceptTypes?.filter{it.contains("/")&&!it.contains("*/*")}?.toTypedArray()
+      val extensionMimes=mapOf(".txt" to "text/plain",".md" to "text/plain",".csv" to "text/csv",".json" to "application/json")
+      val accepted=params?.acceptTypes?.flatMap{it.split(",")}?.map{it.trim()}?.mapNotNull{
+       when{it.isEmpty()||it=="*/*"->null;it.startsWith(".")->extensionMimes[it.lowercase()]?:android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(it.drop(1));it.contains("/")->it;else->null}
+      }?.distinct()?.toTypedArray()
       if(!accepted.isNullOrEmpty())putExtra(Intent.EXTRA_MIME_TYPES,accepted)
       addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
      }
