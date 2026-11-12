@@ -41,6 +41,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify unified mobile shell contracts
         run: node --test test/unified-mobile.test.mjs
+      - name: Check actual mobile work UI in Chrome
+        run: node test/work-ui-smoke.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: athalai-work-ui-preview
+          path: ui-preview/*.png
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

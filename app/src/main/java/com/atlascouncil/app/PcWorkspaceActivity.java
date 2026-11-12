@@ -149,6 +149,9 @@ public class PcWorkspaceActivity extends Activity {
         web.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){
                 String url=request.getUrl().toString();
+                if(request.isForMainFrame()&&("athalai://theme/light".equals(url)||"athalai://theme/dark".equals(url))){
+                    String theme=url.endsWith("/light")?"light":"dark";getSharedPreferences("athalai-appearance",MODE_PRIVATE).edit().putString("theme",theme).apply();return true;
+                }
                 if(request.isForMainFrame()&&"athalai://council".equals(url)){finish();return true;}
                 if(request.isForMainFrame()&&"athalai://connection".equals(url)){web.stopLoading();loadGeneration++;showWelcome("");return true;}
                 if(ConnectionPolicy.sameOrigin(server,url))return false;
@@ -170,7 +173,7 @@ public class PcWorkspaceActivity extends Activity {
             @Override public void onPageFinished(WebView view,String url){
                 if(generation!=loadGeneration||failed||!ConnectionPolicy.sameOrigin(server,url))return;
                 loading.setVisibility(View.GONE);nativeBar.setVisibility(View.GONE);
-                try { java.io.InputStream input=getAssets().open("workspace-shell.js");java.io.ByteArrayOutputStream output=new java.io.ByteArrayOutputStream();byte[] buffer=new byte[4096];int count;while((count=input.read(buffer))!=-1)output.write(buffer,0,count);input.close();view.evaluateJavascript(new String(output.toByteArray(),java.nio.charset.StandardCharsets.UTF_8),null); }
+                try { java.io.InputStream input=getAssets().open("workspace-shell.js");java.io.ByteArrayOutputStream output=new java.io.ByteArrayOutputStream();byte[] buffer=new byte[4096];int count;while((count=input.read(buffer))!=-1)output.write(buffer,0,count);input.close();view.evaluateJavascript(new String(output.toByteArray(),java.nio.charset.StandardCharsets.UTF_8),null);String theme=getSharedPreferences("athalai-appearance",MODE_PRIVATE).getString("theme","dark");view.evaluateJavascript("window.athaApplyTheme&&window.athaApplyTheme("+org.json.JSONObject.quote(theme)+")",null); }
                 catch(java.io.IOException ignored){ }
                 view.setVisibility(View.VISIBLE);CookieManager.getInstance().flush();
             }
