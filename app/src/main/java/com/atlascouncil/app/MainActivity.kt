@@ -112,11 +112,13 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
     if(page.scheme=="https"&&page.host=="atlas-council.sshrrgoktas.workers.dev"&&page.path=="/council-v2")getSharedPreferences("athalai-appearance",MODE_PRIVATE).edit().putString("theme",value).apply()
    }
   }
-  @JavascriptInterface fun openWorkspace(){
+  @JavascriptInterface fun openWorkspace(){openWorkspaceView("chats")}
+  @JavascriptInterface fun openWorkspaceView(view:String){
+   if(view!="new"&&view!="chats")return
    runOnUiThread {
     val page=Uri.parse(councilWeb.url?:"")
     if(page.scheme!="https"||page.host!="atlas-council.sshrrgoktas.workers.dev"||page.path!="/council-v2")return@runOnUiThread
-    startActivity(Intent(this@MainActivity,PcWorkspaceActivity::class.java))
+    startActivity(Intent(this@MainActivity,PcWorkspaceActivity::class.java).putExtra("workspace_view",view))
    }
   }
   @JavascriptInterface fun startSpeech(id:String,content:String){

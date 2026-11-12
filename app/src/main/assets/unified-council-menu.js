@@ -4,15 +4,29 @@
   window.athaApplyTheme=theme=>{document.documentElement.dataset.athaTheme=theme==='light'?'light':'dark';const button=document.getElementById('atha-council-theme');if(button)button.textContent=theme==='light'?'☾ Koyu temaya geç':'☀ Açık temaya geç';};
   const drawer = document.getElementById('drawer');
   if (!drawer || document.getElementById('atha-pc-workspace')) return;
-  const button = document.createElement('button');
-  button.id = 'atha-pc-workspace';
-  button.type = 'button';
-  button.textContent = '⌘ Bilgisayarda çalış';
-  button.addEventListener('click', () => {
-    if (window.AtlasNative && typeof window.AtlasNative.openWorkspace === 'function') window.AtlasNative.openWorkspace();
-  });
+  const workSection=document.createElement('section');workSection.id='atha-workspace-menu';
+  const workHeading=document.createElement('h3');workHeading.textContent='AthalAI Çalışmaları';workSection.append(workHeading);
+  function openWork(view){
+    document.getElementById('closeDrawer')?.click();
+    if(window.AtlasNative&&typeof window.AtlasNative.openWorkspaceView==='function')window.AtlasNative.openWorkspaceView(view);
+    else if(window.AtlasNative&&typeof window.AtlasNative.openWorkspace==='function')window.AtlasNative.openWorkspace();
+  }
+  const button=document.createElement('button');button.id='atha-pc-workspace';button.type='button';button.textContent='＋ Yeni çalışma';button.addEventListener('click',()=>openWork('new'));workSection.append(button);
+  const list=document.createElement('button');list.id='atha-workspace-list';list.type='button';list.textContent='☷ Çalışma sohbetleri';list.addEventListener('click',()=>openWork('chats'));workSection.append(list);
+  const profile=document.getElementById('profileLabel');if(profile)profile.before(workSection);else drawer.append(workSection);
+  const exportIds=['exportCurrent','exportCurrentJson','drawerBackup','importChats'];
+  const first=document.getElementById(exportIds[0]);
+  if(first){
+    const group=document.createElement('section');group.id='atha-backup-menu';
+    const toggle=document.createElement('button');toggle.type='button';toggle.textContent='↗ Yedekleme ve dışa aktarma';toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-controls','atha-backup-actions');
+    const actions=document.createElement('div');actions.id='atha-backup-actions';actions.hidden=true;actions.setAttribute('role','group');actions.setAttribute('aria-label','Yedekleme ve dışa aktarma seçenekleri');
+    toggle.addEventListener('click',()=>{actions.hidden=!actions.hidden;toggle.setAttribute('aria-expanded',String(!actions.hidden));});
+    first.before(group);group.append(toggle,actions);
+    for(const id of exportIds){const action=document.getElementById(id);if(action)actions.append(action);}
+  }
   const themeButton=document.createElement('button');themeButton.id='atha-council-theme';themeButton.type='button';themeButton.addEventListener('click',()=>{const next=document.documentElement.dataset.athaTheme==='light'?'dark':'light';window.athaApplyTheme(next);if(window.AtlasNative&&typeof window.AtlasNative.setTheme==='function')window.AtlasNative.setTheme(next);});drawer.append(themeButton);
   window.athaApplyTheme(window.AtlasNative&&typeof window.AtlasNative.theme==='function'?window.AtlasNative.theme():'dark');
   const heading = Array.from(drawer.querySelectorAll('h3')).find(node => node.textContent === 'Çalışma alanı');
-  if (heading) heading.after(button); else drawer.prepend(button);
+  if(heading)heading.textContent='Konsey';
+  const newCouncil=document.getElementById('drawerNewChat');if(newCouncil)newCouncil.textContent='＋ Yeni konsey sohbeti';
 })();
