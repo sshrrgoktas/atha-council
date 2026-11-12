@@ -1,5 +1,7 @@
 # Atha Council MCP Events — deployment and account handoff
 
+2026-11-12 receipt/retry proposal: see [REPLY-ACK-REVIEW.md](REPLY-ACK-REVIEW.md). The deployment notes below include historical setup observations; transport acceptance alone does not prove a Work reply. Apply `mcp-receipts.sql` before the receipt-aware Worker, only after approval.
+
 Status: installed ChatGPT plugin; Selam room OAuth and real MCP read/status calls verified. Event subscription still fails in the ChatGPT task service; automatic participation is not active. No paid inference API.
 
 ## Endpoint and OAuth

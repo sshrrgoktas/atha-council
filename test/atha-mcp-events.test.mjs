@@ -28,7 +28,7 @@ async function subscribe(){const r=await rpc('events/subscribe',subscription());
 async function queue(id='evt_test',text='Atha, merhaba'){seedEvent(id);await runtime.mcpQueueEvents(env,owner,room,[id],[{content:text}])}
 beforeEach(async()=>{
  sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');
- for(const path of ['schema.sql','replies.sql','events.sql','mcp.sql','mcp-diagnostics.sql','mcp-account.sql','dialogue.sql'])sql.exec(readFileSync(new URL('../worker/atha-sync/'+path,import.meta.url),'utf8'));
+ for(const path of ['schema.sql','replies.sql','events.sql','mcp.sql','mcp-receipts.sql','mcp-diagnostics.sql','mcp-account.sql','dialogue.sql'])sql.exec(readFileSync(new URL('../worker/atha-sync/'+path,import.meta.url),'utf8'));
  db=new D1(sql);env={ATHA_SYNC_DB:db,GITHUB_SESSION_SECRET:'test-only-session-secret-with-more-than-32-characters',ATHA_MCP_CALLBACK_ORIGINS:'https://callbacks.openai.com'};
  sql.prepare('INSERT INTO atha_sync_rooms VALUES(?,?,?,?,?)').run(owner,room,'Test',JSON.stringify({version:1,title:'Test',items:[{role:'user',name:'Sen',content:'Atha selam',speakerId:'human'},{role:'assistant',name:'Google Gemini',content:'Merhaba',speakerId:'gemini'}]}),now());
  sql.prepare('INSERT INTO atha_mcp_grants(grant_id,owner_id,room_id,client_id,expires_at) VALUES(?,?,?,?,?)').run('grant_test',owner,room,'client_test',now()+86400000);
@@ -452,4 +452,96 @@ test('Single-quoted user examples never pause the server or cancel pending deliv
   assert.equal(sql.prepare('SELECT mode FROM atha_mcp_participation').get().mode,'dialogue');
  }
  await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,6,'original pending event and quoted examples all delivered');
+});
+
+// Receipt-aware regression cases: no real model/provider calls or live account writes.
+const deliveryRow=()=>sql.prepare('SELECT * FROM atha_mcp_delivery').get();
+const replyArgs={room_id:room,event_id:'evt_test',content:'Isolated test reply.'};
+const saveReply=(a=replyArgs)=>rpc('tools/call',{name:'council_reply',arguments:a});
+const forceDue=()=>sql.prepare('UPDATE atha_mcp_delivery SET next_at=?').run(now()-1);
+test('2xx waits for a real reply and redelivers the same signed event after the grace period',async()=>{
+ await subscribe();await queue();await runtime.mcpDeliver(env);
+ const d=deliveryRow();assert.equal(d.state,'accepted');assert.ok(d.next_at>=now()+299000);
+ const status=await runtime.mcpStatus(env,owner,room);assert.equal(status.responseProgress.state,'accepted');assert.ok(status.responseProgress.accepted_at);assert.equal(status.responseProgress.reply_saved_at,null);
+ await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,2);
+ forceDue();await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,3);
+ assert.equal(callbackCalls[1].headers['webhook-id'],callbackCalls[2].headers['webhook-id']);assert.deepEqual(callbackCalls[1].body,callbackCalls[2].body);
+ assert.equal(deliveryRow().attempts,2);assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,0);
+});
+test('Only a persisted council_reply acknowledges completion and stops retries',async()=>{
+ await subscribe();await queue();await runtime.mcpDeliver(env);assert.ok((await saveReply()).result);
+ assert.equal(deliveryRow().state,'replied');const c=sql.prepare('SELECT * FROM atha_mcp_receipts').get();assert.ok(c.accepted_at);assert.ok(c.reply_saved_at);
+ forceDue();await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,2);
+ assert.ok((await saveReply()).result);assert.ok((await saveReply({...replyArgs,content:'Conflicting text'})).error);
+ assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,1);
+});
+test('A reply during an in-flight callback cannot be overwritten by transport acceptance',async()=>{
+ await subscribe();await queue();globalThis.fetch=async()=>{assert.ok((await saveReply()).result);return new Response(null,{status:204})};
+ await runtime.mcpDeliver(env);assert.equal(deliveryRow().state,'replied');assert.ok(sql.prepare('SELECT reply_saved_at FROM atha_mcp_receipts').get().reply_saved_at);
+});
+test('Pause during an in-flight callback cannot be overwritten, and late replies are rejected',async()=>{
+ await subscribe();await queue();globalThis.fetch=async()=>{await rpc('tools/call',{name:'council_participation',arguments:{room_id:room,mode:'paused'}});return new Response(null,{status:204})};
+ await runtime.mcpDeliver(env);assert.equal(deliveryRow().state,'cancelled');assert.ok((await saveReply()).error);
+ assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,0);
+});
+test('Accepted events retry at most six times and then expose unanswered without pausing the room',async()=>{
+ await subscribe();await queue();for(let i=0;i<6;i++){forceDue();await runtime.mcpDeliver(env)}
+ assert.equal(deliveryRow().state,'accepted');assert.equal(deliveryRow().attempts,6);
+ forceDue();await runtime.mcpDeliver(env);assert.equal(deliveryRow().state,'unanswered');assert.equal(callbackCalls.length,7);
+ assert.equal((await runtime.mcpStatus(env,owner,room)).automaticParticipation,true);
+ assert.ok((await saveReply()).result,'late genuine reply can complete an exhausted event');assert.equal(deliveryRow().state,'replied');
+});
+test('Read an exact old event and reply outside the recent twenty-event window',async()=>{
+ await subscribe();await queue();await runtime.mcpDeliver(env);await saveReply();
+ for(let i=0;i<25;i++)sql.prepare('INSERT INTO atha_sync_events(owner_id,room_id,event_id,created_at) VALUES(?,?,?,?)').run(owner,room,'evt_recent_'+i,now()+i+1);
+ const r=await rpc('tools/call',{name:'council_read',arguments:{room_id:room,event_id:'evt_test'}});
+ assert.equal(r.result.structuredContent.events.length,1);assert.equal(r.result.structuredContent.events[0].event_id,'evt_test');assert.equal(r.result.structuredContent.events[0].delivery.state,'replied');assert.equal(r.result.structuredContent.replies[0].reply_id,'mcp_evt_test');
+ const foreign=await rpc('tools/call',{name:'council_read',arguments:{room_id:room,event_id:'evt_foreign'}});assert.deepEqual(foreign.result.structuredContent.events,[]);
+ assert.ok((await rpc('tools/call',{name:'council_read',arguments:{room_id:room,event_id:'invalid'}})).error);
+});
+test('Revocation, expiry, stop and account permission removal cancel accepted deliveries',async()=>{
+ for(const action of ['revoke','expire','stop','account']){
+  sql.prepare('DELETE FROM atha_mcp_delivery').run();sql.prepare('UPDATE atha_mcp_grants SET revoked=0').run();sql.prepare('DELETE FROM atha_mcp_participation').run();
+  await subscribe();await queue();await runtime.mcpDeliver(env);assert.equal(deliveryRow().state,'accepted');
+  if(action==='revoke')sql.prepare('UPDATE atha_mcp_grants SET revoked=1').run();
+  if(action==='expire')sql.prepare('UPDATE atha_mcp_subscriptions SET expires_at=0').run();
+  if(action==='stop')await runtime.mcpQueueEvents(env,owner,room,['evt_stop'],[{role:'user',content:'Artık susalım'}]);
+  if(action==='account'){sql.prepare('INSERT OR IGNORE INTO atha_mcp_account_subscriptions VALUES(?)').run(deliveryRow().subscription_id)}
+  const n=callbackCalls.length;forceDue();await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,n);assert.equal(deliveryRow().state,'cancelled');
+ }
+});
+test('Legacy delivered events remain unchanged and are never automatically replayed',async()=>{
+ await subscribe();await queue();sql.prepare("UPDATE atha_mcp_delivery SET state='delivered',attempts=1,next_at=?").run(now()-1);
+ sql.exec(readFileSync(new URL('../worker/atha-sync/mcp-receipts.sql',import.meta.url),'utf8'));
+ await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,1);assert.equal(deliveryRow().state,'delivered');
+});
+test('A reply saved before delivery suppresses the callback',async()=>{
+ await subscribe();await queue();await saveReply();await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,1);assert.equal(deliveryRow().state,'replied');
+});
+test('Concurrent conflicting council_reply requests persist one immutable reply',async()=>{
+ await subscribe();await queue();const rs=await Promise.all([saveReply(),saveReply({...replyArgs,content:'Other test reply.'})]);
+ assert.equal(rs.filter(r=>r.result).length,1);assert.equal(rs.filter(r=>r.error).length,1);assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,1);assert.equal(deliveryRow().state,'replied');
+});
+test('A new user epoch cancels stale Gemini redelivery and rejects its late reply',async()=>{
+ const {req,body}=await dialogueSetup();const turn=await runtime.beginCouncilDialogue(req,env,body);await runtime.finishCouncilDialogue(env,turn,'Gemini test output.',null);await runtime.mcpDeliver(env);
+ sql.prepare('UPDATE atha_mcp_participation SET updated_at=updated_at+1').run();forceDue();const n=callbackCalls.length;await runtime.mcpDeliver(env);
+ assert.equal(callbackCalls.length,n);assert.equal(deliveryRow().state,'cancelled');assert.ok((await saveReply({...replyArgs,event_id:turn.id})).error);
+});
+test('Reply and receipt writes roll back together on a database error',async()=>{
+ await subscribe();await queue();sql.exec("CREATE TRIGGER fail_receipt BEFORE INSERT ON atha_mcp_receipts BEGIN SELECT RAISE(ABORT,'injected receipt failure'); END;");
+ assert.ok((await saveReply()).error);assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,0);assert.equal(deliveryRow().state,'pending');
+});
+test('A stale due-list worker cannot reclaim an event already accepted by another worker',async()=>{
+ await subscribe();await queue();const prepare=db.prepare.bind(db);let injected=false;
+ db.prepare=q=>{const stmt=prepare(q);if(q.startsWith('SELECT d.* FROM atha_mcp_delivery')){const all=stmt.all.bind(stmt);stmt.all=async()=>{const stale=await all();if(!injected){injected=true;await runtime.mcpDeliver(env)}return stale}}return stmt};
+ await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,2);assert.equal(deliveryRow().attempts,1);
+});
+test('An interrupted acknowledgment write still consumes its durable send attempt',async()=>{
+ await subscribe();await queue();sql.exec("CREATE TRIGGER fail_transport_receipt BEFORE INSERT ON atha_mcp_receipts BEGIN SELECT RAISE(ABORT,'injected crash'); END;");
+ await assert.rejects(runtime.mcpDeliver(env),/injected crash/);assert.equal(deliveryRow().attempts,1);
+ sql.exec('DROP TRIGGER fail_transport_receipt');sql.prepare('UPDATE atha_mcp_delivery SET lease_until=0').run();await runtime.mcpDeliver(env);assert.equal(deliveryRow().attempts,2);
+});
+test('Authorization changes between validation and the reply transaction prevent a late write',async()=>{
+ await subscribe();await queue();const batch=db.batch.bind(db);db.batch=async stmts=>{sql.prepare("INSERT INTO atha_mcp_participation VALUES(?,?,'paused',?)").run(owner,room,now());return batch(stmts)};
+ assert.ok((await saveReply()).error);assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,0);assert.equal(sql.prepare('SELECT count(*) n FROM atha_mcp_receipts').get().n,0);
 });
