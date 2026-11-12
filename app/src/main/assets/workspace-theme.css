@@ -1,0 +1,29 @@
+
+    :root { --bg:#091624;--panel:#112a3d;--raised:#203e50;--line:#2c5060;--text:#e8f5fa;--muted:#abc4cf;--faint:#9ebac7;--teal:#4bd5c5;--mint:#65e2d2;font-family:system-ui; }
+    body { background:#091624;color:#e8f5fa;font:15px system-ui; }
+    .ambient { display:none; }
+    .app-header { background:#102437;border-bottom:1px solid #355064;max-width:none;height:66px;padding:8px 15px; }
+    .app-header .brand { justify-content:flex-start;gap:12px; }
+    .app-header .brand > img { width:32px;height:32px; }
+    .app-header .brand > span { font-size:18px;letter-spacing:1px; }
+    .app-header .brand small { display:none; }
+    .is-chat-view .app-main { height:calc(100dvh - 66px - env(safe-area-inset-bottom));padding:0 15px 8px; }
+    .chat-topbar { padding:8px 0 0; }
+    .chat-topbar h1 { color:#9ebac7;font:12px system-ui; }
+    .chat-empty h2 { font-size:24px;letter-spacing:0; }
+    .chat-empty > p:last-of-type { font-size:15px; }
+    .chat-messages { gap:8px; }
+    .chat-message.is-assistant { background:#18374a;padding:13px;border-radius:15px;margin:8px 0; }
+    .chat-message.is-user { background:#17635e;border:0;padding:13px;border-radius:15px;max-width:82%;margin:8px 0; }
+    .chat-message-author { color:#4bd5c5;font-size:14px;letter-spacing:.2px;font-weight:800;margin-bottom:6px; }
+    .chat-text,.chat-message.is-user .chat-text { font:15px/1.6 system-ui; }
+    .chat-composer,.chat-composer:focus-within { border:0;box-shadow:none;outline:0;background:#102437;border-radius:15px;padding:8px; }
+    .chat-composer > textarea,.chat-composer > textarea:focus,.chat-composer > textarea:focus-visible { font:15px/1.6 system-ui;outline:none!important;border:0;box-shadow:none;min-height:44px; }
+    .chat-send { border-radius:11px;background:#4bd5c5;color:#06292e; }
+    .side-menu { background:#102437;border-right:1px solid #345064;width:min(310px,85vw);padding:18px; }
+    .drawer-nav > button { font:15px system-ui;display:flex;background:#203e50;color:#e8f5fa;border-radius:10px;padding:12px;margin:5px 0; }
+    .drawer-nav > button[aria-current=page] { background:#164450;color:#65e2d2; }
+    .chat-tool-row p { margin:0;font:13px/1.6 system-ui;color:#abc4cf; }
+    #workspace-progress { color:#9ebac7;font:13px/1.6 system-ui;padding:8px 0; }
+    .workspace-return { font:15px system-ui;text-align:left;width:100%;padding:12px;border:0;border-radius:10px;background:#203e50;color:#e8f5fa;margin:5px 0; }
+  

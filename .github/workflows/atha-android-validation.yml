@@ -31,7 +31,7 @@ jobs:
         run: |
           test -s app/src/main/res/drawable-nodpi/atha_launcher.webp
           grep -q '@drawable/atha_launcher' app/src/main/AndroidManifest.xml
-          grep -q 'android:label="Atha Council"' app/src/main/AndroidManifest.xml
+          grep -q 'android:label="AthalAI"' app/src/main/AndroidManifest.xml
       - name: Verify worker JavaScript syntax
         shell: bash
         run: node --input-type=module --check < worker/production.js

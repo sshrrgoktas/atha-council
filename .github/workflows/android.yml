@@ -39,6 +39,8 @@ jobs:
       ATLAS_KEY_PASSWORD: ${{ secrets.ATLAS_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+      - name: Verify unified mobile shell contracts
+        run: node --test test/unified-mobile.test.mjs
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
