@@ -26,3 +26,10 @@ test('Receiving a real Atha reply calls Gemini outside the send handler exactly 
 test('Paused and hidden chats do not start an automatic Gemini turn',async()=>{
  for(const opts of [{paused:true},{hidden:true}]){const h=harness(opts);await h.run(h.chat,[{replyId:'mcp_evt_current'}]);assert.equal(h.requests.length,0)}
 });
+
+const stopStart=js.indexOf('function councilStopIntent(');
+const browserStop=new Function(js.slice(stopStart,js.indexOf('async function limitedFetch(',stopStart))+';return councilStopIntent')();
+test('Single-quoted farewells are examples in the browser, while unquoted farewells still stop',()=>{
+ for(const text of ["'İyi geceler'",'‘İyi geceler’',"'yeter'",'‘Artık susalım’',"'İyi geceler' dedi"])assert.equal(browserStop(text),false,text);
+ for(const text of ['İyi geceler','Yeter!','Artık susalım'])assert.equal(browserStop(text),true,text);
+});
