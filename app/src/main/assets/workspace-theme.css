@@ -55,3 +55,10 @@ body{margin:0;background:#091624;color:#e8f5fa;font:15px system-ui}
 [data-atha-theme=light] .compose.workspace-compose{background:#fff;border-color:#a8c2c8}
 [data-atha-theme=light] .primary,[data-atha-theme=light] #send-message{background:#087e74;color:#fff}
 @media(max-height:520px){.chat-empty{padding:10px 0}.chat-empty h2{font-size:20px}.chat-empty>p{display:none}.chat-availability{max-height:54px;overflow:auto}.compose.workspace-compose textarea{min-height:44px}}
+
+.chats-view .page-heading h1{font:700 19px system-ui;letter-spacing:0}
+.chats-view .page-heading>p:last-child{font:15px/1.5 system-ui}
+.thread-card{background:var(--panel);color:var(--text);border-color:var(--line);border-radius:15px}
+.thread-card strong{font:600 15px/1.5 system-ui}
+.thread-card small{font:12px/1.5 system-ui;color:var(--muted)}
+[data-atha-theme=light] .thread-card.is-selected{background:#d2eee8}

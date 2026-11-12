@@ -35,6 +35,8 @@
       if(stop){stop.className='secondary';stop.textContent='Durdur';actions.append(stop);}
       actions.append(send);form.replaceChildren(input,actions);if(draft){draft.className='sr-only';form.append(draft);}
     }
+    const listTitle=document.getElementById('chats-title');if(listTitle)listTitle.textContent='Çalışma sohbetleri';
+    const listNew=document.getElementById('new-chat-list');if(listNew)listNew.textContent='＋ Yeni çalışma';
     const tools=document.getElementById('chat-tools');
     if(tools){tools.classList.add('workspace-steps');const label=tools.querySelector('summary span');if(label)label.textContent='Çalışma adımları';}
     const drawer=document.getElementById('bottom-nav');const refresh=document.getElementById('refresh-chat');if(drawer&&refresh){refresh.className='workspace-return';refresh.textContent='Çalışmayı yenile';drawer.append(refresh);}
@@ -43,6 +45,10 @@
     const headerNew=document.getElementById('header-new-chat');if(headerNew){headerNew.hidden=true;headerNew.setAttribute('aria-label','Yeni çalışma');}
     const menu=document.getElementById('open-menu');if(menu){menu.classList.add('menuToggle');menu.textContent='☰';}
   }
+  window.athaOpenWorkspaceView = view => {
+    if(view==='chats'){document.querySelector('#bottom-nav button[data-view="chats"]')?.click();}
+    else if(view==='new'){document.getElementById('new-chat')?.click();}
+  };
   window.athaApplyTheme = theme => {
     const selected=theme==='light'?'light':'dark';
     document.documentElement.dataset.athaTheme=selected;

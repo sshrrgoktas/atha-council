@@ -175,6 +175,8 @@ public class PcWorkspaceActivity extends Activity {
                 loading.setVisibility(View.GONE);nativeBar.setVisibility(View.GONE);
                 try { java.io.InputStream input=getAssets().open("workspace-shell.js");java.io.ByteArrayOutputStream output=new java.io.ByteArrayOutputStream();byte[] buffer=new byte[4096];int count;while((count=input.read(buffer))!=-1)output.write(buffer,0,count);input.close();view.evaluateJavascript(new String(output.toByteArray(),java.nio.charset.StandardCharsets.UTF_8),null);String theme=getSharedPreferences("athalai-appearance",MODE_PRIVATE).getString("theme","dark");view.evaluateJavascript("window.athaApplyTheme&&window.athaApplyTheme("+org.json.JSONObject.quote(theme)+")",null); }
                 catch(java.io.IOException ignored){ }
+                String requested=getIntent().getStringExtra("workspace_view");String target="new".equals(requested)?"new":"chats";
+                view.evaluateJavascript("window.athaOpenWorkspaceView&&window.athaOpenWorkspaceView("+org.json.JSONObject.quote(target)+")",null);
                 view.setVisibility(View.VISIBLE);CookieManager.getInstance().flush();
             }
             @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error){

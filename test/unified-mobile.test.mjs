@@ -35,7 +35,7 @@ test('PC runs in a separate bridge-free WebView and keeps the existing pairing t
 });
 test('unified menu adds a PC route without replacing Council controls',()=>{
  new vm.Script(menu);new vm.Script(shell);
- assert.match(menu,/heading.after\(button\)/);
+ assert.match(menu,/profile.before\(workSection\)/);
  assert.match(menu,/getElementById\('atha-pc-workspace'\)/);
  assert.doesNotMatch(menu,/innerHTML|replaceChildren|remove\(/);
  assert.match(css,/outline:0!important/);
@@ -74,4 +74,22 @@ test('light and dark themes persist across both native sections, with existing p
  assert.match(css,/data-atha-theme=light/);
  assert.match(menu,/atha-council-theme/);
  assert.match(shell,/atha-workspace-theme/);
+});
+
+test('work conversations have separate new/list entry points and reuse the real thread list',()=>{
+ assert.ok(menu.includes('AthalAI Çalışmaları'));
+ assert.ok(menu.includes("openWork('new')"));
+ assert.ok(menu.includes("openWork('chats')"));
+ assert.ok(main.includes('@JavascriptInterface fun openWorkspaceView(view:String)'));
+ assert.ok(main.includes('putExtra("workspace_view",view)'));
+ assert.ok(pc.includes('getStringExtra("workspace_view")'));
+ assert.ok(shell.includes('window.athaOpenWorkspaceView'));
+ assert.ok(shell.includes('#bottom-nav button[data-view="chats"]'));
+});
+test('export, backup and import stay under one collapsed button without changing archive actions',()=>{
+ for(const id of ['exportCurrent','exportCurrentJson','drawerBackup','importChats'])assert.ok(menu.includes(id));
+ assert.ok(menu.includes('actions.hidden=true'));
+ assert.ok(menu.includes("toggle.setAttribute('aria-expanded','false')"));
+ assert.ok(menu.includes('actions.append(action)'));
+ assert.ok(menu.includes('first.before(group)'));
 });
