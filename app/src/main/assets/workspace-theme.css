@@ -25,10 +25,10 @@ body{margin:0;background:#091624;color:#e8f5fa;font:15px system-ui}
 .chat-message.bubble{background:#18374a;padding:13px;border:0;border-radius:15px;margin:8px 0;white-space:normal;max-width:100%;align-self:auto}
 .chat-message.bubble.mine{background:#17635e;margin-left:18%}
 .chat-message-author{display:block;color:#4bd5c5;font-weight:800;font-size:14px;letter-spacing:.2px;margin-bottom:6px}
-.chat-text,.chat-message.is-user .chat-text{font:15px/1.6 system-ui;letter-spacing:normal;color:var(--text)}
+.chat-text,.chat-message.is-user .chat-text{font:15px system-ui;line-height:normal;letter-spacing:normal;color:var(--text)}
 .compose.workspace-compose{flex-shrink:0;display:flex;align-items:flex-end;gap:8px;border:1px solid #4c817d;border-radius:15px;padding:8px;background:transparent;box-shadow:none}
 .compose.workspace-compose:focus-within{border-color:#4c817d;box-shadow:none;outline:0}
-.compose.workspace-compose textarea{flex:1;width:0;min-height:60px;max-height:160px;background:none;border:0;color:var(--text);resize:none;outline:0!important;box-shadow:none;font:15px/1.5 system-ui;padding:7px}
+.compose.workspace-compose textarea{flex:1;width:0;min-height:60px;max-height:160px;background:none;border:0;color:var(--text);resize:none;outline:0!important;box-shadow:none;font:15px system-ui;line-height:normal;padding:7px}
 .workspace-send-actions{display:flex;flex-direction:column;gap:6px}
 .primary,#send-message{background:#4bd5c5;color:#06292e;border:0;border-radius:11px;padding:12px;font:700 15px system-ui;width:auto;height:auto;min-height:44px;min-width:76px}
 #send-message:disabled{background:#294b56;color:#9ebac7;opacity:.65}

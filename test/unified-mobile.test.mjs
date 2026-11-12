@@ -63,7 +63,7 @@ test('PC view uses Council-sized text and the actual text send button, not the o
  assert.match(shell,/title.textContent==='Yeni sohbet'\?'Yeni çalışma'/);
  assert.match(shell,/empty.replaceChildren\(heading,note\)/);
  assert.match(shell,/document.body.append\(oldActions\)/);
- assert.match(css,/font:15px\/1.6 system-ui/);
+ assert.match(css,/font:15px system-ui;line-height:normal/);
  assert.match(css,/\.chat-message.bubble.mine/);
 });
 test('light and dark themes persist across both native sections, with existing profile menus retained',()=>{
