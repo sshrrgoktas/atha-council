@@ -1,0 +1,58 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
+const main=read('app/src/main/java/com/atlascouncil/app/MainActivity.kt');
+const pc=read('app/src/main/java/com/atlascouncil/app/PcWorkspaceActivity.java');
+const policy=read('app/src/main/java/com/atlascouncil/app/ConnectionPolicy.java');
+const menu=read('app/src/main/assets/unified-council-menu.js');
+const shell=read('app/src/main/assets/workspace-shell.js');
+const css=read('app/src/main/assets/workspace-theme.css');
+const manifest=read('app/src/main/AndroidManifest.xml');
+test('one launcher retains Council OAuth, speech, sharing, updates and attachments',()=>{
+ assert.equal((manifest.match(/android.intent.category.LAUNCHER/g)||[]).length,1);
+ for(const marker of ['startGoogleLogin','startGitHubLogin','startSpeech','stopSpeech','shareText','openUpdates','ACTION_OPEN_DOCUMENT','EXTRA_ALLOW_MULTIPLE','parseResult(resultCode,data)'])assert.ok(main.includes(marker),marker);
+ assert.match(main,/layout.addView\(councilWeb,LinearLayout.LayoutParams\(-1,-1\)\)/);
+ assert.ok(main.includes('".txt" to "text/plain"'));assert.ok(main.includes('".json" to "application/json"'));
+ assert.match(main,/attachmentCallback\?\.onReceiveValue\(null\)/);
+ assert.match(main,/page.host!="atlas-council.sshrrgoktas.workers.dev"/);
+ assert.match(manifest,/android:name=".PcWorkspaceActivity" android:exported="false"/);
+});
+test('PC runs in a separate bridge-free WebView and keeps the existing pairing transport',()=>{
+ assert.doesNotMatch(pc,/addJavascriptInterface|AtlasNative/);
+ assert.match(pc,/setAcceptThirdPartyCookies\(web,false\)/);
+ assert.match(pc,/setAllowFileAccess\(false\)/);
+ assert.match(pc,/setAllowContentAccess\(false\)/);
+ assert.match(pc,/ConnectionPolicy.sameOrigin\(server/);
+ assert.match(pc,/ConnectionPolicy.REMOTE_ORIGIN/);
+ assert.match(policy,/https:\/\/athalai-mobile.sshrrgoktas.workers.dev/);
+ assert.match(policy,/isPrivateIpv4/);
+ assert.match(policy,/target.getUserInfo\(\) == null/);
+ assert.match(pc,/"athalai:\/\/council".equals\(url\)/);
+ assert.match(pc,/CookieManager.getInstance\(\).flush\(\)/);
+ assert.doesNotMatch(pc,/setCookie|accessToken|refreshToken|DESKTOP_KEY/);
+});
+test('unified menu adds a PC route without replacing Council controls',()=>{
+ new vm.Script(menu);new vm.Script(shell);
+ assert.match(menu,/heading.after\(button\)/);
+ assert.match(menu,/getElementById\('atha-pc-workspace'\)/);
+ assert.doesNotMatch(menu,/innerHTML|replaceChildren|remove\(/);
+ assert.match(css,/outline:none!important/);
+ assert.match(css,/font:15px system-ui/);
+ assert.match(shell,/document.createElement\('link'\)/);
+ assert.match(pc,/getAssets\(\).open\("workspace-theme.css"\)/);
+ assert.match(shell,/summary.textContent=/);
+ assert.doesNotMatch(shell,/summary.innerHTML/);
+});
+test('tool receipts become short factual labels instead of raw commands',()=>{
+ const start=shell.indexOf('function summarizeTool(raw)');
+ const end=shell.indexOf('window.athaWorkspaceToolSummary',start);
+ const summarize=vm.runInNewContext('('+shell.slice(start,end).trim()+')');
+ assert.equal(summarize('bridge_read_file\nSECRET CONTENT'),'Dosya okundu');
+ assert.equal(summarize('bridge_write_file\n{"changed":true}'),'Dosya düzenlendi');
+ assert.equal(summarize('bridge_read_job\n{"state":"running"}'),'Bilgisayar işlemi sürüyor');
+ assert.equal(summarize('bridge_read_job\n{"state":"succeeded","output":"30 tests passed"}'),'Test tamamlandı');
+ assert.equal(summarize('bridge_start_job\n{"state":"queued"}'),'Bilgisayar işlemi sırada');
+ assert.equal(summarize('<script>secret</script>'),'Bilgisayardaki işlem kontrol edildi');
+});

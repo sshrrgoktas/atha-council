@@ -11,6 +11,7 @@ import android.graphics.Color
 import android.webkit.WebView
 import android.webkit.CookieManager
 import android.webkit.WebViewClient
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebResourceRequest
@@ -82,6 +83,8 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
  private lateinit var loginButton: Button
  private lateinit var testButton: Button
  private lateinit var authBadge: TextView
+ private var attachmentCallback: ValueCallback<Array<Uri>>? = null
+ private val attachmentRequestCode = 901
  private lateinit var councilWeb: WebView
  private lateinit var nativeSettingsDialog: android.app.AlertDialog
  private var lastWebRefresh:Long=0L
@@ -101,6 +104,13 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
   runOnUiThread { councilWeb.evaluateJavascript("window.atlasNativeResult&&window.atlasNativeResult("+JSONObject.quote(id)+","+payload.toString()+")",null) }
  }
  inner class CouncilBridge {
+  @JavascriptInterface fun openWorkspace(){
+   runOnUiThread {
+    val page=Uri.parse(councilWeb.url?:"")
+    if(page.scheme!="https"||page.host!="atlas-council.sshrrgoktas.workers.dev"||page.path!="/council-v2")return@runOnUiThread
+    startActivity(Intent(this@MainActivity,PcWorkspaceActivity::class.java))
+   }
+  }
   @JavascriptInterface fun startSpeech(id:String,content:String){
    if(!id.matches(Regex("[A-Za-z0-9_-]{1,80}"))||content.isBlank()||content.length>12000)return
    runOnUiThread {
@@ -287,8 +297,34 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
    clearCache(true)
    // Enable standard JavaScript confirmation/alert dialogs inside Android WebView.
    // Without WebChromeClient, window.confirm() silently returns false.
-   webChromeClient=WebChromeClient()
+   webChromeClient=object:WebChromeClient(){
+    override fun onShowFileChooser(view:WebView?,callback:ValueCallback<Array<Uri>>?,params:FileChooserParams?):Boolean{
+     attachmentCallback?.onReceiveValue(null)
+     attachmentCallback=callback
+     val picker=Intent(Intent.ACTION_OPEN_DOCUMENT).apply{
+      addCategory(Intent.CATEGORY_OPENABLE)
+      type="*/*"
+      putExtra(Intent.EXTRA_ALLOW_MULTIPLE,params?.mode==FileChooserParams.MODE_OPEN_MULTIPLE)
+      val extensionMimes=mapOf(".txt" to "text/plain",".md" to "text/plain",".csv" to "text/csv",".json" to "application/json")
+      val accepted=params?.acceptTypes?.flatMap{it.split(",")}?.map{it.trim()}?.mapNotNull{
+       when{it.isEmpty()||it=="*/*"->null;it.startsWith(".")->extensionMimes[it.lowercase()]?:android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(it.drop(1));it.contains("/")->it;else->null}
+      }?.distinct()?.toTypedArray()
+      if(!accepted.isNullOrEmpty())putExtra(Intent.EXTRA_MIME_TYPES,accepted)
+      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+     }
+     return try{startActivityForResult(picker,attachmentRequestCode);true}catch(_:Exception){attachmentCallback=null;callback?.onReceiveValue(null);true}
+    }
+   }
    webViewClient=object:WebViewClient(){
+    override fun onPageFinished(view:WebView?,url:String?){
+     super.onPageFinished(view,url)
+     val page=Uri.parse(url?:"")
+     if(page.scheme=="https"&&page.host=="atlas-council.sshrrgoktas.workers.dev"&&page.path=="/council-v2"){
+      val script=assets.open("unified-council-menu.js").bufferedReader().use{it.readText()}
+      view?.evaluateJavascript(script,null)
+     }
+    }
+
     override fun shouldOverrideUrlLoading(view:WebView?,request:WebResourceRequest?):Boolean{
      val u=request?.url?:return false
      // Both OAuth providers use Chrome and return a verified, short-lived ticket to the APK.
@@ -316,6 +352,15 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
   val incoming=intent?.data;if(incoming?.scheme=="atlascouncil"&&incoming.host=="google-auth"){incoming.getQueryParameter("ticket")?.let{completeGoogleLogin(it)}}else if(incoming?.scheme=="atlascouncil"&&incoming.host=="github-auth"){incoming.getQueryParameter("ticket")?.let{completeGitHubLogin(it)}}
   // Future releases appear in-app without asking users to find or download an APK file.
   checkForUpdates(false)
+ }
+
+ @Deprecated("Uses the platform document picker for WebView attachments")
+ override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){
+  super.onActivityResult(requestCode,resultCode,data)
+  if(requestCode==attachmentRequestCode){
+   val callback=attachmentCallback;attachmentCallback=null
+   callback?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode,data))
+  }
  }
  private fun startLogin(){status.text="Deneysel yerel bağlantı hazırlanıyor…";Thread {
   var server:ServerSocket?=null
@@ -588,6 +633,7 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
   return super.onOptionsItemSelected(item)
  }
  override fun onDestroy(){
+  attachmentCallback?.onReceiveValue(null);attachmentCallback=null
   speechEngine?.stop();speechEngine?.shutdown();speechEngine=null
   pendingSpeech=null;speechRequestId=null
   if(::councilWeb.isInitialized)councilWeb.destroy()
