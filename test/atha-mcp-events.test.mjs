@@ -442,3 +442,14 @@ test('A server provider session is bound to authorization expiry instead of conv
  const auth=sql.prepare('SELECT MIN(s.expires_at,g.expires_at) expires_at FROM atha_mcp_subscriptions s JOIN atha_mcp_grants g ON g.grant_id=s.grant_id').get().expires_at;
  assert.equal(saved,auth);assert.ok(saved>now());
 });
+
+test('Single-quoted user examples never pause the server or cancel pending deliveries',async()=>{
+ await dialogueSetup();await queue('evt_pending_quote_regression','Atha, merhaba');
+ for(const [i,content] of ["'İyi geceler'",'‘İyi geceler’',"'Yeter'",'‘Artık susalım’'].entries()){
+  assert.equal(runtime.councilStopIntent(content),false,content);
+  const id='evt_quoted_example_'+i;seedEvent(id);
+  await runtime.mcpQueueEvents(env,owner,room,[id],[{role:'user',content}]);
+  assert.equal(sql.prepare('SELECT mode FROM atha_mcp_participation').get().mode,'dialogue');
+ }
+ await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,6,'original pending event and quoted examples all delivered');
+});
