@@ -104,6 +104,14 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
   runOnUiThread { councilWeb.evaluateJavascript("window.atlasNativeResult&&window.atlasNativeResult("+JSONObject.quote(id)+","+payload.toString()+")",null) }
  }
  inner class CouncilBridge {
+  @JavascriptInterface fun theme():String = getSharedPreferences("athalai-appearance",MODE_PRIVATE).getString("theme","dark")?:"dark"
+  @JavascriptInterface fun setTheme(value:String){
+   if(value!="dark"&&value!="light")return
+   runOnUiThread{
+    val page=Uri.parse(councilWeb.url?:"")
+    if(page.scheme=="https"&&page.host=="atlas-council.sshrrgoktas.workers.dev"&&page.path=="/council-v2")getSharedPreferences("athalai-appearance",MODE_PRIVATE).edit().putString("theme",value).apply()
+   }
+  }
   @JavascriptInterface fun openWorkspace(){
    runOnUiThread {
     val page=Uri.parse(councilWeb.url?:"")
@@ -631,6 +639,13 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
    101 -> {if(::councilWeb.isInitialized)councilWeb.reload();return true}
   }
   return super.onOptionsItemSelected(item)
+ }
+ override fun onResume(){
+  super.onResume()
+  if(::councilWeb.isInitialized){
+   val theme=getSharedPreferences("athalai-appearance",MODE_PRIVATE).getString("theme","dark")?:"dark"
+   councilWeb.evaluateJavascript("window.athaApplyTheme&&window.athaApplyTheme("+JSONObject.quote(theme)+")",null)
+  }
  }
  override fun onDestroy(){
   attachmentCallback?.onReceiveValue(null);attachmentCallback=null

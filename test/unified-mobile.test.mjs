@@ -38,7 +38,7 @@ test('unified menu adds a PC route without replacing Council controls',()=>{
  assert.match(menu,/heading.after\(button\)/);
  assert.match(menu,/getElementById\('atha-pc-workspace'\)/);
  assert.doesNotMatch(menu,/innerHTML|replaceChildren|remove\(/);
- assert.match(css,/outline:none!important/);
+ assert.match(css,/outline:0!important/);
  assert.match(css,/font:15px system-ui/);
  assert.match(shell,/document.createElement\('link'\)/);
  assert.match(pc,/getAssets\(\).open\("workspace-theme.css"\)/);
@@ -55,4 +55,23 @@ test('tool receipts become short factual labels instead of raw commands',()=>{
  assert.equal(summarize('bridge_read_job\n{"state":"succeeded","output":"30 tests passed"}'),'Test tamamlandı');
  assert.equal(summarize('bridge_start_job\n{"state":"queued"}'),'Bilgisayar işlemi sırada');
  assert.equal(summarize('<script>secret</script>'),'Bilgisayardaki işlem kontrol edildi');
+});
+
+test('PC view uses Council-sized text and the actual text send button, not the old welcome and arrow composer',()=>{
+ assert.match(shell,/send.textContent='Gönder'/);
+ assert.match(shell,/form.className='compose workspace-compose'/);
+ assert.match(shell,/title.textContent==='Yeni sohbet'\?'Yeni çalışma'/);
+ assert.match(shell,/empty.replaceChildren\(heading,note\)/);
+ assert.match(shell,/document.body.append\(oldActions\)/);
+ assert.match(css,/font:15px system-ui;line-height:normal/);
+ assert.match(css,/\.chat-message.bubble.mine/);
+});
+test('light and dark themes persist across both native sections, with existing profile menus retained',()=>{
+ assert.match(main,/@JavascriptInterface fun theme\(\):String/);
+ assert.match(main,/@JavascriptInterface fun setTheme\(value:String\)/);
+ assert.match(main,/athalai-appearance/);
+ assert.match(pc,/athalai:\/\/theme\/light/);
+ assert.match(css,/data-atha-theme=light/);
+ assert.match(menu,/atha-council-theme/);
+ assert.match(shell,/atha-workspace-theme/);
 });
