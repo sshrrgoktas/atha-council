@@ -40,7 +40,7 @@
     const drawer=document.getElementById('bottom-nav');const refresh=document.getElementById('refresh-chat');if(drawer&&refresh){refresh.className='workspace-return';refresh.textContent='Çalışmayı yenile';drawer.append(refresh);}
     const headerBrand=document.querySelector('.app-header .brand > span');
     if(headerBrand){headerBrand.replaceChildren();const strong=document.createElement('strong'),small=document.createElement('span');strong.textContent='AthalAI';small.className='muted';small.textContent='Çalışma alanı';headerBrand.append(strong,small);}
-    const headerNew=document.getElementById('header-new-chat');if(headerNew){headerNew.textContent='＋';headerNew.setAttribute('aria-label','Yeni çalışma');}
+    const headerNew=document.getElementById('header-new-chat');if(headerNew){headerNew.hidden=true;headerNew.setAttribute('aria-label','Yeni çalışma');}
     const menu=document.getElementById('open-menu');if(menu){menu.classList.add('menuToggle');menu.textContent='☰';}
   }
   window.athaApplyTheme = theme => {
