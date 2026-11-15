@@ -122,7 +122,7 @@ test('Retry creates a fresh real-model event for the latest reply; it never over
 test('MCP requires OAuth, advertises tools/events, denies foreign origin and room',async()=>{
  const unauth=await request('/mcp','POST',{jsonrpc:'2.0',method:'initialize',id:1},null);assert.equal(unauth.status,401);assert.match(unauth.headers.get('www-authenticate'),/oauth-protected-resource\/mcp/);
  assert.deepEqual((await rpc('initialize')).result.capabilities,{tools:{},events:{}});
- assert.equal((await rpc('tools/list')).result.tools.length,4);
+ assert.equal((await rpc('tools/list')).result.tools.length,5);
  assert.equal((await rpc('events/list')).result.events[0].name,'message.created');
  assert.equal((await request('/mcp','POST',{},access,{origin:'https://evil.example'})).status,403);
  assert.ok((await rpc('tools/call',{name:'council_read',arguments:{room_id:'foreign_room'}})).error);
@@ -279,6 +279,26 @@ test('Account scope requires explicit permission and never reads another owner o
  const read=await rpc('tools/call',{name:'council_read',arguments:{room_id:'room_two'}});assert.equal(read.result.structuredContent.room_id,'room_two');
  for(const id of ['room_foreign','unsynced_room'])assert.ok((await rpc('tools/call',{name:'council_read',arguments:{room_id:id}})).error);
  const status=await rpc('tools/call',{name:'council_connection_status',arguments:{room_id:'room_two'}});assert.equal(status.result.structuredContent.automaticParticipation,true);assert.equal(status.result.structuredContent.accountScope,true);
+});
+test('Council room discovery in any chat respects the original room grant and later explicit account consent',async()=>{
+ addRoom('room_two');addRoom('room_foreign','github:202');
+ const list=()=>rpc('tools/call',{name:'council_list_rooms',arguments:{}});
+ const limited=await list();
+ assert.ok(limited.result,JSON.stringify(limited));
+ assert.equal(limited.result.structuredContent.accountScope,false);
+ assert.equal(limited.result.structuredContent.accessScope,'granted_room_only');
+ assert.deepEqual(limited.result.structuredContent.rooms.map(x=>x.room_id),[room]);
+ assert.equal(limited.result.structuredContent.rooms[0].snapshot,undefined);
+ assert.ok((await rpc('tools/call',{name:'council_list_rooms',arguments:{room_id:'room_two'}})).error);
+ sql.prepare('INSERT INTO atha_mcp_account_access VALUES(?,1,?)').run(owner,now());
+ const all=await list();
+ assert.equal(all.result.structuredContent.accountScope,true);
+ assert.equal(all.result.structuredContent.accessScope,'all_synced_rooms');
+ assert.deepEqual(all.result.structuredContent.rooms.map(x=>x.room_id).sort(),[room,'room_two'].sort());
+ assert.equal(all.result.structuredContent.truncated,false);
+ assert.ok(!all.result.structuredContent.rooms.some(x=>x.room_id==='room_foreign'));
+ sql.prepare('UPDATE atha_mcp_account_access SET enabled=0 WHERE owner_id=?').run(owner);
+ assert.deepEqual((await list()).result.structuredContent.rooms.map(x=>x.room_id),[room]);
 });
 test('One verified account webhook delivers future synced rooms and saves only that event room reply',async()=>{
  await accountSubscription();addRoom('room_future');
