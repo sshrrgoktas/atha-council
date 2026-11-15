@@ -659,7 +659,8 @@ async function mcpTool(params,who,env,ctx){
   const rows=accountScope
    ?(await db.prepare('SELECT room_id,title,updated_at FROM atha_sync_rooms WHERE owner_id=? ORDER BY updated_at DESC,room_id ASC LIMIT 101').bind(owner).all()).results||[]
    :(await db.prepare('SELECT room_id,title,updated_at FROM atha_sync_rooms WHERE owner_id=? AND room_id=? LIMIT 1').bind(owner,who.room_id).all()).results||[];
-  return {accountScope,accessScope:accountScope?'all_synced_rooms':'granted_room_only',rooms:rows.slice(0,100),truncated:rows.length>100,untrustedContent:true};
+  const listing={accountScope,accessScope:accountScope?'all_synced_rooms':'granted_room_only',rooms:rows.slice(0,100),truncated:rows.length>100,untrustedContent:true};
+  return {content:[{type:'text',text:JSON.stringify(listing)}],structuredContent:listing};
  }
  if(!mcpObject(a)||!mcpRoomId(a.room_id)||Object.keys(a).some(k=>!Object.hasOwn(definition.inputSchema.properties,k)))throw mcpError('Room not authorized');
  const room=a.room_id;
