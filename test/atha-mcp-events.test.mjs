@@ -289,6 +289,30 @@ test('Account scope requires explicit permission and never reads another owner o
  for(const id of ['room_foreign','unsynced_room'])assert.ok((await rpc('tools/call',{name:'council_read',arguments:{room_id:id}})).error);
  const status=await rpc('tools/call',{name:'council_connection_status',arguments:{room_id:'room_two'}});assert.equal(status.result.structuredContent.automaticParticipation,true);assert.equal(status.result.structuredContent.accountScope,true);
 });
+test('Read-only latest resolves authorized room, never guesses event target or exposes foreign rooms',async()=>{
+ addRoom('room_two');addRoom('room_foreign','github:202');
+ // Without account-wide permission, latest may only resolve the originally granted room.
+ const read=()=>rpc('tools/call',{name:'council_read',arguments:{room_id:'latest'}});
+ const status=()=>rpc('tools/call',{name:'council_connection_status',arguments:{room_id:'latest'}});
+ const limited=await read();assert.ok(limited.result,JSON.stringify(limited));
+ assert.equal(limited.result.structuredContent.room_id,room);
+ assert.equal(limited.result.structuredContent.selectionBasis,'granted_room_only');
+ assert.equal((await status()).result.structuredContent.room_id,room);
+ assert.ok((await rpc('tools/call',{name:'council_read',arguments:{room_id:'latest',event_id:'evt_some'}})).error,'Do not route specific event by an uncertain room');
+ assert.ok((await rpc('tools/call',{name:'council_reply',arguments:{room_id:'latest',event_id:'evt_some',content:'Hi'}})).error,'Never write to latest');
+ assert.ok((await rpc('tools/call',{name:'council_participation',arguments:{room_id:'latest',mode:'paused'}})).error,'Never pause a guessed room');
+ sql.prepare('INSERT INTO atha_mcp_account_access VALUES(?,1,?)').run(owner,now());
+ sql.prepare('UPDATE atha_sync_rooms SET updated_at=? WHERE owner_id=? AND room_id=?').run(now()+1000,owner,'room_two');
+ const newest=await read();
+ assert.equal(newest.result.structuredContent.room_id,'room_two');
+ assert.equal(newest.result.structuredContent.selectionBasis,'most_recent_synced_room');
+ const lastStatus=await status();
+ assert.equal(lastStatus.result.structuredContent.room_id,'room_two');
+ assert.equal(lastStatus.result.structuredContent.accountScope,true);
+ assert.ok(!JSON.stringify(newest.result).includes('room_foreign'));
+ sql.prepare('UPDATE atha_mcp_account_access SET enabled=0 WHERE owner_id=?').run(owner);
+ assert.equal((await read()).result.structuredContent.room_id,room);
+});
 test('Council room discovery in any chat respects the original room grant and later explicit account consent',async()=>{
  addRoom('room_two');addRoom('room_foreign','github:202');
  const list=()=>rpc('tools/call',{name:'council_list_rooms',arguments:{}});
