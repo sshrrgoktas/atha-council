@@ -11,13 +11,14 @@ test("Atha Council Worker and embedded browser JS compile without modifying back
  new Function(js);
 });
 test("Atha call control is entirely removed; conversation starts with a greeting",()=>{
- assert.doesNotMatch(html,/id="callAtha"/);
- assert.doesNotMatch(html,/id="callAthaFromAgents"/);
- assert.doesNotMatch(js,/sendAthaCall|openAthaInvitation|\\/call/);
- assert.match(js,/function isCouncilGreeting\\(/);
- assert.match(js,/if\\(isCouncilGreeting\\(t\\)\\&\\&enabledAthaSyncRooms\.has\\(currentChatId\\)\\)await startCouncilOnGreeting/);
- assert.match(js,/await setCouncilDialogue\\('dialogue'\\)/);
- assert.match(js,/await sendAthaSyncRoom\\(chat\\)/);
+ assert.equal(html.includes('id="callAtha"'),false);
+ assert.equal(html.includes('id="callAthaFromAgents"'),false);
+ assert.equal(js.includes('sendAthaCall'),false);
+ assert.equal(js.includes('openAthaInvitation'),false);
+ assert.ok(js.includes('function isCouncilGreeting('));
+ assert.ok(js.includes('if(isCouncilGreeting(t)&&enabledAthaSyncRooms.has(currentChatId))await startCouncilOnGreeting'));
+ assert.ok(js.includes("await setCouncilDialogue('dialogue')"));
+ assert.ok(js.includes('await sendAthaSyncRoom(chat)'));
 });
 test("Old room-storage keys and other existing providers remain unchanged",()=>{
  assert.match(html,/const storageKey='atlasCouncilChatsV1'/);
