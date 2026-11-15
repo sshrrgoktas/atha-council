@@ -183,14 +183,14 @@ test("Private response inbox is owner-scoped, read-only and deleted with room",a
  assert.equal(d1.replies.size,0);
  assert.equal((await request(room+"/replies",{user:"1"})).status,404);
 });
-test("Greeting auto-start is used instead of manual calls, reply inbox deduplicates source IDs",()=>{
+test("Every typed message starts without manual calls; reply inbox deduplicates source IDs",()=>{
  const k=source.indexOf("const HTML="),html=JSON.parse(source.slice(k+11,source.lastIndexOf(";")));
  assert.match(html,/id="athaSyncCheckReplies"/);
  assert.match(html,/function receiveAthaReplies/);
  assert.doesNotMatch(html,/id="callAtha"/);
  assert.doesNotMatch(html,/openAthaInvitation|sendAthaCall/);
- assert.match(html,/function isCouncilGreeting/);
- assert.match(html,/function startCouncilOnGreeting/);
+ assert.match(html,/function isCouncilUserMessage/);
+ assert.match(html,/function startCouncilOnUserMessage/);
  assert.doesNotMatch(html,/buildAthaHandoffContext/);
  assert.match(html,/setInterval\(\(\)=>\{if\(!document\.hidden\)receiveAthaReplies/);
  assert.match(html,/stored\.has\(reply\.replyId\)/);
