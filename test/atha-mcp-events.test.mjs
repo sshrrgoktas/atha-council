@@ -94,20 +94,19 @@ test('An intervening user turn or stop cancels a reserved dialogue; short text s
  assert.equal(runtime.councilShortReply('Bir. İki! Üç?'),'Bir. İki!');
  assert.ok(runtime.councilShortReply('Kelime '.repeat(150)).length<=500);
 });
-test('Manual Atha calls are authenticated, room-scoped, CSRF-protected and deduplicated',async()=>{
- const {req}=await dialogueSetup();
- const headers={cookie:req.headers.get('cookie'),origin,'x-atha-sync':'1'};
- const body={request_id:'request_once_1234567890'};
- const path='/api/atha-sync/rooms/'+room+'/call';
- assert.equal((await request(path,'PUT',body,null)).status,403);
- assert.equal((await request(path,'PUT',body,null,{...headers,origin:'https://foreign.example'})).status,403);
- assert.equal((await request('/api/atha-sync/rooms/foreign/call','PUT',body,null,headers)).status,409);
- const first=await request(path,'PUT',body,null,headers);assert.equal(first.status,200);const event=await first.json();
- assert.equal((await (await request(path,'PUT',body,null,headers)).json()).event_id,event.event_id);
- assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_sync_events').get().n,1);
- const read=await rpc('tools/call',{name:'council_read',arguments:{room_id:room}});
- assert.equal(read.result.structuredContent.events[0].manualRequest.kind,'call');
+test('Plain selam automatically queues one genuine event without a manual call route',async()=>{
+ await subscribe();
+ sql.prepare('INSERT INTO atha_mcp_participation VALUES(?,?,?,?)').run(owner,room,'dialogue',now());
+ seedEvent('evt_greeting');
+ await runtime.mcpQueueEvents(env,owner,room,['evt_greeting'],[{role:'user',speakerId:'human',content:'selam'}]);
+ await runtime.mcpQueueEvents(env,owner,room,['evt_greeting'],[{role:'user',speakerId:'human',content:'selam'}]);
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_mcp_delivery').get().n,1);
+ await runtime.mcpDeliver(env);
  assert.equal(callbackCalls.filter(c=>c.body.name==='message.created').length,1);
+ assert.equal(callbackCalls[1].body.data.event_id,'evt_greeting');
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_sync_replies').get().n,0,'event receipt cannot fabricate Atha answer');
+ const denied=await request('/api/atha-sync/rooms/'+room+'/call','PUT',{request_id:'request_once_1234567890'},null,{origin,'x-atha-sync':'1'});
+ assert.equal(denied.status,404,'obsolete Atha manual-call API must be gone');
 });
 test('Retry creates a fresh real-model event for the latest reply; it never overwrites content',async()=>{
  const {req}=await dialogueSetup();const headers={cookie:req.headers.get('cookie'),origin,'x-atha-sync':'1'};

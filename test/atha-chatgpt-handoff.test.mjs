@@ -10,13 +10,15 @@ test("Atha Council Worker and embedded browser JS compile without modifying back
  new Function(source.replace("export default {","const runtime = {"));
  new Function(js);
 });
-test("Chat and agents menus display the working Atha invite instead of a fake connected badge",()=>{
- assert.match(html,/id="callAtha"/);
- assert.match(html,/id="callAthaFromAgents"/);
- assert.match(html,/Atha’yı Çağır/);
- assert.match(js,/document\.getElementById\('callAtha'\)\.onclick=openAthaInvitation/);
- assert.match(js,/document\.getElementById\('callAthaFromAgents'\)\.onclick/);
- assert.match(html,/Doğrudan API bağlantısı yok/);
+test("Atha call control is entirely removed; conversation starts with a greeting",()=>{
+ assert.equal(html.includes('id="callAtha"'),false);
+ assert.equal(html.includes('id="callAthaFromAgents"'),false);
+ assert.equal(js.includes('sendAthaCall'),false);
+ assert.equal(js.includes('openAthaInvitation'),false);
+ assert.ok(js.includes('function isCouncilGreeting('));
+ assert.ok(js.includes('if(isCouncilGreeting(t)&&enabledAthaSyncRooms.has(currentChatId))await startCouncilOnGreeting'));
+ assert.ok(js.includes("await setCouncilDialogue('dialogue')"));
+ assert.ok(js.includes('await sendAthaSyncRoom(chat)'));
 });
 test("Old room-storage keys and other existing providers remain unchanged",()=>{
  assert.match(html,/const storageKey='atlasCouncilChatsV1'/);
@@ -24,38 +26,30 @@ test("Old room-storage keys and other existing providers remain unchanged",()=>{
  assert.match(html,/id="geminiConnect"/);
  assert.match(html,/id="copilotConnect"/);
 });
-const start=js.indexOf('async function openAthaInvitation()');
-const end=js.indexOf("document.getElementById('callAtha').onclick",start);
-const invite=js.slice(start,end);
-function invitationHarness(response,consented=false){
- const chat={id:'new_room',items:[{role:'user',content:'Yeni mesaj'}]};
- const enabled=new Set(consented?[chat.id]:[]),calls=[],views=[],status={textContent:''};
- const run=new Function('chats','currentChatId','enabledAthaSyncRooms','fetch','renderCouncilAccount','saveAthaSyncConsent','renderAthaMcpStatus','sendAthaCall','show','athaSyncStatus','updateAthaSyncControls',"let athaCurrentConnection=null;"+invite+';return openAthaInvitation')(
-  [chat],chat.id,enabled,async url=>{calls.push(url);return Response.json(response)},()=>{},()=>{},()=>{},async()=>calls.push('call'),view=>views.push(view),status,()=>{}
- );
- return {run,chat,enabled,calls,views,status};
-}
-test('Authorized existing rooms call Atha without a transcript or clipboard screen',async()=>{
- const h=invitationHarness({authenticated:true,connection:{privateCloudSync:true}});const before=JSON.stringify(h.chat.items);
- await h.run();assert.ok(h.calls.includes('call'));assert.equal(h.views.length,0);assert.ok(h.enabled.has('new_room'));
- assert.equal(JSON.stringify(h.chat.items),before,'existing permission must not restore old messages');
- assert.doesNotMatch(invite,/clipboard|textarea|buildAthaHandoff|user-imported-chatgpt/);
-});
-test('New or locally deleted rooms use the same setup screen and never inherit old conversations',async()=>{
- for(const staleConsent of [false,true]){
-  const h=invitationHarness({authenticated:true,connection:null},staleConsent);await h.run();
-  assert.deepEqual(h.views,['help']);assert.ok(!h.calls.includes('call'));assert.ok(!h.enabled.has('new_room'));assert.equal(h.chat.items.length,1);
-  assert.match(h.status.textContent,/yeni sohbet için eşitleme izni/);
- }
-});
-test('Signed-out rooms use that same setup view with a direct login explanation',async()=>{
- const h=invitationHarness({authenticated:false});await h.run();assert.deepEqual(h.views,['help']);assert.ok(!h.calls.includes('call'));assert.match(h.status.textContent,/GitHub ile giriş yap/);
+test('Selam triggers dialogue + sync once; other messages and unsynced rooms cannot trigger Atha',async()=>{
+ const start=js.indexOf('function isCouncilGreeting('),end=js.indexOf("document.getElementById('reset').onclick",start);
+ assert.ok(start>=0&&end>start);
+ const snippet=js.slice(start,end),effects=[],notice={textContent:''},enabled=new Set(['room']);
+ const timers=new Map([['room',123]]);
+ const harness=new Function('enabledAthaSyncRooms','athaSyncTimers','clearTimeout','setCouncilDialogue','sendAthaSyncRoom','currentChatId','document','scheduleAthaSync',snippet+';return {isCouncilGreeting,startCouncilOnGreeting}')(
+  enabled,timers,id=>effects.push('timer:'+id),async mode=>effects.push('mode:'+mode),async chat=>effects.push('sync:'+chat.id),
+  'room',{getElementById(){return notice}},room=>effects.push('reschedule:'+room));
+ assert.equal(harness.isCouncilGreeting('selam'),true);
+ assert.equal(harness.isCouncilGreeting('Selam!'),true);
+ assert.equal(harness.isCouncilGreeting('selam arkadaşlar'),false);
+ assert.equal(harness.isCouncilGreeting('sus'),false);
+ assert.equal(await harness.startCouncilOnGreeting({id:'room'},'selam'),true);
+ assert.deepEqual(effects,['timer:123','mode:dialogue','sync:room']);
+ assert.match(notice.textContent,/gerçek Atha yanıtı bekleniyor/);
+ assert.equal(await harness.startCouncilOnGreeting({id:'room'},'nasılsın'),false);
+ assert.equal(await harness.startCouncilOnGreeting({id:'unsynced'},'selam'),false);
+ assert.equal(effects.length,3);
 });
 test('Status distinguishes a verified account, an active chat and a chat with no grant',()=>{
  const fn=js.slice(js.indexOf('function renderAthaControls('),js.indexOf('function openAthaSettings('));
  const elements=new Map();const document={getElementById(id){if(!elements.has(id))elements.set(id,{});return elements.get(id)}};
  const render=new Function('document','enabledAthaSyncRooms','currentChatId','councilAccountAuthenticated',fn+';return renderAthaControls')(document,new Set(['room']),'room',true);
- render({automaticParticipation:true});assert.match(elements.get('athaSimpleStatus').textContent,/Bağlantı doğrulandı/);
+ render({automaticParticipation:true});assert.match(elements.get('athaSimpleStatus').textContent,/Otomatik olay aboneliği açık/);
  render({participationMode:'paused',oauthConnected:false});assert.match(elements.get('athaSimpleStatus').textContent,/bağlı değil/);
  render({accountScope:true,oauthConnected:true,eventSubscriptionActive:true,privateCloudSync:false});assert.match(elements.get('athaSimpleStatus').textContent,/Hesap bağlantısı doğrulandı.*yerel/);assert.equal(elements.get('athaSetupLink').hidden,true);
  render({participationMode:'paused',oauthConnected:true});assert.equal(elements.get('athaSimpleStatus').textContent,'Atha durduruldu');

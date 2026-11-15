@@ -183,19 +183,20 @@ test("Private response inbox is owner-scoped, read-only and deleted with room",a
  assert.equal(d1.replies.size,0);
  assert.equal((await request(room+"/replies",{user:"1"})).status,404);
 });
-test("Invitation uses authorized calls and reply inbox deduplicates source IDs",()=>{
+test("Greeting auto-start is used instead of manual calls, reply inbox deduplicates source IDs",()=>{
  const k=source.indexOf("const HTML="),html=JSON.parse(source.slice(k+11,source.lastIndexOf(";")));
  assert.match(html,/id="athaSyncCheckReplies"/);
  assert.match(html,/function receiveAthaReplies/);
- assert.match(html,/async function openAthaInvitation/);
- assert.match(html,/await sendAthaCall\(\)/);
+ assert.doesNotMatch(html,/id="callAtha"/);
+ assert.doesNotMatch(html,/openAthaInvitation|sendAthaCall/);
+ assert.match(html,/function isCouncilGreeting/);
+ assert.match(html,/function startCouncilOnGreeting/);
  assert.doesNotMatch(html,/buildAthaHandoffContext/);
  assert.match(html,/setInterval\(\(\)=>\{if\(!document\.hidden\)receiveAthaReplies/);
  assert.match(html,/stored\.has\(reply\.replyId\)/);
  assert.match(html,/source:"cloudflare-connector-user-approved"/);
  assert.match(html,/scheduleAthaSync\(roomId\)/);
 });
-
 test("Human messages are queued immediately, deduplicated and deleted with room",async()=>{
  const path="/api/atha-sync/rooms/c99990000";
  const base={consent:true,title:"Atha events test",items:[{role:"user",name:"Sen",content:"Selam",speakerId:"human"}]};
