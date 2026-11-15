@@ -38,7 +38,7 @@ test('Any nonempty message including punctuation and emoji starts automatically;
   enabled,timers,id=>effects.push('timer:'+id),async mode=>effects.push('mode:'+mode),async chat=>effects.push('sync:'+chat.id),
   'room',{getElementById(){return notice}},room=>effects.push('reschedule:'+room),connection);
  for(const value of ['selam','Evet selam ve devam','.', '🔥','nasılsın','evet','!'])assert.equal(harness.isCouncilUserMessage(value),true,value);
- for(const value of ['', ' ', '\\n\\t'])assert.equal(harness.isCouncilUserMessage(value),false,JSON.stringify(value));
+ for(const value of ['', ' ', String.fromCharCode(10,9)])assert.equal(harness.isCouncilUserMessage(value),false,JSON.stringify(value));
  assert.equal(await harness.startCouncilOnUserMessage({id:'room'},'.'),true);
  assert.deepEqual(effects,['timer:123','mode:dialogue','sync:room']);
  assert.match(notice.textContent,/yanıtı henüz doğrulanmadı/);
