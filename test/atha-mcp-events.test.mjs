@@ -108,6 +108,16 @@ test('Plain selam automatically queues one genuine event without a manual call r
  const denied=await request('/api/atha-sync/rooms/'+room+'/call','PUT',{request_id:'request_once_1234567890'},null,{origin,'x-atha-sync':'1'});
  assert.equal(denied.status,404,'obsolete Atha manual-call API must be gone');
 });
+test('Punctuation-only and emoji-only user turns queue real automatic events without keyword matching',async()=>{
+ await subscribe();
+ sql.prepare('INSERT INTO atha_mcp_participation VALUES(?,?,?,?)').run(owner,room,'dialogue',now());
+ seedEvent('evt_period');seedEvent('evt_emoji');
+ await runtime.mcpQueueEvents(env,owner,room,['evt_period','evt_emoji'],[{role:'user',speakerId:'human',content:'.'},{role:'user',speakerId:'human',content:'🔥'}]);
+ await runtime.mcpDeliver(env);
+ const bodies=callbackCalls.filter(c=>c.body.name==='message.created').map(c=>c.body.data.event_id).sort();
+ assert.deepEqual(bodies,['evt_emoji','evt_period']);
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_sync_replies').get().n,0,'a webhook receipt is not an Atha answer');
+});
 test('Retry creates a fresh real-model event for the latest reply; it never overwrites content',async()=>{
  const {req}=await dialogueSetup();const headers={cookie:req.headers.get('cookie'),origin,'x-atha-sync':'1'};
  const path='/api/atha-sync/rooms/'+room+'/retry',body={request_id:'retry_request_1234567890',parent_reply_id:'mcp_evt_current'};
