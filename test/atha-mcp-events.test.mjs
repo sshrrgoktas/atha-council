@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {createHmac} from 'node:crypto';
 const source=readFileSync(new URL('../worker/production.js',import.meta.url),'utf8');
-const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues,councilStopIntent};').toString('base64'));
+const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues,councilStopIntent,councilQwenAutoRespond,councilQwenAutoStatus};').toString('base64'));
 const worker=runtime.default,origin='https://atlas-council.sshrrgoktas.workers.dev',resource=origin+'/mcp';
 const owner='github:101',room='room_one',now=()=>Date.now();
 const oldFetch=globalThis.fetch;
@@ -28,7 +28,7 @@ async function subscribe(){const r=await rpc('events/subscribe',subscription());
 async function queue(id='evt_test',text='Atha, merhaba'){seedEvent(id);await runtime.mcpQueueEvents(env,owner,room,[id],[{content:text}])}
 beforeEach(async()=>{
  sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');
- for(const path of ['schema.sql','replies.sql','events.sql','mcp.sql','mcp-receipts.sql','mcp-diagnostics.sql','mcp-account.sql','dialogue.sql'])sql.exec(readFileSync(new URL('../worker/atha-sync/'+path,import.meta.url),'utf8'));
+ for(const path of ['schema.sql','replies.sql','events.sql','mcp.sql','mcp-receipts.sql','mcp-diagnostics.sql','mcp-account.sql','dialogue.sql','qwen-auto.sql'])sql.exec(readFileSync(new URL('../worker/atha-sync/'+path,import.meta.url),'utf8'));
  db=new D1(sql);env={ATHA_SYNC_DB:db,GITHUB_SESSION_SECRET:'test-only-session-secret-with-more-than-32-characters',ATHA_MCP_CALLBACK_ORIGINS:'https://callbacks.openai.com'};
  sql.prepare('INSERT INTO atha_sync_rooms VALUES(?,?,?,?,?)').run(owner,room,'Test',JSON.stringify({version:1,title:'Test',items:[{role:'user',name:'Sen',content:'Atha selam',speakerId:'human'},{role:'assistant',name:'Google Gemini',content:'Merhaba',speakerId:'gemini'}]}),now());
  sql.prepare('INSERT INTO atha_mcp_grants(grant_id,owner_id,room_id,client_id,expires_at) VALUES(?,?,?,?,?)').run('grant_test',owner,room,'client_test',now()+86400000);
@@ -93,6 +93,45 @@ test('An intervening user turn or stop cancels a reserved dialogue; short text s
  assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_mcp_delivery').get().n,0);
  assert.equal(runtime.councilShortReply('Bir. İki! Üç?'),'Bir. İki!');
  assert.ok(runtime.councilShortReply('Kelime '.repeat(150)).length<=500);
+});
+test('Qwen temporary member is opt-in, owner-scoped and never impersonates ChatGPT',async()=>{
+ let calls=0;
+ env.AI={run:async(model,args)=>{calls++;assert.equal(model,'@cf/qwen/qwen3.8-27b');assert.equal(args.reasoning_effort,'low');return {choices:[{message:{content:'Merhaba, ben bağımsız Qwen!'}}]}}};
+ seedEvent('evt_qwen_safe');
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Atha selam'),false);
+ assert.equal(calls,0,'Default-off must never invoke billable AI');
+ sql.prepare('INSERT INTO atha_qwen_auto_accounts(owner_id,enabled,updated_at) VALUES(?,1,?)').run(owner,now());
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Atha selam'),true);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Atha selam'),false);
+ assert.equal(calls,1,'Same event must consume one inference only');
+ const out=sql.prepare("SELECT * FROM atha_sync_replies WHERE reply_id='qwen_evt_qwen_safe'").get();
+ assert.equal(out.content,'Merhaba, ben bağımsız Qwen!');
+ const info=await runtime.councilQwenAutoStatus(env,owner,room);
+ assert.equal(info.enabled,true);assert.equal(info.usedToday,1);assert.equal(info.latest.state,'replied');
+ const read=await rpc('tools/call',{name:'council_read',arguments:{room_id:room}});
+ const reply=read.result.structuredContent.replies.find(x=>x.reply_id==='qwen_evt_qwen_safe');
+ assert.equal(reply.speakerId,'qwen');assert.equal(reply.name,'Qwen 3.8 · Workers AI');
+ assert.notEqual(reply.speakerId,'chatgpt');
+});
+test('Qwen enforces stop, room pause, newest user and per-account daily budget',async()=>{
+ let calls=0;
+ env.AI={run:async()=>{calls++;return {choices:[{message:{content:'Yanıt Qwen'}}]}}};
+ sql.prepare('INSERT INTO atha_qwen_auto_accounts(owner_id,enabled,updated_at) VALUES(?,1,?)').run(owner,now());
+ for(const [eventId,content] of [['evt_stop_qwen','sus'],['evt_old_qwen','Merhaba'],['evt_qwen_quota','Atha selam']])seedEvent(eventId);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_stop_qwen','sus'),false);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_old_qwen','Merhaba'),false);
+ sql.prepare("INSERT INTO atha_mcp_participation VALUES(?,?,?,?)").run(owner,room,'paused',now());
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_quota','Atha selam'),false);
+ sql.prepare("UPDATE atha_mcp_participation SET mode='dialogue'").run();
+ const day=new Date().toISOString().slice(0,10);
+ sql.prepare('INSERT INTO atha_qwen_auto_usage(owner_id,utc_day,attempts) VALUES(?,?,18)').run(owner,day);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_quota','Atha selam'),false);
+ assert.equal(calls,0,'Quota exhausted must not bill for inference');
+ assert.equal(sql.prepare("SELECT state FROM atha_qwen_auto_jobs WHERE event_id='evt_qwen_quota'").get().state,'quota');
+ sql.prepare('UPDATE atha_qwen_auto_accounts SET enabled=0 WHERE owner_id=?').run(owner);
+ seedEvent('evt_disabled_qwen');
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_disabled_qwen','Atha selam'),false);
+ assert.equal(calls,0);
 });
 test('Plain selam automatically queues one genuine event without a manual call route',async()=>{
  await subscribe();
