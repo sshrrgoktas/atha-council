@@ -10,14 +10,15 @@ test("Atha Council Worker and embedded browser JS compile without modifying back
  new Function(source.replace("export default {","const runtime = {"));
  new Function(js);
 });
-test("Atha manual call is removed; every nonempty user message begins automatic dialogue",()=>{
+test("Atha manual-only turn never activates endless inter-model dialogue",()=>{
  assert.equal(html.includes('id="callAtha"'),false);
  assert.equal(html.includes('id="callAthaFromAgents"'),false);
  assert.equal(js.includes('sendAthaCall'),false);
  assert.equal(js.includes('openAthaInvitation'),false);
  assert.ok(js.includes('function isCouncilUserMessage('));
  assert.ok(js.includes('if(isCouncilUserMessage(t)&&enabledAthaSyncRooms.has(currentChatId))await startCouncilOnUserMessage'));
- assert.ok(js.includes("await setCouncilDialogue('dialogue')"));
+ assert.ok(!js.includes("await setCouncilDialogue('dialogue')"));
+ assert.ok(js.includes("if(athaCurrentConnection?.participationMode==='dialogue')await setCouncilDialogue('mentions')"));
  assert.doesNotMatch(html,/en fazla 3 tur ve 20 dakika/);
  assert.doesNotMatch(html,/ChatGPT bağlantısı bekleniyor/);
  assert.ok(js.includes('await sendAthaSyncRoom(chat)'));
@@ -40,8 +41,8 @@ test('Any nonempty message including punctuation and emoji starts automatically;
  for(const value of ['selam','Evet selam ve devam','.', '🔥','nasılsın','evet','!'])assert.equal(harness.isCouncilUserMessage(value),true,value);
  for(const value of ['', ' ', String.fromCharCode(10,9)])assert.equal(harness.isCouncilUserMessage(value),false,JSON.stringify(value));
  assert.equal(await harness.startCouncilOnUserMessage({id:'room'},'.'),true);
- assert.deepEqual(effects,['timer:123','mode:dialogue','sync:room']);
- assert.match(notice.textContent,/yanıtı henüz doğrulanmadı/);
+ assert.deepEqual(effects,['timer:123','sync:room']);
+ assert.match(notice.textContent,/otomatik konuşma kapalı/);
  assert.equal(await harness.startCouncilOnUserMessage({id:'room'},'Evet selam ve devam'),true);
  assert.equal(effects.at(-1),'sync:room');
  assert.equal(await harness.startCouncilOnUserMessage({id:'unsynced'},'🔥'),false);
@@ -49,7 +50,7 @@ test('Any nonempty message including punctuation and emoji starts automatically;
  connection.participationMode='dialogue';
  const before=effects.length;
  assert.equal(await harness.startCouncilOnUserMessage({id:'room'},'!'),true);
- assert.deepEqual(effects.slice(before),['sync:room'],'do not reset dialogue epoch on every new message');
+ assert.deepEqual(effects.slice(before),['mode:mentions','sync:room'],'stop old inter-agent dialogue before user turn');
  assert.ok(js.indexOf("councilStopIntent(t)){await pauseAthaParticipation();return;}")<js.indexOf("startCouncilOnUserMessage(chats.find"));
 });
 test('Status distinguishes a verified account, an active chat and a chat with no grant',()=>{
