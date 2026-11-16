@@ -15,7 +15,7 @@ const PID=path.join(DIR,'agent.pid');
 const STOP=path.join(DIR,'agent.stop');
 const BASE='https://atlas-council.sshrrgoktas.workers.dev';
 const PERIOD_MS=14000;
-const FREE_MODELS=['openrouter/openrouter/free','openrouter/nvidia/nemotron-3.5-lightning:free'];
+const FREE_MODELS=['openrouter/nvidia/nemotron-3.5-lightning:free','openrouter/openrouter/free'];
 const LIMIT_PER_DAY=25;
 function jsonFile(file,fallback){try{return JSON.parse(fs.readFileSync(file,'utf8'))}catch{return fallback}}
 function atomic(file,value){
@@ -57,17 +57,19 @@ async function api(route,payload){
 }
 function filterModelEvents(output){
  const parts=[],errors=[];
- let finished=false;
+ let finished=false,started=false;
  for(const line of String(output||'').split(/\r?\n/)){
   if(!line.trim())continue;
   let event;try{event=JSON.parse(line)}catch{continue}
+  if(event.type==='step_start')started=true;
   if(event.type==='tool_use')errors.push('TOOL_USED');
   if(event.type==='step_finish')finished=true;
   if(event.type==='text'&&typeof event.part?.text==='string')parts.push(event.part.text);
   if(event.type==='error')errors.push('MODEL_ERROR');
  }
  const text=parts.join('').replace(/<think>[\s\S]*?<\/think>/gi,'').replace(/<analysis>[\s\S]*?<\/analysis>/gi,'').trim();
- if(!finished||errors.length||!text||text.length>1500||/<\/?(?:think|analysis)\b/i.test(text))return {ok:false,reason:errors[0]||(!finished?'INCOMPLETE':'NOT_FINAL_TEXT')};
+ if(/maksimum adım sınırına ulaşıldı|maximum step limit reached|tool call|aracı çağırıyorum/i.test(text))errors.push('INTERNAL_STATUS');
+ if((!started&&!finished)||errors.length||!text||text.length>1500||/<\/?(?:think|analysis)\b/i.test(text))return {ok:false,reason:errors[0]||(!started&&!finished?'INCOMPLETE':'NOT_FINAL_TEXT')};
  return {ok:true,text};
 }
 function runModel(text,history=[],preferences={}){
