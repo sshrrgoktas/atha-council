@@ -1,0 +1,7 @@
+agent-config.json
+agent-state.json
+.council-agent-private.pem
+agent.pid
+agent.stop
+agent.log
+*.bak
