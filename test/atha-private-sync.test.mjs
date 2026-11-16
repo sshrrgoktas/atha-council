@@ -198,6 +198,21 @@ test("Every typed message starts without manual calls; reply inbox deduplicates 
  assert.ok(html.includes('isOpenCode?"opencode":isQwen?"qwen"'));
  assert.match(html,/scheduleAthaSync\(roomId\)/);
 });
+test("OpenCode has a visible agent card and honest room-specific status in the Android WebView",()=>{
+ const pos=source.indexOf("const HTML=");
+ const html=JSON.parse(source.slice(pos+11,source.lastIndexOf(";")));
+ assert.match(html,/<strong>OpenCode · Ücretsiz Ajan<\/strong>/);
+ assert.match(html,/id="openCodeMemberBadge"/);
+ assert.match(html,/id="openCodeMemberInfo"/);
+ assert.match(html,/id="openCodeRoomInfo"/);
+ assert.match(html,/id="openCodeQuickStatus"/);
+ assert.match(html,/function renderOpenCodeMember\(info,authenticated\)/);
+ assert.match(html,/renderOpenCodeMember\(data\.openCodeAgent\|\|null,true\)/);
+ assert.match(html,/OpenCode: başka odada/);
+ assert.match(html,/Bu odada henüz kaydedilmiş gerçek OpenCode yanıtı bulunmuyor/);
+ assert.match(source,/openCodeAgent=\{paired:false,inThisRoom:false/);
+ assert.match(source,/atha_opencode_agents a JOIN atha_sync_rooms/);
+});
 test("Human messages are queued immediately, deduplicated and deleted with room",async()=>{
  const path="/api/atha-sync/rooms/c99990000";
  const base={consent:true,title:"Atha events test",items:[{role:"user",name:"Sen",content:"Selam",speakerId:"human"}]};
