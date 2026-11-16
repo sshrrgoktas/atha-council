@@ -794,7 +794,7 @@ async function mcpDeliver(env){
  const due=(await db.prepare("SELECT d.* FROM atha_mcp_delivery d WHERE d.state IN ('pending','accepted') AND d.next_at<=? AND d.lease_until<=? ORDER BY d.next_at LIMIT 8").bind(now,now).all()).results||[];
  for(const d of due){
   const lease=now+20000;
-  const claim=await db.prepare("UPDATE atha_mcp_delivery SET lease_until=?,attempts=CASE WHEN attempts<6 THEN attempts+1 ELSE attempts END WHERE subscription_id=? AND event_id=? AND state IN ('pending','accepted') AND lease_until<=? AND next_at<=? AND attempts=?").bind(lease,d.subscription_id,d.event_id,now,now,d.attempts).run();if(claim.meta?.changes!==1)continue;
+  const claim=await db.prepare("UPDATE atha_mcp_delivery SET lease_until=?,attempts=CASE WHEN state='pending' AND attempts<6 THEN attempts+1 ELSE attempts END WHERE subscription_id=? AND event_id=? AND state IN ('pending','accepted') AND lease_until<=? AND next_at<=? AND attempts=?").bind(lease,d.subscription_id,d.event_id,now,now,d.attempts).run();if(claim.meta?.changes!==1)continue;
   // Re-read authorization immediately before EACH send, including retries.
   const sub=await db.prepare("SELECT s.* FROM atha_mcp_subscriptions s JOIN atha_mcp_grants g ON g.grant_id=s.grant_id JOIN atha_sync_rooms r ON r.owner_id=s.owner_id AND r.room_id=? LEFT JOIN atha_mcp_participation p ON p.owner_id=r.owner_id AND p.room_id=r.room_id WHERE s.subscription_id=? AND s.owner_id=? AND ((s.room_id=r.room_id AND NOT EXISTS(SELECT 1 FROM atha_mcp_account_subscriptions ac WHERE ac.subscription_id=s.subscription_id)) OR (EXISTS(SELECT 1 FROM atha_mcp_account_subscriptions ac WHERE ac.subscription_id=s.subscription_id) AND EXISTS(SELECT 1 FROM atha_mcp_account_access aa WHERE aa.owner_id=s.owner_id AND aa.enabled=1))) AND s.active=1 AND s.expires_at>? AND g.revoked=0 AND g.expires_at>? AND COALESCE(p.mode,'mentions')!='paused'").bind(d.room_id,d.subscription_id,d.owner_id,Date.now(),Date.now()).first();
   if(!sub){await db.prepare("UPDATE atha_mcp_delivery SET state='cancelled',lease_until=0 WHERE subscription_id=? AND event_id=? AND state IN ('pending','accepted')").bind(d.subscription_id,d.event_id).run();continue}
@@ -805,15 +805,24 @@ async function mcpDeliver(env){
   }
   const reply=await db.prepare("SELECT reply_id FROM atha_sync_replies WHERE owner_id=? AND room_id=? AND reply_id=?").bind(d.owner_id,d.room_id,'mcp_'+d.event_id).first();
   if(reply){await db.prepare("UPDATE atha_mcp_delivery SET state='replied',lease_until=0 WHERE subscription_id=? AND event_id=? AND state IN ('pending','accepted')").bind(d.subscription_id,d.event_id).run();continue}
-  if(d.attempts>=6){await db.prepare("UPDATE atha_mcp_delivery SET state='unanswered',lease_until=0 WHERE subscription_id=? AND event_id=? AND state IN ('pending','accepted')").bind(d.subscription_id,d.event_id).run();continue}
+  if(d.state==='accepted'){
+   // The webhook was already acknowledged. Never redeliver a 2xx event:
+   // the host processes it asynchronously and may deduplicate identical IDs.
+   // Preserve late real council_reply, even after a one-hour no-reply timeout.
+   const receipt=await db.prepare('SELECT accepted_at,reply_saved_at FROM atha_mcp_receipts WHERE owner_id=? AND room_id=? AND event_id=?').bind(d.owner_id,d.room_id,d.event_id).first();
+   const expired=receipt?.accepted_at!=null&&Date.now()-receipt.accepted_at>=3600000;
+   await db.prepare("UPDATE atha_mcp_delivery SET state=?,next_at=?,lease_until=0 WHERE subscription_id=? AND event_id=? AND state='accepted' AND lease_until=?").bind(expired?'unanswered':'accepted',expired?0:(receipt?.accepted_at||Date.now())+3600000,d.subscription_id,d.event_id,lease).run();
+   continue;
+  }
+  if(d.attempts>=6){await db.prepare("UPDATE atha_mcp_delivery SET state='failed',lease_until=0 WHERE subscription_id=? AND event_id=? AND state='pending'").bind(d.subscription_id,d.event_id).run();continue}
   let status=0,error='network_error';
   try{const secret=await mcpOpen(sub.secret_cipher,env);const r=await mcpSignedFetch(sub,secret,d.body,d.event_id,env);status=r.status;await r.body?.cancel();error='http_'+status}catch(e){error=e.reason||'network_error'}
   const accepted=status>=200&&status<300,attempt=d.attempts+1;
   const transient=!status||status===408||status===429||status>=500;
-  // A 2xx is transport acceptance, never proof that Work generated/saved a reply.
-  // Wait at least five minutes for inference before redelivery; six sends maximum.
+  // A 2xx acknowledges delivery, not inference. It must not be sent again.
+  // Schedule only a one-hour no-reply check; transient non-2xx retries stay bounded.
   const state=accepted?'accepted':!transient||attempt>=6?'failed':'pending';
-  const nextAt=Date.now()+(accepted?Math.min(3600000,300000*2**(attempt-1)):Math.min(3600000,30000*2**(attempt-1)));
+  const nextAt=Date.now()+(accepted?3600000:Math.min(3600000,30000*2**(attempt-1)));
   await db.batch([
    db.prepare("UPDATE atha_mcp_delivery SET state=?,attempts=?,next_at=?,lease_until=0 WHERE subscription_id=? AND event_id=? AND state IN ('pending','accepted') AND lease_until=?").bind(state,attempt,nextAt,d.subscription_id,d.event_id,lease),
    db.prepare('INSERT INTO atha_mcp_receipts(owner_id,room_id,event_id,accepted_at,last_http_status) VALUES(?,?,?,?,?) ON CONFLICT(owner_id,room_id,event_id) DO UPDATE SET accepted_at=COALESCE(accepted_at,excluded.accepted_at),last_http_status=excluded.last_http_status').bind(d.owner_id,d.room_id,d.event_id,accepted?Date.now():null,status),
