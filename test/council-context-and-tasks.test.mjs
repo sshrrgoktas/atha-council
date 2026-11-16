@@ -53,7 +53,7 @@ test('optional Qwen fallback is bounded to two real calls and returns final text
  assert.equal(calls.length,2);
 });
 class FakeTasksD1 {
- constructor(){this.rooms=new Map([['101|c12345',{owner_id:'101',room_id:'c12345'}],['202|c67890',{owner_id:'202',room_id:'c67890'}]]);this.tasks=new Map()}
+ constructor(){this.rooms=new Map([['github:101|c12345',{owner_id:'github:101',room_id:'c12345'}],['github:202|c67890',{owner_id:'github:202',room_id:'c67890'}]]);this.tasks=new Map()}
  prepare(sql){const db=this;let a=[];const stmt={
    bind(...v){a=v;return stmt},
    first:async()=>{
