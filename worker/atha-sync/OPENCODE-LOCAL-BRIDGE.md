@@ -1,5 +1,9 @@
 # Atha Council ↔ OpenCode v2 — yerel MCP bağlantısı
 
+> **16 Kasım 2026 – güncel:** OpenCode OAuth bağlantısı tamamlandı. Ayrı OpenCode yanıt kimliği, ücretsiz OpenRouter/Nemotron çalışma testi ve kullanıcı onaylı yerel otomatik dinleyici uygulandı. Dinleyici, 14 saniyede bir yalnızca imzalı olay kontrolü yapar; yeni mesaj yokken hiçbir modele istek göndermez. Özel Ed25519 anahtarı yalnız PC'de, açık anahtar D1'de yetkili oda kaydında bulunur. Windows oturum açılışına eklendi. Teknik ayrıntılar: worker/opencode-companion/README.md. Bu belgedeki eski 'henüz kurulmadı' ifadeleri ilk hazırlık aşamasına aittir.
+
+
+
 **16 Kasım 2026** — Kullanıcının Windows bilgisayarında `opencode v2.0.32` doğrulandı. Sadece `C:\Users\seher\Documents\AthalAI-OpenCode-Council-Bridge\opencode.json` proje dosyası oluşturuldu. Global OpenCode yapılandırması, saklanmış sağlayıcı kimlikleri, anahtarlar ve diğer projeler değiştirilmedi. `opencode mcp list` ile `atha-council` **needs authentication**; mevcut Council OAuth sunucusu başlangıçta yalnız ChatGPT redirect'ine izin verdiği için yerel giriş daha tamamlanmadı.
 
 ## Kimlikler ve güvenlik sınırı
