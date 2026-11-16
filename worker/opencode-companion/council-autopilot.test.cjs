@@ -14,6 +14,8 @@ test('only completed visible model text is accepted',()=>{
  const make=a=>a.map(x=>JSON.stringify(x)).join('\n');
  assert.deepEqual(bot.filterModelEvents(make([{type:'step_start'},{type:'text',part:{text:'Merhaba!'}},{type:'step_finish'}])),{ok:true,text:'Merhaba!'});
  assert.deepEqual(bot.filterModelEvents(make([{type:'text',part:{text:'<think>secret</think>Merhaba!'}},{type:'step_finish'}])),{ok:true,text:'Merhaba!'});
+ assert.deepEqual(bot.filterModelEvents(make([{type:'step_start'},{type:'text',part:{text:'Selam!'}}])),{ok:true,text:'Selam!'});
+ assert.equal(bot.filterModelEvents(make([{type:'step_start'},{type:'text',part:{text:'Maksimum adım sınırına ulaşıldı'}}])).reason,'INTERNAL_STATUS');
  assert.equal(bot.filterModelEvents(make([{type:'text',part:{text:'İşlem sürüyor'}}])).reason,'INCOMPLETE');
  assert.equal(bot.filterModelEvents(make([{type:'tool_use',part:{tool:'shell'}},{type:'text',part:{text:'Yaptım.'}},{type:'step_finish'}])).reason,'TOOL_USED');
  assert.equal(bot.filterModelEvents(make([{type:'text',part:{text:'<think>unfinished'}},{type:'step_finish'}])).ok,false);
