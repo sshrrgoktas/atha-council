@@ -802,6 +802,7 @@ test('OpenCode final reply removes hidden thoughts and refuses old, foreign and 
  const send=async content=>rpc('tools/call',{name:'council_opencode_reply',arguments:{room_id:room,event_id:event,content}});
  assert.match((await send('<think>unfinished')).error.message,/final answer/);
  assert.match((await send('Tool call: get secret')).error.message,/final answer/);
+ assert.match((await send('Şimdi video oluşturuyorum.')).error.message,/UNVERIFIED_ACTION/);
  const post=await send('<think>do not show</think>Selam! Nasılsın?');
  assert.equal(post.result.structuredContent.name,'OpenCode · OpenRouter Free');
  assert.equal(sql.prepare('SELECT content FROM atha_sync_replies WHERE reply_id=?').get('opencode_'+event).content,'Selam! Nasılsın?');
