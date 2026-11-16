@@ -252,6 +252,56 @@ test('MCP requires OAuth, advertises tools/events, denies foreign origin and roo
  assert.equal(context.conversation.items[1].speakerId,'gemini');assert.equal(context.untrustedContent,true);
  sql.prepare('UPDATE atha_mcp_tokens SET expires_at=0').run();assert.equal((await rpc('tools/list')).status,401);
 });
+test('OpenCode OAuth DCR permits only bounded native loopback redirects and preserves ChatGPT clients',async()=>{
+ const invalid=[
+  'http://localhost:52817/callback','http://127.0.0.2:52817/callback','http://0.0.0.0:52817/callback',
+  'http://192.168.1.3:52817/callback','https://127.0.0.1:52817/callback',
+  'http://127.0.0.1:80/callback','http://127.0.0.1:65536/callback','http://127.0.0.1:00001/callback',
+  'http://127.0.0.1:52817/evil','http://127.0.0.1:52817/callback?token=oops',
+  'http://127.0.0.1:52817/callback#secret','http://user@127.0.0.1:52817/callback',
+  'http://127.0.0.1:52817/callback/..','http://127.0.0.1:52817/callback//',
+  'https://evil.example/callback','https://chatgpt.com.evil.example/connector_platform_oauth_redirect'
+ ];
+ for(const redirect of invalid){
+  const r=await request('/mcp/oauth/register','POST',{redirect_uris:[redirect],token_endpoint_auth_method:'none'});
+  assert.equal(r.status,400,'must reject unsafe OAuth return '+redirect);
+ }
+ const loopback='http://127.0.0.1:52817/callback';
+ const payload={redirect_uris:[loopback],token_endpoint_auth_method:'none'};
+ const one=await (await request('/mcp/oauth/register','POST',payload)).json();
+ const two=await (await request('/mcp/oauth/register','POST',payload)).json();
+ assert.ok(one.client_id.startsWith('opencode_'));
+ assert.equal(two.client_id,one.client_id,'DCR should be deterministic for same native client port');
+ const original=await (await request('/mcp/oauth/register','POST',{redirect_uris:['https://chatgpt.com/connector_platform_oauth_redirect']})).json();
+ assert.ok(original.client_id.startsWith('chatgpt_'));
+ assert.notEqual(original.client_id,one.client_id);
+ const params=new URLSearchParams({
+  client_id:one.client_id,redirect_uri:loopback,response_type:'code',resource,
+  state:'state_for_native_client',code_challenge:'k'.repeat(43),
+  code_challenge_method:'S256',scope:'council:read council:reply council:events'
+ });
+ const p=await request('/mcp/oauth/authorize?'+params.toString());
+ assert.equal(p.status,200);
+ assert.match(await p.text(),/GitHub girişi gerekli/);
+ assert.match(p.headers.get('content-security-policy'),/http:\/\/127\.0\.0\.1:\*/);
+ params.set('redirect_uri','http://evil.example:52817/callback');
+ assert.equal((await request('/mcp/oauth/authorize?'+params.toString())).status,400);
+});
+test('OpenCode MCP is read-only and never impersonates real ChatGPT or subscribes to model events',async()=>{
+ sql.prepare("UPDATE atha_mcp_grants SET client_id='opencode_fixture' WHERE grant_id='grant_test'").run();
+ const list=await rpc('tools/list');
+ assert.deepEqual(list.result.tools.map(t=>t.name).sort(),['council_connection_status','council_list_rooms','council_read']);
+ const read=await rpc('tools/call',{name:'council_read',arguments:{room_id:room}});
+ assert.equal(read.result.structuredContent.room_id,room);
+ const denied=await rpc('tools/call',{name:'council_reply',arguments:{room_id:room,event_id:'evt_test',content:'I am ChatGPT'}});
+ assert.match(denied.error.message,/read-only/);
+ const participation=await rpc('tools/call',{name:'council_participation',arguments:{room_id:room,mode:'paused'}});
+ assert.match(participation.error.message,/read-only/);
+ assert.deepEqual((await rpc('events/list')).result.events,[]);
+ assert.ok((await rpc('events/subscribe',subscription())).error);
+ assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_sync_replies').get().n,0);
+ assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_mcp_subscriptions').get().n,0);
+});
 test('OAuth discovery has S256, exact resource, issuer and restricted DCR redirects',async()=>{
  const metadata=await (await request('/.well-known/oauth-authorization-server')).json();assert.deepEqual(metadata.code_challenge_methods_supported,['S256']);assert.equal(metadata.issuer,origin);
  const denied=await request('/mcp/oauth/register','POST',{redirect_uris:['https://evil.example/callback']});assert.equal(denied.status,400);

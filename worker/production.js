@@ -300,6 +300,15 @@ const MCP_SCOPES='council:read council:reply council:events';
 const MCP_ORIGIN='https://atlas-council.sshrrgoktas.workers.dev';
 const MCP_RESOURCE=MCP_ORIGIN+'/mcp';
 const MCP_REDIRECT=/^https:\/\/chatgpt\.com\/(?:connector_platform_oauth_redirect|connector\/oauth\/[A-Za-z0-9_-]+)$/;
+const MCP_OPENCODE_LOOPBACK=/^http:\/\/127\.0\.0\.1:([0-9]{4,5})\/callback$/;
+function mcpRedirectKind(value){
+ if(typeof value!=='string')return null;
+ if(MCP_REDIRECT.test(value))return 'chatgpt';
+ // RFC 8252 native-app loopback callback. No localhost aliases, LAN addresses,
+ // foreign hosts, userinfo, query/fragment, path variations, or privileged ports.
+ const match=MCP_OPENCODE_LOOPBACK.exec(value),port=Number(match?.[1]);
+ return match&&port>=1024&&port<=65535?'opencode':null;
+}
 const mcpEncoder=new TextEncoder();
 function mcpJson(value,status=200,extra={}) {return Response.json(value,{status,headers:{...noStore,...extra}})}
 function mcpError(message,code=-32602,reason) {return Object.assign(new Error(message),{rpcCode:code,reason})}
@@ -323,7 +332,7 @@ async function mcpBody(req,max=32000){
  const out=new Uint8Array(size);let n=0;for(const b of chunks){out.set(b,n);n+=b.length}return new TextDecoder().decode(out);
 }
 function mcpEscape(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function mcpPage(body){return new Response('<!doctype html><html lang="tr"><meta name="viewport" content="width=device-width"><title>Atha Council · ChatGPT bağlantısı</title><style>body{font:17px system-ui;background:#092d32;color:#edffff;max-width:650px;margin:60px auto;padding:24px}button,a{color:#42e1cb}button,select{font:inherit;padding:12px;background:#123c43;color:white;border:1px solid #42e1cb;border-radius:10px}p{line-height:1.6}</style><h1>AthalAI · Atha Council</h1>'+body+'</html>',{headers:{...noStore,'content-type':'text/html;charset=utf-8','content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://chatgpt.com/connector_platform_oauth_redirect https://chatgpt.com/connector/oauth/; base-uri 'none'; frame-ancestors 'none'",'referrer-policy':'same-origin'}})}
+function mcpPage(body,opencode=false){return new Response('<!doctype html><html lang="tr"><meta name="viewport" content="width=device-width"><title>Atha Council · ChatGPT bağlantısı</title><style>body{font:17px system-ui;background:#092d32;color:#edffff;max-width:650px;margin:60px auto;padding:24px}button,a{color:#42e1cb}button,select{font:inherit;padding:12px;background:#123c43;color:white;border:1px solid #42e1cb;border-radius:10px}p{line-height:1.6}</style><h1>AthalAI · Atha Council</h1>'+body+'</html>',{headers:{...noStore,'content-type':'text/html;charset=utf-8','content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://chatgpt.com/connector_platform_oauth_redirect https://chatgpt.com/connector/oauth/"+(opencode?" http://127.0.0.1:*":"")+"; base-uri 'none'; frame-ancestors 'none'",'referrer-policy':'same-origin'}})}
 async function mcpPrincipal(req,env){
  const token=(req.headers.get('authorization')||'').match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
  if(!token)return null;
@@ -337,9 +346,10 @@ async function mcpOAuth(req,env,ctx){
  if(p==='/mcp/oauth/register'){
   if(req.method!=='POST')return mcpJson({error:'method_not_allowed'},405);
   const data=JSON.parse(await mcpBody(req,4000));
-  if(!Array.isArray(data.redirect_uris)||data.redirect_uris.length!==1||!MCP_REDIRECT.test(data.redirect_uris[0])||data.token_endpoint_auth_method&&data.token_endpoint_auth_method!=='none')return mcpJson({error:'invalid_client_metadata'},400);
+  const kind=Array.isArray(data.redirect_uris)&&data.redirect_uris.length===1?mcpRedirectKind(data.redirect_uris[0]):null;
+  if(!kind||data.token_endpoint_auth_method&&data.token_endpoint_auth_method!=='none')return mcpJson({error:'invalid_client_metadata'},400);
   // Deterministic public registration: repeated discovery cannot grow D1 indefinitely.
-  const id='chatgpt_'+await mcpHash(data.redirect_uris[0]);
+  const id=kind+'_'+await mcpHash(data.redirect_uris[0]);
   await db.prepare('INSERT OR IGNORE INTO atha_mcp_clients(client_id,redirect_uris,created_at) VALUES(?,?,?)').bind(id,JSON.stringify(data.redirect_uris),now).run();
   return mcpJson({client_id:id,redirect_uris:data.redirect_uris,token_endpoint_auth_method:'none',grant_types:['authorization_code','refresh_token'],response_types:['code']},201);
  }
@@ -382,12 +392,13 @@ async function mcpOAuth(req,env,ctx){
   const owner=await athaSyncOwner(req,env);
   if(req.method==='GET'){
    const a=Object.fromEntries(url.searchParams),client=await db.prepare('SELECT redirect_uris FROM atha_mcp_clients WHERE client_id=?').bind(a.client_id||'').first();
-   if(!client||!JSON.parse(client.redirect_uris).includes(a.redirect_uri)||!MCP_REDIRECT.test(a.redirect_uri)||a.resource!==MCP_RESOURCE||a.response_type!=='code'||a.code_challenge_method!=='S256'||!validChallenge(a.code_challenge)||!a.state||a.state.length>2000||a.scope&&[...new Set(a.scope.split(' '))].sort().join(' ')!==MCP_SCOPES.split(' ').sort().join(' '))return mcpJson({error:'invalid_request'},400);
-   if(!owner)return mcpPage('<h2>GitHub girişi gerekli</h2><p>Mevcut Atha Council hesabına giriş yap. Ardından bu sekmeye dönüp devam et.</p><a target="_blank" rel="noopener" href="/auth/github/start">GitHub ile giriş yap</a><p><a href="'+mcpEscape(url.pathname+url.search)+'">Girişten sonra devam et</a></p>');
+   if(!client||!JSON.parse(client.redirect_uris).includes(a.redirect_uri)||!mcpRedirectKind(a.redirect_uri)||a.resource!==MCP_RESOURCE||a.response_type!=='code'||a.code_challenge_method!=='S256'||!validChallenge(a.code_challenge)||!a.state||a.state.length>2000||a.scope&&[...new Set(a.scope.split(' '))].sort().join(' ')!==MCP_SCOPES.split(' ').sort().join(' '))return mcpJson({error:'invalid_request'},400);
+   if(!owner)return mcpPage('<h2>GitHub girişi gerekli</h2><p>Mevcut Atha Council hesabına giriş yap. Ardından bu sekmeye dönüp devam et.</p><a target="_blank" rel="noopener" href="/auth/github/start">GitHub ile giriş yap</a><p><a href="'+mcpEscape(url.pathname+url.search)+'">Girişten sonra devam et</a></p>',mcpRedirectKind(a.redirect_uri)==='opencode');
    const rooms=(await db.prepare('SELECT room_id,title FROM atha_sync_rooms WHERE owner_id=? ORDER BY updated_at DESC LIMIT 100').bind(owner).all()).results||[];
-   if(!rooms.length)return mcpPage('<p>Bu hesapta izin verilmiş oda yok. Önce konseyde bir odanın özel bulut eşitlemesini aç.</p>');
+   if(!rooms.length)return mcpPage('<p>Bu hesapta izin verilmiş oda yok. Önce konseyde bir odanın özel bulut eşitlemesini aç.</p>',mcpRedirectKind(a.redirect_uri)==='opencode');
    const nonce=mcpId(),form=await mcpSeal(JSON.stringify({a,owner,nonce,exp:now+600000}),env);
-   const response=mcpPage('<h2>Atha’yı hesabına bağla</h2><p>Bu bağlantı, bu GitHub hesabının eşitlemesi açık bütün sohbetlerinde çalışır. Yeni eşitlenen sohbetler için yeniden oda seçmen gerekmez. Eşitlemesi kapalı sohbetler ve Google/GitHub anahtarların paylaşılmaz.</p><form method="post"><input type="hidden" name="request" value="'+mcpEscape(form)+'"><input type="hidden" name="account_scope" value="all"><p><button type="submit">Eşitlemesi açık tüm sohbetlerime izin ver</button></p></form>');
+   const opencode=mcpRedirectKind(a.redirect_uri)==='opencode';
+   const response=mcpPage('<h2>'+(opencode?'OpenCode’u Atha Council’a bağla':'Atha’yı hesabına bağla')+'</h2><p>'+(opencode?'Bu bağlantı bilgisayarındaki OpenCode istemcisine, eşitlemesi açık Council odalarında yalnız okuma erişimi verir. Bir modelin gerçek yanıtını Council’a göndermek ayrıca doğrulanmış yerel çalıştırıcı ve izin gerektirir. ChatGPT/Work kotan bu bağlantıyla açılmaz.':'Bu bağlantı, bu GitHub hesabının eşitlemesi açık bütün sohbetlerinde çalışır. Yeni eşitlenen sohbetler için yeniden oda seçmen gerekmez. Eşitlemesi kapalı sohbetler ve Google/GitHub anahtarların paylaşılmaz.')+'</p><form method="post"><input type="hidden" name="request" value="'+mcpEscape(form)+'"><input type="hidden" name="account_scope" value="all"><p><button type="submit">Eşitlemesi açık tüm sohbetlerime izin ver</button></p></form>',opencode);
    response.headers.append('set-cookie',secureCookie('atha_mcp_csrf',nonce,600,'/mcp/oauth/authorize'));return response;
   }
   if(!owner||req.headers.get('origin')!==MCP_ORIGIN||req.headers.get('sec-fetch-site')==='cross-site')return mcpJson({error:'access_denied'},403);
@@ -651,6 +662,12 @@ async function mcpStatus(env,owner,room){
 async function mcpTool(params,who,env,ctx){
  const a=params?.arguments,name=params?.name,definition=mcpTools.find(t=>t.name===name);
  if(!definition)throw mcpError('Unknown tool');
+ // A local OpenCode MCP client is not a verified ChatGPT model executor.
+ // It can inspect authorized rooms; it may not impersonate ChatGPT, modify
+ // participation settings, or acknowledge ChatGPT event deliveries.
+ if(String(who.client_id||'').startsWith('opencode_')&&
+    !['council_list_rooms','council_read','council_connection_status'].includes(name))
+   throw mcpError('OpenCode MCP is read-only until a verified model adapter is installed');
  const db=env.ATHA_SYNC_DB,owner=who.owner_id;
  if(name==='council_list_rooms'){
   if(!mcpObject(a)||Object.keys(a).length)throw mcpError('Invalid arguments');
@@ -748,11 +765,12 @@ async function handleAthaMcp(req,env,ctx){
    if(rpc.method==='initialize')result={protocolVersion:'2025-03-26',capabilities:{tools:{},events:{}},serverInfo:{name:'atha-council',version:'1.0.0'}};
    else if(rpc.method==='notifications/initialized'||rpc.method==='notifications/cancelled')return new Response(null,{status:202,headers:noStore});
    else if(rpc.method==='ping')result={};
-   else if(rpc.method==='tools/list')result={tools:mcpTools};
+   else if(rpc.method==='tools/list')result={tools:String(who.client_id||'').startsWith('opencode_')?mcpTools.filter(t=>['council_list_rooms','council_read','council_connection_status'].includes(t.name)):mcpTools};
    else if(rpc.method==='tools/call')result=await mcpTool(params,who,env,ctx);
-   else if(rpc.method==='events/list')result={events:[{name:'message.created',description:'A new authorized user turn or bounded genuine Gemini dialogue turn. room_id=all monitors all explicitly synced rooms for the connected owner. No unbounded AI loops. Read full context with council_read.',delivery:['webhook'],inputSchema:mcpRoomSchema,payloadSchema:{type:'object',properties:{room_id:{type:'string'},event_id:{type:'string'},url:{type:'string'}},required:['room_id','event_id','url'],additionalProperties:false}}]};
-   else if(rpc.method==='events/subscribe'){try{result=await mcpSubscribe(params,who,env);await mcpEventDiagnostic(env,who,'verified')}catch(e){await mcpEventDiagnostic(env,who,e.reason||'invalid_subscription');throw e}}
+   else if(rpc.method==='events/list')result={events:String(who.client_id||'').startsWith('opencode_')?[]:[{name:'message.created',description:'A new authorized user turn or bounded genuine Gemini dialogue turn. room_id=all monitors all explicitly synced rooms for the connected owner. No unbounded AI loops. Read full context with council_read.',delivery:['webhook'],inputSchema:mcpRoomSchema,payloadSchema:{type:'object',properties:{room_id:{type:'string'},event_id:{type:'string'},url:{type:'string'}},required:['room_id','event_id','url'],additionalProperties:false}}]};
+   else if(rpc.method==='events/subscribe'){if(String(who.client_id||'').startsWith('opencode_'))throw mcpError('OpenCode event auto-replies are not available until a verified local executor is installed');try{result=await mcpSubscribe(params,who,env);await mcpEventDiagnostic(env,who,'verified')}catch(e){await mcpEventDiagnostic(env,who,e.reason||'invalid_subscription');throw e}}
    else if(rpc.method==='events/unsubscribe'){
+    if(String(who.client_id||'').startsWith('opencode_'))throw mcpError('OpenCode has no event subscriptions');
     if(params.name!=='message.created'||!mcpObject(params.arguments)||Object.keys(params.arguments).join(',')!=='room_id'||(params.arguments.room_id!==who.room_id&&params.arguments.room_id!=='all')||params.delivery?.mode!=='webhook')throw mcpError('Invalid subscription');
     const id=await mcpSubscriptionId(params.arguments.room_id==='all'?{...who,room_id:'all'}:who,mcpCallback(params.delivery.url,env));
     await env.ATHA_SYNC_DB.batch([
