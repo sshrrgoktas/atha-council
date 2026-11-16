@@ -811,7 +811,7 @@ async function mcpDeliver(env){
    // Preserve late real council_reply, even after a one-hour no-reply timeout.
    const receipt=await db.prepare('SELECT accepted_at,reply_saved_at FROM atha_mcp_receipts WHERE owner_id=? AND room_id=? AND event_id=?').bind(d.owner_id,d.room_id,d.event_id).first();
    const expired=receipt?.accepted_at!=null&&Date.now()-receipt.accepted_at>=3600000;
-   await db.prepare("UPDATE atha_mcp_delivery SET state=?,next_at=?,lease_until=0 WHERE subscription_id=? AND event_id=? AND state='accepted' AND lease_until=?").bind(expired?'unanswered':'accepted',expired?0:(receipt?.accepted_at||Date.now())+3600000,d.subscription_id,d.event_id,lease).run();
+   await db.prepare("UPDATE atha_mcp_delivery SET state=?,next_at=?,lease_until=0 WHERE subscription_id=? AND event_id=? AND state='accepted' AND lease_until=?").bind(expired?'unanswered':'accepted',expired?Date.now():(receipt?.accepted_at||Date.now())+3600000,d.subscription_id,d.event_id,lease).run();
    continue;
   }
   if(d.attempts>=6){await db.prepare("UPDATE atha_mcp_delivery SET state='failed',lease_until=0 WHERE subscription_id=? AND event_id=? AND state='pending'").bind(d.subscription_id,d.event_id).run();continue}
