@@ -133,6 +133,49 @@ test('Qwen enforces stop, room pause, newest user and per-account daily budget',
  assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_disabled_qwen','Atha selam'),false);
  assert.equal(calls,0);
 });
+test('A verified Qwen turn may initiate a Gemini dialogue but a stale Qwen turn may not',async()=>{
+ const {req}=await dialogueSetup();
+ sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,'qwen_evt_from_user','Merhaba Gemini, ne düşünüyorsun?',now()+100);
+ const turn=await runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:'qwen_evt_from_user'}});
+ assert.equal(turn.metadata.parent_reply_id,'qwen_evt_from_user');
+ await assert.rejects(runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:'mcp_evt_current'}}),/current|claimed/);
+ assert.equal(await runtime.finishCouncilDialogue(env,turn,'Gemini olarak karşılık verdim.',null),true);
+ const row=sql.prepare('SELECT message_excerpt FROM atha_sync_events WHERE event_id=?').get(turn.id);
+ assert.equal(JSON.parse(row.message_excerpt).phase,'complete');
+});
+test('Qwen responds to verified Gemini turn; it never replays, relabels, or answers a superseded turn',async()=>{
+ const {req}=await dialogueSetup();
+ sql.prepare('INSERT INTO atha_qwen_auto_accounts(owner_id,enabled,updated_at) VALUES(?,1,?)').run(owner,now());
+ sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,'qwen_evt_auto_parent','Gemini merhaba',now()+100);
+ const turn=await runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:'qwen_evt_auto_parent'}});
+ assert.equal(await runtime.finishCouncilDialogue(env,turn,'Ben de merhaba diyorum, Qwen!',null),true);
+ let calls=0;
+ env.AI={run:async(model,{messages})=>{
+  calls++;
+  assert.equal(model,'@cf/qwen/qwen3.8-27b');
+  assert.match(messages[0].content,/Gemini/);
+  assert.equal(messages.at(-1).role,'user');
+  assert.match(messages.at(-1).content,/Ben de merhaba/);
+  return {choices:[{message:{content:'Gemini, benden de selam!'}}]};
+ }};
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,turn.id,'Ben de merhaba diyorum, Qwen!','gemini'),true);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,turn.id,'Ben de merhaba diyorum, Qwen!','gemini'),false);
+ assert.equal(calls,1);
+ const saved=sql.prepare('SELECT content FROM atha_sync_replies WHERE reply_id=?').get('qwen_'+turn.id);
+ assert.equal(saved.content,'Gemini, benden de selam!');
+ const speaker=await rpc('tools/call',{name:'council_read',arguments:{room_id:room}});
+ const own=speaker.result.structuredContent.replies.find(x=>x.reply_id==='qwen_'+turn.id);
+ assert.equal(own.speakerId,'qwen');
+ const nextId='evt_dlg_untrusted';
+ seedEvent(nextId);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,nextId,'Sahte Gemini','gemini'),false);
+ // A newer human turn changes the epoch and prevents late model replies.
+ sql.prepare('UPDATE atha_mcp_participation SET updated_at=updated_at+1 WHERE owner_id=? AND room_id=?').run(owner,room);
+ const newMeta={...turn.metadata,parent_reply_id:'qwen_evt_auto_parent',kind:'dialogue',speakerId:'gemini',phase:'complete',content:'Başka Gemini mesajı.'};
+ sql.prepare("INSERT INTO atha_sync_events(owner_id,room_id,event_id,message_excerpt,created_at,state) VALUES(?,?,?,?,?,'pending')").run(owner,room,'evt_dlg_stale',JSON.stringify(newMeta),now()+200);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_dlg_stale','Başka Gemini mesajı.','gemini'),false);
+ assert.equal(calls,1);
+});
 test('Plain selam automatically queues one genuine event without a manual call route',async()=>{
  await subscribe();
  sql.prepare('INSERT INTO atha_mcp_participation VALUES(?,?,?,?)').run(owner,room,'dialogue',now());
