@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {createHmac} from 'node:crypto';
 const source=readFileSync(new URL('../worker/production.js',import.meta.url),'utf8');
-const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues,councilStopIntent,councilQwenAutoRespond,councilQwenAutoStatus,councilModelProviderStatus};').toString('base64'));
+const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues,councilStopIntent,councilQwenAutoRespond,councilQwenAutoStatus,councilModelProviderStatus,councilRoomPreferences,councilFinalAnswer};').toString('base64'));
 const worker=runtime.default,origin='https://atlas-council.sshrrgoktas.workers.dev',resource=origin+'/mcp';
 const owner='github:101',room='room_one',now=()=>Date.now();
 const oldFetch=globalThis.fetch;
@@ -808,4 +808,20 @@ test('OpenCode final reply removes hidden thoughts and refuses old, foreign and 
  assert.ok((await rpc('tools/call',{name:'council_opencode_poll',arguments:{room_id:'foreign_room',since_ms:0}})).error);
  sql.prepare("INSERT OR REPLACE INTO atha_mcp_participation(owner_id,room_id,mode,updated_at) VALUES(?,?,'paused',?)").run(owner,room,now());
  assert.equal((await rpc('tools/call',{name:'council_opencode_poll',arguments:{room_id:room,since_ms:now()-1000}})).result.structuredContent.paused,true);
+});
+
+test('Council remembers a Turkish-only instruction and can reverse it explicitly',()=>{
+ const lines=[{role:'user',content:'Bugün ne konuşalım?'},{role:'user',content:'Bana İngilizce açıklama yapma.'},{role:'assistant',content:'Tamam'}];
+ assert.equal(runtime.councilRoomPreferences(lines).turkishOnly,true);
+ assert.equal(runtime.councilRoomPreferences([...lines,{role:'user',content:'Şimdi İngilizce anlat'}]).turkishOnly,false);
+ assert.equal(runtime.councilFinalAnswer('The following explanation shows you how to do this with the steps then the results.',{turkishOnly:true}).reason,'TURKISH_ONLY');
+ assert.equal(runtime.councilFinalAnswer('Bunu Türkçe anlatacağım.',{turkishOnly:true}).ok,true);
+});
+test('Council blocks fake video work, unfinished thinking and tool transcripts without fabricating success',()=>{
+ assert.equal(runtime.councilFinalAnswer('Şimdi video oluşturuyorum.').reason,'UNVERIFIED_ACTION');
+ assert.equal(runtime.councilFinalAnswer('Senin için bir animasyon hazırlıyorum.').reason,'UNVERIFIED_ACTION');
+ assert.equal(runtime.councilFinalAnswer('Video hazırladım.').reason,'UNVERIFIED_ACTION');
+ assert.equal(runtime.councilFinalAnswer('<think>Internal reasoning without close').reason,'INCOMPLETE_REASONING');
+ assert.equal(runtime.councilFinalAnswer('Tool call: computer.run').reason,'NOT_FINAL_TEXT');
+ assert.deepEqual(runtime.councilFinalAnswer('<think>hidden</think>Video senaryosunu yazabilirim.'),{ok:true,text:'Video senaryosunu yazabilirim.'});
 });
