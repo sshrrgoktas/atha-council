@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {createHmac} from 'node:crypto';
 const source=readFileSync(new URL('../worker/production.js',import.meta.url),'utf8');
-const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues,councilStopIntent,councilQwenAutoRespond,councilQwenAutoStatus};').toString('base64'));
+const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues,councilStopIntent,councilQwenAutoRespond,councilQwenAutoStatus,councilModelProviderStatus};').toString('base64'));
 const worker=runtime.default,origin='https://atlas-council.sshrrgoktas.workers.dev',resource=origin+'/mcp';
 const owner='github:101',room='room_one',now=()=>Date.now();
 const oldFetch=globalThis.fetch;
@@ -93,6 +93,37 @@ test('An intervening user turn or stop cancels a reserved dialogue; short text s
  assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_mcp_delivery').get().n,0);
  assert.equal(runtime.councilShortReply('Bir. İki! Üç?'),'Bir. İki!');
  assert.ok(runtime.councilShortReply('Kelime '.repeat(150)).length<=500);
+});
+test('Provider status reports real ChatGPT tool OAuth but never invents automatic inference',async()=>{
+ const r=runtime.councilModelProviderStatus({
+   oauthConnected:true,mcpServerReady:true,accountScope:true,
+   eventSubscriptionActive:true,lastSuccessfulReplyAt:Date.now()
+ },{enabled:true,dailyMax:18,usedToday:3});
+ assert.equal(r.primary,'chatgpt');
+ assert.equal(r.chatgpt.toolConnection,'connected');
+ assert.equal(r.chatgpt.manualCouncilReplyAvailable,true);
+ assert.equal(r.chatgpt.eventSubscription,true);
+ assert.equal(r.chatgpt.autonomousInferenceVerified,false,'webhook acceptance or old manual reply is NOT verified automatic inference');
+ assert.equal(r.chatgpt.providerRuntime,'external_chatgpt_required');
+ assert.equal(r.chatgpt.noOpenAiApiKeyUsed,true);
+ assert.equal(r.qwen.enabled,true);assert.equal(r.qwen.automatic,true);
+ assert.equal(r.qwen.name,'Qwen 3.8 · Workers AI');
+ assert.equal(r.athaLocal.configured,false);
+});
+test('Provider status distinguishes unchecked, disconnected, absent subscription and planned local Atha',()=>{
+ const unchecked=runtime.councilModelProviderStatus(null,{enabled:false});
+ assert.equal(unchecked.chatgpt.toolConnection,'not_checked');
+ assert.equal(unchecked.chatgpt.eventSubscription,null);
+ assert.equal(unchecked.chatgpt.manualCouncilReplyAvailable,null);
+ assert.equal(unchecked.qwen.automatic,false);
+ const connected=runtime.councilModelProviderStatus({oauthConnected:true,mcpServerReady:true,eventSubscriptionActive:false},{enabled:true});
+ assert.equal(connected.chatgpt.toolConnection,'connected');
+ assert.equal(connected.chatgpt.eventSubscription,false);
+ assert.equal(connected.chatgpt.autonomousInferenceVerified,false);
+ assert.equal(connected.athaLocal.automatic,false);
+ const offline=runtime.councilModelProviderStatus({oauthConnected:false,mcpServerReady:true,eventSubscriptionActive:false},null);
+ assert.equal(offline.chatgpt.toolConnection,'not_connected');
+ assert.equal(offline.chatgpt.manualCouncilReplyAvailable,false);
 });
 test('Qwen temporary member is opt-in, owner-scoped and never impersonates ChatGPT',async()=>{
  let calls=0;
