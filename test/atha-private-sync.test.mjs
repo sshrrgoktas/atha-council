@@ -230,6 +230,19 @@ test("Blank new chat placeholders are not saved repeatedly; real conversations s
  assert.match(html,/const initialChat=chats\.find\(c=>!isEmptyCouncilDraft\(c\)\)/);
  assert.match(html,/const next=chats\.find\(c=>!c\._draft&&!isEmptyCouncilDraft\(c\)\)/);
 });
+test("OpenCode agent card can reopen only the authenticated paired room, not fabricate chat history",()=>{
+ const index=source.indexOf("const HTML=");
+ const html=JSON.parse(source.slice(index+11,source.lastIndexOf(";")));
+ assert.match(html,/id="openCodeOpenRoom"/);
+ assert.match(html,/id="openCodeOpenRoomStatus"/);
+ assert.match(html,/roomButton\.dataset\.roomId=list\[0\]\.roomId/);
+ assert.match(html,/fetch\('\/api\/atha-sync\/rooms\/'\+encodeURIComponent\(room\)/);
+ assert.match(html,/data\.roomId!==room/);
+ assert.match(html,/if\(!chat\)\{/);
+ assert.match(html,/chat\.title='OpenCode Sohbeti'/);
+ assert.match(html,/enabledAthaSyncRooms\.add\(room\)/);
+ assert.match(html,/saveChats\(\);renderChats\(\);openChat\(room\);show\('chat'\)/);
+});
 test("Human messages are queued immediately, deduplicated and deleted with room",async()=>{
  const path="/api/atha-sync/rooms/c99990000";
  const base={consent:true,title:"Atha events test",items:[{role:"user",name:"Sen",content:"Selam",speakerId:"human"}]};
