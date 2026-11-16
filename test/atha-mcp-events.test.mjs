@@ -96,7 +96,7 @@ test('An intervening user turn or stop cancels a reserved dialogue; short text s
 });
 test('Qwen temporary member is opt-in, owner-scoped and never impersonates ChatGPT',async()=>{
  let calls=0;
- env.AI={run:async(model,args)=>{calls++;assert.equal(model,'@cf/qwen/qwen3.8-27b');assert.equal(args.reasoning_effort,'low');return {choices:[{message:{content:'Merhaba, ben bağımsız Qwen!'}}]}}};
+ env.AI={run:async(model,args)=>{calls++;assert.equal(model,'@cf/qwen/qwen3.8-27b');assert.equal(args.reasoning_effort,'low');assert.equal(args.chat_template_kwargs?.enable_thinking,false);return {choices:[{message:{content:'Merhaba, ben bağımsız Qwen!'}}]}}};
  seedEvent('evt_qwen_safe');
  assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Atha selam'),false);
  assert.equal(calls,0,'Default-off must never invoke billable AI');
