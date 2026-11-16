@@ -594,14 +594,26 @@ const deliveryRow=()=>sql.prepare('SELECT * FROM atha_mcp_delivery').get();
 const replyArgs={room_id:room,event_id:'evt_test',content:'Isolated test reply.'};
 const saveReply=(a=replyArgs)=>rpc('tools/call',{name:'council_reply',arguments:a});
 const forceDue=()=>sql.prepare('UPDATE atha_mcp_delivery SET next_at=?').run(now()-1);
-test('2xx waits for a real reply and redelivers the same signed event after the grace period',async()=>{
+test('2xx is accepted once and never redelivered even when checked early',async()=>{
  await subscribe();await queue();await runtime.mcpDeliver(env);
- const d=deliveryRow();assert.equal(d.state,'accepted');assert.ok(d.next_at>=now()+299000);
+ const d=deliveryRow();assert.equal(d.state,'accepted');assert.ok(d.next_at>=now()+3599000);
  const status=await runtime.mcpStatus(env,owner,room);assert.equal(status.responseProgress.state,'accepted');assert.ok(status.responseProgress.accepted_at);assert.equal(status.responseProgress.reply_saved_at,null);
  await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,2);
- forceDue();await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,3);
- assert.equal(callbackCalls[1].headers['webhook-id'],callbackCalls[2].headers['webhook-id']);assert.deepEqual(callbackCalls[1].body,callbackCalls[2].body);
- assert.equal(deliveryRow().attempts,2);assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,0);
+ forceDue();await runtime.mcpDeliver(env);assert.equal(callbackCalls.length,2);
+ assert.equal(deliveryRow().state,'accepted');assert.equal(deliveryRow().attempts,1);
+ assert.ok(deliveryRow().next_at>=now()+3500000,'one-hour no-reply check is scheduled instead of redelivery');
+ assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,0);
+});
+test('New pending human message is prioritized ahead of old already-accepted webhook receipts',async()=>{
+ await subscribe();
+ for(let i=0;i<9;i++){await queue('evt_old_accepted_'+i,'Atha, hello');await runtime.mcpDeliver(env)}
+ const oldCount=callbackCalls.length;
+ sql.prepare("UPDATE atha_mcp_delivery SET next_at=? WHERE state='accepted'").run(now()-1);
+ await queue('evt_fresh_user','Atha, yeni mesaj');
+ await runtime.mcpDeliver(env);
+ assert.equal(callbackCalls.length,oldCount+1,'one new event only; no accepted event is redelivered');
+ assert.equal(callbackCalls.at(-1).body.data.event_id,'evt_fresh_user');
+ assert.equal(sql.prepare("SELECT attempts FROM atha_mcp_delivery WHERE event_id='evt_old_accepted_0'").get().attempts,1);
 });
 test('Only a persisted council_reply acknowledges completion and stops retries',async()=>{
  await subscribe();await queue();await runtime.mcpDeliver(env);assert.ok((await saveReply()).result);
@@ -619,12 +631,14 @@ test('Pause during an in-flight callback cannot be overwritten, and late replies
  await runtime.mcpDeliver(env);assert.equal(deliveryRow().state,'cancelled');assert.ok((await saveReply()).error);
  assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,0);
 });
-test('Accepted events retry at most six times and then expose unanswered without pausing the room',async()=>{
- await subscribe();await queue();for(let i=0;i<6;i++){forceDue();await runtime.mcpDeliver(env)}
- assert.equal(deliveryRow().state,'accepted');assert.equal(deliveryRow().attempts,6);
- forceDue();await runtime.mcpDeliver(env);assert.equal(deliveryRow().state,'unanswered');assert.equal(callbackCalls.length,7);
+test('Accepted event expires as unanswered after one hour without any 2xx replay; late reply is still accepted',async()=>{
+ await subscribe();await queue();await runtime.mcpDeliver(env);
+ assert.equal(deliveryRow().state,'accepted');assert.equal(deliveryRow().attempts,1);
+ sql.prepare('UPDATE atha_mcp_receipts SET accepted_at=?').run(now()-3600001);
+ forceDue();await runtime.mcpDeliver(env);
+ assert.equal(deliveryRow().state,'unanswered');assert.equal(callbackCalls.length,2);
  assert.equal((await runtime.mcpStatus(env,owner,room)).automaticParticipation,true);
- assert.ok((await saveReply()).result,'late genuine reply can complete an exhausted event');assert.equal(deliveryRow().state,'replied');
+ assert.ok((await saveReply()).result,'late genuine reply can complete an unanswered event');assert.equal(deliveryRow().state,'replied');
 });
 test('Read an exact old event and reply outside the recent twenty-event window',async()=>{
  await subscribe();await queue();await runtime.mcpDeliver(env);await saveReply();
