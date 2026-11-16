@@ -1094,7 +1094,15 @@ async function handleOpenCodeAgent(req,env){
   const rows=(await db.prepare("SELECT event_id,message_excerpt,created_at FROM atha_sync_events WHERE owner_id=? AND room_id=? AND created_at>? AND message_excerpt LIKE '{\"kind\":\"human\",%' ORDER BY created_at,event_id LIMIT 20").bind(owner,room,from).all()).results||[];
   const events=rows.flatMap(r=>{let v;try{v=JSON.parse(r.message_excerpt)}catch{return []}
    return typeof v.content==='string'&&v.content.trim()&&!councilStopIntent(v.content)?[{event_id:r.event_id,content:v.content.slice(0,1200),created_at:r.created_at}]:[]});
-  return respond({room_id:room,events,paused:false,server_time:now});
+  let context=[],preferences={turkishOnly:false};
+  if(events.length){
+   const row=await db.prepare('SELECT snapshot FROM atha_sync_rooms WHERE owner_id=? AND room_id=?').bind(owner,room).first();
+   try{const items=JSON.parse(row?.snapshot||'{}').items||[];
+    preferences=councilRoomPreferences(items);
+    context=items.slice(-12).map(m=>({speaker:m.speakerId||m.name||'participant',content:String(m.content||'').slice(0,350)}));
+   }catch{}
+  }
+  return respond({room_id:room,events,paused:false,server_time:now,preferences,context});
  }
  if(!/^evt_[A-Za-z0-9_-]{8,100}$/.test(data.event_id||'')||typeof data.content!=='string'||!data.content.trim()||data.content.length>1500||Object.keys(data).length!==3)return respond({error:'invalid_reply'},400);
  if(mode?.mode==='paused')return respond({error:'paused'},409);
