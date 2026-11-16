@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-const workflow=readFileSync(new URL("../.github/workflows/android.yml",import.meta.url),"utf8");
+const workflow=readFileSync(new URL("../.github/workflows/android.yml",import.meta.url),"utf8").replace(/\r\n/g,"\n");
 const app=readFileSync(new URL("../app/src/main/java/com/atlascouncil/app/MainActivity.kt",import.meta.url),"utf8");
 const gradle=readFileSync(new URL("../app/build.gradle.kts",import.meta.url),"utf8");
 test("Web edits NEVER trigger signed APK publication",()=>{

@@ -194,8 +194,8 @@ test("Every typed message starts without manual calls; reply inbox deduplicates 
  assert.doesNotMatch(html,/buildAthaHandoffContext/);
  assert.match(html,/setInterval\(\(\)=>\{if\(!document\.hidden\)receiveAthaReplies/);
  assert.match(html,/stored\.has\(reply\.replyId\)/);
- assert.match(html,/source:isQwen\?"cloudflare-workers-ai":"cloudflare-connector-user-approved"/);
- assert.match(html,/isQwen\?"qwen"/);
+ assert.ok(html.includes('source:isOpenCode?"authenticated-local-opencode":isQwen?"cloudflare-workers-ai":"cloudflare-connector-user-approved"'));
+ assert.ok(html.includes('isOpenCode?"opencode":isQwen?"qwen"'));
  assert.match(html,/scheduleAthaSync\(roomId\)/);
 });
 test("Human messages are queued immediately, deduplicated and deleted with room",async()=>{

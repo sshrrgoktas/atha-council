@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {createHmac} from 'node:crypto';
 const source=readFileSync(new URL('../worker/production.js',import.meta.url),'utf8');
-const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues,councilStopIntent,councilQwenAutoRespond,councilQwenAutoStatus,councilModelProviderStatus};').toString('base64'));
+const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues,councilStopIntent,councilQwenAutoRespond,councilQwenAutoStatus,councilModelProviderStatus,councilRoomPreferences,councilFinalAnswer};').toString('base64'));
 const worker=runtime.default,origin='https://atlas-council.sshrrgoktas.workers.dev',resource=origin+'/mcp';
 const owner='github:101',room='room_one',now=()=>Date.now();
 const oldFetch=globalThis.fetch;
@@ -287,10 +287,10 @@ test('OpenCode OAuth DCR permits only bounded native loopback redirects and pres
  params.set('redirect_uri','http://evil.example:52817/callback');
  assert.equal((await request('/mcp/oauth/authorize?'+params.toString())).status,400);
 });
-test('OpenCode MCP is read-only and never impersonates real ChatGPT or subscribes to model events',async()=>{
+test('OpenCode MCP uses separate tools and cannot impersonate ChatGPT or subscribe to events',async()=>{
  sql.prepare("UPDATE atha_mcp_grants SET client_id='opencode_fixture' WHERE grant_id='grant_test'").run();
  const list=await rpc('tools/list');
- assert.deepEqual(list.result.tools.map(t=>t.name).sort(),['council_connection_status','council_list_rooms','council_read']);
+ assert.deepEqual(list.result.tools.map(t=>t.name).sort(),['council_connection_status','council_list_rooms','council_opencode_poll','council_opencode_reply','council_read']);
  const read=await rpc('tools/call',{name:'council_read',arguments:{room_id:room}});
  assert.equal(read.result.structuredContent.room_id,room);
  const denied=await rpc('tools/call',{name:'council_reply',arguments:{room_id:room,event_id:'evt_test',content:'I am ChatGPT'}});
@@ -774,4 +774,55 @@ test('An interrupted acknowledgment write still consumes its durable send attemp
 test('Authorization changes between validation and the reply transaction prevent a late write',async()=>{
  await subscribe();await queue();const batch=db.batch.bind(db);db.batch=async stmts=>{sql.prepare("INSERT INTO atha_mcp_participation VALUES(?,?,'paused',?)").run(owner,room,now());return batch(stmts)};
  assert.ok((await saveReply()).error);assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,0);assert.equal(sql.prepare('SELECT count(*) n FROM atha_mcp_receipts').get().n,0);
+});
+
+
+test('OpenCode can poll only real recent human events and reply under its own identity',async()=>{
+ sql.prepare("UPDATE atha_mcp_grants SET client_id='opencode_fixture' WHERE grant_id='grant_test'").run();
+ const event='evt_opencode_1234567890';
+ const time=now();
+ sql.prepare("INSERT INTO atha_sync_events(owner_id,room_id,event_id,message_excerpt,created_at,state) VALUES(?,?,?,?,?,'pending')").run(owner,room,event,JSON.stringify({kind:'human',content:'Selam OpenCode, bugün nasılsın?'}),time);
+ const polled=await rpc('tools/call',{name:'council_opencode_poll',arguments:{room_id:room,since_ms:time-1000}});
+ assert.equal(polled.result.structuredContent.turns.length,1);
+ assert.equal(polled.result.structuredContent.turns[0].event_id,event);
+ const posted=await rpc('tools/call',{name:'council_opencode_reply',arguments:{room_id:room,event_id:event,content:'Merhaba! OpenCode olarak buradayım.'}});
+ assert.equal(posted.result.structuredContent.speakerId,'opencode');
+ const duplicate=await rpc('tools/call',{name:'council_opencode_reply',arguments:{room_id:room,event_id:event,content:'Farklı yanıt.'}});
+ assert.match(duplicate.error.message,/different OpenCode response/);
+ const item=sql.prepare('SELECT reply_id,content FROM atha_sync_replies').get();
+ assert.equal(item.reply_id,'opencode_'+event);
+ assert.equal(item.content,'Merhaba! OpenCode olarak buradayım.');
+ const inspect=await rpc('tools/call',{name:'council_read',arguments:{room_id:room}});
+ assert.equal(inspect.result.structuredContent.replies[0].speakerId,'opencode');
+});
+test('OpenCode final reply removes hidden thoughts and refuses old, foreign and paused events',async()=>{
+ sql.prepare("UPDATE atha_mcp_grants SET client_id='opencode_fixture' WHERE grant_id='grant_test'").run();
+ const event='evt_opencode_1234567891';
+ sql.prepare("INSERT INTO atha_sync_events(owner_id,room_id,event_id,message_excerpt,created_at,state) VALUES(?,?,?,?,?,'pending')").run(owner,room,event,JSON.stringify({kind:'human',content:'Selam'}),now());
+ const send=async content=>rpc('tools/call',{name:'council_opencode_reply',arguments:{room_id:room,event_id:event,content}});
+ assert.match((await send('<think>unfinished')).error.message,/final answer/);
+ assert.match((await send('Tool call: get secret')).error.message,/final answer/);
+ assert.match((await send('Şimdi video oluşturuyorum.')).error.message,/UNVERIFIED_ACTION/);
+ const post=await send('<think>do not show</think>Selam! Nasılsın?');
+ assert.equal(post.result.structuredContent.name,'OpenCode · OpenRouter Free');
+ assert.equal(sql.prepare('SELECT content FROM atha_sync_replies WHERE reply_id=?').get('opencode_'+event).content,'Selam! Nasılsın?');
+ assert.ok((await rpc('tools/call',{name:'council_opencode_poll',arguments:{room_id:'foreign_room',since_ms:0}})).error);
+ sql.prepare("INSERT OR REPLACE INTO atha_mcp_participation(owner_id,room_id,mode,updated_at) VALUES(?,?,'paused',?)").run(owner,room,now());
+ assert.equal((await rpc('tools/call',{name:'council_opencode_poll',arguments:{room_id:room,since_ms:now()-1000}})).result.structuredContent.paused,true);
+});
+
+test('Council remembers a Turkish-only instruction and can reverse it explicitly',()=>{
+ const lines=[{role:'user',content:'Bugün ne konuşalım?'},{role:'user',content:'Bana İngilizce açıklama yapma.'},{role:'assistant',content:'Tamam'}];
+ assert.equal(runtime.councilRoomPreferences(lines).turkishOnly,true);
+ assert.equal(runtime.councilRoomPreferences([...lines,{role:'user',content:'Şimdi İngilizce anlat'}]).turkishOnly,false);
+ assert.equal(runtime.councilFinalAnswer('The following explanation shows you how to do this with the steps then the results.',{turkishOnly:true}).reason,'TURKISH_ONLY');
+ assert.equal(runtime.councilFinalAnswer('Bunu Türkçe anlatacağım.',{turkishOnly:true}).ok,true);
+});
+test('Council blocks fake video work, unfinished thinking and tool transcripts without fabricating success',()=>{
+ assert.equal(runtime.councilFinalAnswer('Şimdi video oluşturuyorum.').reason,'UNVERIFIED_ACTION');
+ assert.equal(runtime.councilFinalAnswer('Senin için bir animasyon hazırlıyorum.').reason,'UNVERIFIED_ACTION');
+ assert.equal(runtime.councilFinalAnswer('Video hazırladım.').reason,'UNVERIFIED_ACTION');
+ assert.equal(runtime.councilFinalAnswer('<think>Internal reasoning without close').reason,'INCOMPLETE_REASONING');
+ assert.equal(runtime.councilFinalAnswer('Tool call: computer.run').reason,'NOT_FINAL_TEXT');
+ assert.deepEqual(runtime.councilFinalAnswer('<think>hidden</think>Video senaryosunu yazabilirim.'),{ok:true,text:'Video senaryosunu yazabilirim.'});
 });
