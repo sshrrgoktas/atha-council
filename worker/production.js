@@ -763,7 +763,7 @@ async function mcpTool(params,who,env,ctx){
      const now=Date.now(),from=Math.max(a.since_ms,now-60*60*1000);
      const rows=(await db.prepare('SELECT event_id,message_excerpt,created_at FROM atha_sync_events WHERE owner_id=? AND room_id=? AND created_at>? AND created_at<=? ORDER BY created_at,event_id LIMIT 25').bind(owner,room,from,now).all()).results||[];
      const turns=rows.flatMap(row=>{let data;try{data=JSON.parse(row.message_excerpt)}catch{return []}
-       return data?.kind==='human'&&typeof data.content==='string'&&!councilStopIntent(data.content)?[{event_id:row.event_id,text:data.content.slice(0,1200),created_at:row.created_at}]:[]});
+       return data?.kind==='human'&&typeof data.content==='string'&&!councilStopIntent(data.content)&&(!data.recipient_id||['opencode','all'].includes(data.recipient_id))?[{event_id:row.event_id,text:data.content.slice(0,1200),created_at:row.created_at}]:[]});
      const result={room_id:room,paused:mode?.mode==='paused',turns:mode?.mode==='paused'?[]:turns,server_time:now};
      return {content:[{type:'text',text:JSON.stringify(result)}],structuredContent:result};
    }
@@ -1054,10 +1054,7 @@ async function councilQwenAutoRespond(env,owner,room,eventId,userText,source='hu
   // Record only if authorization, room and participation are still active.
   const saved=await db.prepare("INSERT OR IGNORE INTO atha_sync_replies(owner_id,room_id,reply_id,content,created_at) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM atha_sync_rooms r LEFT JOIN atha_mcp_participation p ON p.owner_id=r.owner_id AND p.room_id=r.room_id JOIN atha_qwen_auto_accounts a ON a.owner_id=r.owner_id WHERE r.owner_id=? AND r.room_id=? AND a.enabled=1 AND COALESCE(p.mode,'dialogue')!='paused') AND EXISTS(SELECT 1 FROM atha_qwen_auto_jobs j WHERE j.owner_id=? AND j.room_id=? AND j.event_id=? AND j.state='running')").bind(owner,room,replyId,answer,Date.now(),owner,room,owner,room,eventId).run();
   await db.prepare("UPDATE atha_qwen_auto_jobs SET state=?,completed_at=?,error_code=NULL WHERE owner_id=? AND room_id=? AND event_id=? AND state='running'").bind(saved.meta?.changes===1?'replied':'skipped',Date.now(),owner,room,eventId).run();
-  if(saved.meta?.changes===1&&source==='human'){
-   // Qwen's genuine first reply starts a Gemini turn without waiting for the app UI.
-   await runCouncilDialogue(env,owner,room);
-  }
+  // Manual-only room: a Qwen reply never triggers another model without a fresh human turn.
   return saved.meta?.changes===1;
  }catch(error){
   const code=['INCOMPLETE_REASONING','NOT_FINAL_TEXT','UNVERIFIED_ACTION','TURKISH_ONLY'].includes(error?.message)?error.message:'MODEL_UNAVAILABLE';
@@ -1135,7 +1132,7 @@ async function handleOpenCodeAgent(req,env){
   if(mode?.mode==='paused')return respond({room_id:room,events:[],paused:true,server_time:now});
   const rows=(await db.prepare("SELECT event_id,message_excerpt,created_at FROM atha_sync_events WHERE owner_id=? AND room_id=? AND created_at>? AND message_excerpt LIKE '{\"kind\":\"human\",%' ORDER BY created_at,event_id LIMIT 20").bind(owner,room,from).all()).results||[];
   const events=rows.flatMap(r=>{let v;try{v=JSON.parse(r.message_excerpt)}catch{return []}
-   return typeof v.content==='string'&&v.content.trim()&&!councilStopIntent(v.content)?[{event_id:r.event_id,content:v.content.slice(0,1200),created_at:r.created_at}]:[]});
+   return typeof v.content==='string'&&v.content.trim()&&!councilStopIntent(v.content)&&(!v.recipient_id||['opencode','all'].includes(v.recipient_id))?[{event_id:r.event_id,content:v.content.slice(0,1200),created_at:r.created_at}]:[]});
   let context=[],preferences={turkishOnly:false};
   if(events.length){
    const row=await db.prepare('SELECT snapshot FROM atha_sync_rooms WHERE owner_id=? AND room_id=?').bind(owner,room).first();
@@ -1339,7 +1336,7 @@ async function handleAthaRoomSync(req,env,ctx){
    eventIds.push(id);
    writes.push(env.ATHA_SYNC_DB.prepare(
      "INSERT OR IGNORE INTO atha_sync_events(owner_id,room_id,event_id,message_excerpt,created_at,state) VALUES(?,?,?,?,?,'pending')")
-     .bind(owner,roomId,id,JSON.stringify({kind:'human',content:appended[i].content.slice(0,1200)}),now));
+     .bind(owner,roomId,id,JSON.stringify({kind:'human',recipient_id:['gemini','qwen','meta','opencode','chatgpt','copilot','all'].includes(data.live_turn?.recipient_id)?data.live_turn.recipient_id:councilExplicitRecipient(appended[i].content)||'all',content:appended[i].content.slice(0,1200)}),now));
   }
   if(eventIds.length){
    await mcpQueueEvents(env,owner,roomId,eventIds,appended,writes);
@@ -1349,7 +1346,7 @@ async function handleAthaRoomSync(req,env,ctx){
   if(eventIds.length&&ctx?.waitUntil){
     ctx.waitUntil(mcpDeliver(env));
     const index=appended.length-1,turn=appended[index];
-    if(turn?.role==='user'&&turn.content.trim()&&!councilStopIntent(turn.content)){
+    if(turn?.role==='user'&&turn.content.trim()&&!councilStopIntent(turn.content)&&(['qwen','all'].includes(data.live_turn?.recipient_id||councilExplicitRecipient(turn.content)||'all'))){
       ctx.waitUntil(councilQwenAutoRespond(env,owner,roomId,eventIds[index],turn.content));
     }
   }
