@@ -791,7 +791,7 @@ function mcpSuperseded(excerpt,mode){
 async function mcpDeliver(env){
  if(!env.ATHA_SYNC_DB||!String(env.ATHA_MCP_CALLBACK_ORIGINS||'').trim())return;
  const db=env.ATHA_SYNC_DB,now=Date.now();
- const due=(await db.prepare("SELECT d.* FROM atha_mcp_delivery d WHERE d.state IN ('pending','accepted') AND d.next_at<=? AND d.lease_until<=? ORDER BY d.next_at LIMIT 8").bind(now,now).all()).results||[];
+ const due=(await db.prepare("SELECT d.* FROM atha_mcp_delivery d WHERE d.state IN ('pending','accepted') AND d.next_at<=? AND d.lease_until<=? ORDER BY CASE WHEN d.state='pending' THEN 0 ELSE 1 END,d.next_at LIMIT 8").bind(now,now).all()).results||[];
  for(const d of due){
   const lease=now+20000;
   const claim=await db.prepare("UPDATE atha_mcp_delivery SET lease_until=?,attempts=CASE WHEN state='pending' AND attempts<6 THEN attempts+1 ELSE attempts END WHERE subscription_id=? AND event_id=? AND state IN ('pending','accepted') AND lease_until<=? AND next_at<=? AND attempts=?").bind(lease,d.subscription_id,d.event_id,now,now,d.attempts).run();if(claim.meta?.changes!==1)continue;
