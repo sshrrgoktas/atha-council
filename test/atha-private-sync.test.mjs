@@ -213,6 +213,23 @@ test("OpenCode has a visible agent card and honest room-specific status in the A
  assert.match(source,/openCodeAgent=\{paired:false,inThisRoom:false/);
  assert.match(source,/atha_opencode_agents a JOIN atha_sync_rooms/);
 });
+test("Blank new chat placeholders are not saved repeatedly; real conversations survive",()=>{
+ const pos=source.indexOf("const HTML=");
+ const html=JSON.parse(source.slice(pos+11,source.lastIndexOf(";")));
+ const match=html.match(/function isEmptyCouncilDraft\(chat\)\{[\s\S]*?\n\}/);
+ assert.ok(match,"draft classification should remain a small pure function");
+ const classify=Function("return "+match[0])();
+ assert.equal(classify({title:"Yeni sohbet",items:[]}),true);
+ assert.equal(classify({title:"Yeni sohbet",items:[{role:"system",content:"Yeni sohbet hazır."}]}),true);
+ assert.equal(classify({title:"Yeni sohbet",items:[{role:"user",content:"Merhaba"}]}),false);
+ assert.equal(classify({title:"Yeni sohbet",items:[{role:"assistant",content:"Yanıt"}]}),false);
+ assert.equal(classify({title:"Fikirler",items:[]}),false);
+ assert.match(html,/chats\.filter\(c=>!c\._draft\)\.slice\(0,100\)/);
+ assert.match(html,/if\(chat\._draft\|\|isEmptyCouncilDraft\(chat\)\)continue/);
+ assert.match(html,/if\(mine\)\{delete c\._draft/);
+ assert.match(html,/const initialChat=chats\.find\(c=>!isEmptyCouncilDraft\(c\)\)/);
+ assert.match(html,/const next=chats\.find\(c=>!c\._draft&&!isEmptyCouncilDraft\(c\)\)/);
+});
 test("Human messages are queued immediately, deduplicated and deleted with room",async()=>{
  const path="/api/atha-sync/rooms/c99990000";
  const base={consent:true,title:"Atha events test",items:[{role:"user",name:"Sen",content:"Selam",speakerId:"human"}]};
