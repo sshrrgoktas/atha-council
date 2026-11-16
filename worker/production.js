@@ -398,7 +398,7 @@ async function mcpOAuth(req,env,ctx){
    if(!rooms.length)return mcpPage('<p>Bu hesapta izin verilmiş oda yok. Önce konseyde bir odanın özel bulut eşitlemesini aç.</p>',mcpRedirectKind(a.redirect_uri)==='opencode');
    const nonce=mcpId(),form=await mcpSeal(JSON.stringify({a,owner,nonce,exp:now+600000}),env);
    const opencode=mcpRedirectKind(a.redirect_uri)==='opencode';
-   const response=mcpPage('<h2>'+(opencode?'OpenCode’u Atha Council’a bağla':'Atha’yı hesabına bağla')+'</h2><p>'+(opencode?'Bu bağlantı bilgisayarındaki OpenCode istemcisinin, eşitlemesi açık Council odalarını okumasına ve senin yetkinle o odalara yanıt göndermesine izin verir. Model aboneliğin veya Work kullanım hakkın bu izinle açılmaz.':'Bu bağlantı, bu GitHub hesabının eşitlemesi açık bütün sohbetlerinde çalışır. Yeni eşitlenen sohbetler için yeniden oda seçmen gerekmez. Eşitlemesi kapalı sohbetler ve Google/GitHub anahtarların paylaşılmaz.')+'</p><form method="post"><input type="hidden" name="request" value="'+mcpEscape(form)+'"><input type="hidden" name="account_scope" value="all"><p><button type="submit">Eşitlemesi açık tüm sohbetlerime izin ver</button></p></form>',opencode);
+   const response=mcpPage('<h2>'+(opencode?'OpenCode’u Atha Council’a bağla':'Atha’yı hesabına bağla')+'</h2><p>'+(opencode?'Bu bağlantı bilgisayarındaki OpenCode istemcisine, eşitlemesi açık Council odalarında yalnız okuma erişimi verir. Bir modelin gerçek yanıtını Council'a göndermek ayrıca doğrulanmış yerel çalıştırıcı ve izin gerektirir. ChatGPT/Work kotan bu bağlantıyla açılmaz.':'Bu bağlantı, bu GitHub hesabının eşitlemesi açık bütün sohbetlerinde çalışır. Yeni eşitlenen sohbetler için yeniden oda seçmen gerekmez. Eşitlemesi kapalı sohbetler ve Google/GitHub anahtarların paylaşılmaz.')+'</p><form method="post"><input type="hidden" name="request" value="'+mcpEscape(form)+'"><input type="hidden" name="account_scope" value="all"><p><button type="submit">Eşitlemesi açık tüm sohbetlerime izin ver</button></p></form>',opencode);
    response.headers.append('set-cookie',secureCookie('atha_mcp_csrf',nonce,600,'/mcp/oauth/authorize'));return response;
   }
   if(!owner||req.headers.get('origin')!==MCP_ORIGIN||req.headers.get('sec-fetch-site')==='cross-site')return mcpJson({error:'access_denied'},403);
@@ -662,6 +662,12 @@ async function mcpStatus(env,owner,room){
 async function mcpTool(params,who,env,ctx){
  const a=params?.arguments,name=params?.name,definition=mcpTools.find(t=>t.name===name);
  if(!definition)throw mcpError('Unknown tool');
+ // A local OpenCode MCP client is not a verified ChatGPT model executor.
+ // It can inspect authorized rooms; it may not impersonate ChatGPT, modify
+ // participation settings, or acknowledge ChatGPT event deliveries.
+ if(String(who.client_id||'').startsWith('opencode_')&&
+    !['council_list_rooms','council_read','council_connection_status'].includes(name))
+   throw mcpError('OpenCode MCP is read-only until a verified model adapter is installed');
  const db=env.ATHA_SYNC_DB,owner=who.owner_id;
  if(name==='council_list_rooms'){
   if(!mcpObject(a)||Object.keys(a).length)throw mcpError('Invalid arguments');
@@ -759,11 +765,12 @@ async function handleAthaMcp(req,env,ctx){
    if(rpc.method==='initialize')result={protocolVersion:'2025-03-26',capabilities:{tools:{},events:{}},serverInfo:{name:'atha-council',version:'1.0.0'}};
    else if(rpc.method==='notifications/initialized'||rpc.method==='notifications/cancelled')return new Response(null,{status:202,headers:noStore});
    else if(rpc.method==='ping')result={};
-   else if(rpc.method==='tools/list')result={tools:mcpTools};
+   else if(rpc.method==='tools/list')result={tools:String(who.client_id||'').startsWith('opencode_')?mcpTools.filter(t=>['council_list_rooms','council_read','council_connection_status'].includes(t.name)):mcpTools};
    else if(rpc.method==='tools/call')result=await mcpTool(params,who,env,ctx);
-   else if(rpc.method==='events/list')result={events:[{name:'message.created',description:'A new authorized user turn or bounded genuine Gemini dialogue turn. room_id=all monitors all explicitly synced rooms for the connected owner. No unbounded AI loops. Read full context with council_read.',delivery:['webhook'],inputSchema:mcpRoomSchema,payloadSchema:{type:'object',properties:{room_id:{type:'string'},event_id:{type:'string'},url:{type:'string'}},required:['room_id','event_id','url'],additionalProperties:false}}]};
-   else if(rpc.method==='events/subscribe'){try{result=await mcpSubscribe(params,who,env);await mcpEventDiagnostic(env,who,'verified')}catch(e){await mcpEventDiagnostic(env,who,e.reason||'invalid_subscription');throw e}}
+   else if(rpc.method==='events/list')result={events:String(who.client_id||'').startsWith('opencode_')?[]:[{name:'message.created',description:'A new authorized user turn or bounded genuine Gemini dialogue turn. room_id=all monitors all explicitly synced rooms for the connected owner. No unbounded AI loops. Read full context with council_read.',delivery:['webhook'],inputSchema:mcpRoomSchema,payloadSchema:{type:'object',properties:{room_id:{type:'string'},event_id:{type:'string'},url:{type:'string'}},required:['room_id','event_id','url'],additionalProperties:false}}]};
+   else if(rpc.method==='events/subscribe'){if(String(who.client_id||'').startsWith('opencode_'))throw mcpError('OpenCode event auto-replies are not available until a verified local executor is installed');try{result=await mcpSubscribe(params,who,env);await mcpEventDiagnostic(env,who,'verified')}catch(e){await mcpEventDiagnostic(env,who,e.reason||'invalid_subscription');throw e}}
    else if(rpc.method==='events/unsubscribe'){
+    if(String(who.client_id||'').startsWith('opencode_'))throw mcpError('OpenCode has no event subscriptions');
     if(params.name!=='message.created'||!mcpObject(params.arguments)||Object.keys(params.arguments).join(',')!=='room_id'||(params.arguments.room_id!==who.room_id&&params.arguments.room_id!=='all')||params.delivery?.mode!=='webhook')throw mcpError('Invalid subscription');
     const id=await mcpSubscriptionId(params.arguments.room_id==='all'?{...who,room_id:'all'}:who,mcpCallback(params.delivery.url,env));
     await env.ATHA_SYNC_DB.batch([
