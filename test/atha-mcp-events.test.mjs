@@ -2,7 +2,7 @@ import test,{beforeEach,afterEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
-import {createHmac} from 'node:crypto';
+import {createHmac,createHash,generateKeyPairSync,sign} from 'node:crypto';
 const source=readFileSync(new URL('../worker/production.js',import.meta.url),'utf8');
 const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues,councilStopIntent,councilQwenAutoRespond,councilQwenAutoStatus,councilModelProviderStatus,councilRoomPreferences,councilFinalAnswer};').toString('base64'));
 const worker=runtime.default,origin='https://atlas-council.sshrrgoktas.workers.dev',resource=origin+'/mcp';
@@ -28,7 +28,7 @@ async function subscribe(){const r=await rpc('events/subscribe',subscription());
 async function queue(id='evt_test',text='Atha, merhaba'){seedEvent(id);await runtime.mcpQueueEvents(env,owner,room,[id],[{content:text}])}
 beforeEach(async()=>{
  sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');
- for(const path of ['schema.sql','replies.sql','events.sql','mcp.sql','mcp-receipts.sql','mcp-diagnostics.sql','mcp-account.sql','dialogue.sql','qwen-auto.sql'])sql.exec(readFileSync(new URL('../worker/atha-sync/'+path,import.meta.url),'utf8'));
+ for(const path of ['schema.sql','replies.sql','events.sql','mcp.sql','mcp-receipts.sql','mcp-diagnostics.sql','mcp-account.sql','dialogue.sql','qwen-auto.sql','opencode-agent.sql'])sql.exec(readFileSync(new URL('../worker/atha-sync/'+path,import.meta.url),'utf8'));
  db=new D1(sql);env={ATHA_SYNC_DB:db,GITHUB_SESSION_SECRET:'test-only-session-secret-with-more-than-32-characters',ATHA_MCP_CALLBACK_ORIGINS:'https://callbacks.openai.com'};
  sql.prepare('INSERT INTO atha_sync_rooms VALUES(?,?,?,?,?)').run(owner,room,'Test',JSON.stringify({version:1,title:'Test',items:[{role:'user',name:'Sen',content:'Atha selam',speakerId:'human'},{role:'assistant',name:'Google Gemini',content:'Merhaba',speakerId:'gemini'}]}),now());
  sql.prepare('INSERT INTO atha_mcp_grants(grant_id,owner_id,room_id,client_id,expires_at) VALUES(?,?,?,?,?)').run('grant_test',owner,room,'client_test',now()+86400000);
@@ -825,4 +825,60 @@ test('Council blocks fake video work, unfinished thinking and tool transcripts w
  assert.equal(runtime.councilFinalAnswer('<think>Internal reasoning without close').reason,'INCOMPLETE_REASONING');
  assert.equal(runtime.councilFinalAnswer('Tool call: computer.run').reason,'NOT_FINAL_TEXT');
  assert.deepEqual(runtime.councilFinalAnswer('<think>hidden</think>Video senaryosunu yazabilirim.'),{ok:true,text:'Video senaryosunu yazabilirim.'});
+});
+
+test('signed OpenCode companion polls without inference and persists only verified final replies',async()=>{
+ const {privateKey,publicKey}=generateKeyPairSync('ed25519');
+ const agentId='ocag_'+'a'.repeat(32),ts=now();
+ const pub=publicKey.export({type:'spki',format:'der'}).toString('base64url');
+ sql.prepare('INSERT INTO atha_opencode_agents(agent_id,owner_id,room_id,public_key,enabled,created_at,expires_at) VALUES(?,?,?,?,1,?,?)').run(agentId,owner,room,pub,ts-1000,ts+86400000);
+ const ev='evt_companion_1234567';
+ sql.prepare("INSERT INTO atha_sync_events(owner_id,room_id,event_id,message_excerpt,created_at,state) VALUES(?,?,?,?,?,'pending')").run(owner,room,ev,JSON.stringify({kind:'human',content:'Selam, iyi misin?'}),ts);
+ const signed=async(kind,payload,overrides={})=>{
+  const body=JSON.stringify(payload),stamp=String(now());
+  const digest=createHash('sha256').update(body).digest('base64url');
+  const canonical=['POST','/api/atha-opencode/'+kind,stamp,digest].join('\n');
+  const signature=sign(null,Buffer.from(canonical),privateKey).toString('base64url');
+  return request('/api/atha-opencode/'+kind,'POST',body,null,{
+    'x-atha-agent-id':agentId,'x-atha-agent-ts':stamp,
+    'x-atha-agent-sig':signature,...overrides
+  });
+ };
+ const poll=await signed('poll',{room_id:room,since_ms:ts-1000});
+ assert.equal(poll.status,200);
+ const messages=await poll.json();
+ assert.equal(messages.events.length,1);
+ assert.equal(messages.events[0].event_id,ev);
+ const invalid=await signed('poll',{room_id:room,since_ms:ts-1000},{'x-atha-agent-sig':'a'.repeat(86)});
+ assert.equal(invalid.status,401);
+ const reply=await signed('reply',{room_id:room,event_id:ev,content:'<think>private</think>İyiyim, teşekkürler!'});
+ assert.equal(reply.status,200,await reply.text().catch(()=>'')); // body already consumed on success only by assertion message
+ const stored=sql.prepare('SELECT reply_id,content FROM atha_sync_replies WHERE reply_id=?').get('opencode_'+ev);
+ assert.equal(stored.content,'İyiyim, teşekkürler!');
+ const duplicate=await signed('reply',{room_id:room,event_id:ev,content:'<think>private</think>İyiyim, teşekkürler!'});
+ assert.equal(duplicate.status,200);
+ assert.equal((await duplicate.json()).duplicate,true);
+ const badAction=await signed('reply',{room_id:room,event_id:ev,content:'Şimdi video oluşturuyorum.'});
+ assert.equal(badAction.status,422);
+ assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,1);
+});
+test('signed OpenCode companion refuses unpaired rooms, expired events and paused rooms',async()=>{
+ const {privateKey,publicKey}=generateKeyPairSync('ed25519');
+ const agentId='ocag_'+'b'.repeat(32),ts=now();
+ sql.prepare('INSERT INTO atha_opencode_agents(agent_id,owner_id,room_id,public_key,enabled,created_at,expires_at) VALUES(?,?,?,?,1,?,?)').run(agentId,owner,room,publicKey.export({type:'spki',format:'der'}).toString('base64url'),ts-1000,ts+100000);
+ const send=async(kind,payload)=>{
+  const body=JSON.stringify(payload),stamp=String(now()),hash=createHash('sha256').update(body).digest('base64url');
+  return request('/api/atha-opencode/'+kind,'POST',body,null,{
+   'x-atha-agent-id':agentId,'x-atha-agent-ts':stamp,
+   'x-atha-agent-sig':sign(null,Buffer.from(['POST','/api/atha-opencode/'+kind,stamp,hash].join('\n')),privateKey).toString('base64url')
+  });
+ };
+ assert.equal((await send('poll',{room_id:'foreign_room',since_ms:ts-1000})).status,401);
+ const ev='evt_companion_1234568';
+ sql.prepare("INSERT INTO atha_sync_events(owner_id,room_id,event_id,message_excerpt,created_at,state) VALUES(?,?,?,?,?,'pending')").run(owner,room,ev,JSON.stringify({kind:'human',content:'Daha önceki soru'}),ts-3000000);
+ assert.equal((await send('reply',{room_id:room,event_id:ev,content:'Gecikmiş yanıt'})).status,409);
+ sql.prepare("INSERT OR REPLACE INTO atha_mcp_participation(owner_id,room_id,mode,updated_at) VALUES(?,?,'paused',?)").run(owner,room,now());
+ const paused=await send('poll',{room_id:room,since_ms:ts-1000});
+ assert.equal((await paused.json()).paused,true);
+ assert.equal((await send('reply',{room_id:room,event_id:ev,content:'Bir yanıt'})).status,409);
 });
