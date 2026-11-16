@@ -730,9 +730,12 @@ async function mcpTool(params,who,env,ctx){
    let data;try{data=JSON.parse(event?.message_excerpt)}catch{}
    if(!data||data.kind!=='human'||typeof data.content!=='string'||councilStopIntent(data.content)||!event.created_at||Date.now()-event.created_at>20*60000)throw mcpError('OpenCode may only reply to genuine recent human turns');
    if(mode?.mode==='paused')throw mcpError('Council participation paused');
-   // Only publish final user-visible text. Never accept model reasoning or tool logs.
-   const content=a.content.replace(/<think>[\s\S]*?<\/think>/gi,'').replace(/<analysis>[\s\S]*?<\/analysis>/gi,'').trim();
-   if(!content||/<\/?(?:think|analysis)\b/i.test(content)||/^\s*(?:\[(?:tool|reasoning|thinking|analysis)\]|(?:tool call|tool result|reasoning|thinking|analysis)\s*:)/im.test(content))throw mcpError('OpenCode final answer was not user-visible text');
+   // Verify local model final text against the same user preferences and no-fake-work contract.
+   const snapshot=await db.prepare('SELECT snapshot FROM atha_sync_rooms WHERE owner_id=? AND room_id=?').bind(owner,room).first();
+   let roomItems=[];try{roomItems=JSON.parse(snapshot?.snapshot||'{}').items||[]}catch{}
+   const checked=councilFinalAnswer(a.content,councilRoomPreferences(roomItems));
+   if(!checked.ok)throw mcpError('OpenCode final answer was not user-visible text: '+checked.reason);
+   const content=checked.text;
    const id='opencode_'+a.event_id;
    await db.prepare('INSERT OR IGNORE INTO atha_sync_replies(owner_id,room_id,reply_id,content,created_at) VALUES(?,?,?,?,?)').bind(owner,room,id,content,Date.now()).run();
    const saved=await db.prepare('SELECT content FROM atha_sync_replies WHERE owner_id=? AND room_id=? AND reply_id=?').bind(owner,room,id).first();
