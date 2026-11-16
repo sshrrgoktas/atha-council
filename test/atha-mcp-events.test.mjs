@@ -604,6 +604,17 @@ test('2xx is accepted once and never redelivered even when checked early',async(
  assert.ok(deliveryRow().next_at>=now()+3500000,'one-hour no-reply check is scheduled instead of redelivery');
  assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,0);
 });
+test('New pending human message is prioritized ahead of old already-accepted webhook receipts',async()=>{
+ await subscribe();
+ for(let i=0;i<9;i++){await queue('evt_old_accepted_'+i,'hello');await runtime.mcpDeliver(env)}
+ const oldCount=callbackCalls.length;
+ sql.prepare("UPDATE atha_mcp_delivery SET next_at=? WHERE state='accepted'").run(now()-1);
+ await queue('evt_fresh_user','Atha, yeni mesaj');
+ await runtime.mcpDeliver(env);
+ assert.equal(callbackCalls.length,oldCount+1,'one new event only; no accepted event is redelivered');
+ assert.equal(callbackCalls.at(-1).body.data.event_id,'evt_fresh_user');
+ assert.equal(sql.prepare("SELECT attempts FROM atha_mcp_delivery WHERE event_id='evt_old_accepted_0'").get().attempts,1);
+});
 test('Only a persisted council_reply acknowledges completion and stops retries',async()=>{
  await subscribe();await queue();await runtime.mcpDeliver(env);assert.ok((await saveReply()).result);
  assert.equal(deliveryRow().state,'replied');const c=sql.prepare('SELECT * FROM atha_mcp_receipts').get();assert.ok(c.accepted_at);assert.ok(c.reply_saved_at);
