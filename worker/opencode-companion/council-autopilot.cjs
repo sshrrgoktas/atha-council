@@ -184,26 +184,31 @@ function status(){
   pending:Object.keys(state?.pending||{}).length};
 }
 async function daemon(){
- if(running())return;
+ if(running()||!jsonFile(CFG,{enabled:false}).enabled)return;
  fs.rmSync(STOP,{force:true});fs.writeFileSync(PID,String(process.pid));
  log('agent_started');
  try{
+  let failures=0;
   for(;;){
-   if(fs.existsSync(STOP))break;
-   try{await tick()}catch(e){const s=jsonFile(STATE,{});s.last_error=String(e.message||e).slice(0,90);s.last_tick=Date.now();atomic(STATE,s);log('tick_failed',s.last_error)}
-   await new Promise(resolve=>setTimeout(resolve,PERIOD_MS));
+   if(fs.existsSync(STOP)||!jsonFile(CFG,{enabled:false}).enabled)break;
+   try{await tick();failures=0}
+   catch(e){failures++;const state=jsonFile(STATE,{});state.last_error=String(e.message||e).slice(0,90);state.last_tick=Date.now();atomic(STATE,state);log('tick_failed',state.last_error);if(e.status===401||e.status===403){log('authorization_expired_or_revoked');break}}
+   await new Promise(resolve=>setTimeout(resolve,Math.min(120000,PERIOD_MS*Math.pow(2,Math.min(failures,3)))));
   }
  }finally{fs.rmSync(PID,{force:true});fs.rmSync(STOP,{force:true});log('agent_stopped')}
 }
 function start(){
  if(running())return {started:false,reason:'ALREADY_RUNNING',...status()};
  if(!fs.existsSync(CFG)||!fs.existsSync(KEY))throw Error('Pairing not completed');
+ if(!jsonFile(CFG,{}).enabled)return {started:false,reason:'DISABLED'};
  fs.rmSync(STOP,{force:true});
  const child=spawn(process.execPath,[__filename,'daemon'],{cwd:DIR,detached:true,windowsHide:true,stdio:'ignore'});
  child.unref();
  return {started:true,pid:child.pid};
 }
 function stop(){fs.writeFileSync(STOP,'1');return {requested:true,running:running()}}
+function disable(){const cfg=jsonFile(CFG,null);if(!cfg)throw Error('Not configured');cfg.enabled=false;atomic(CFG,cfg);return stop()}
+function enable(){const cfg=jsonFile(CFG,null);if(!cfg)throw Error('Not configured');cfg.enabled=true;atomic(CFG,cfg);return start()}
 async function main(){
  const cmd=process.argv[2]||'status';
  if(cmd==='init')console.log(JSON.stringify(init(process.argv[3]||'')));
@@ -211,8 +216,10 @@ async function main(){
  else if(cmd==='once'){await tick();console.log(JSON.stringify(status()))}
  else if(cmd==='start')console.log(JSON.stringify(start()));
  else if(cmd==='stop')console.log(JSON.stringify(stop()));
+ else if(cmd==='disable')console.log(JSON.stringify(disable()));
+ else if(cmd==='enable')console.log(JSON.stringify(enable()));
  else if(cmd==='daemon')await daemon();
- else throw Error('Expected init <room>, status, once, start, stop');
+ else throw Error('Expected init <room>, status, once, start, stop, enable, disable');
 }
 if(require.main===module)main().catch(e=>{console.error('Council companion: '+e.message);process.exitCode=1});
 module.exports={canonical,filterModelEvents,init,quotaAvailable,status};
