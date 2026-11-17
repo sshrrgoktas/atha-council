@@ -68,7 +68,9 @@ test('direct Council address recognizes first- and last-position names without m
 
 test('directed turns do not call unrelated Qwen/Gemini/Atha auto-routes or OpenCode poll',()=>{
  assert.match(source,/if\(addressed&&addressed!=='qwen'\)return false;/);
- assert.match(source,/if\(saved\.meta\?\.changes===1&&source==='human'&&!addressed\)/);
+ assert.match(source,/const COUNCIL_HUMAN_TURNS_ONLY=true;/);
+ assert.match(source,/source!=='human'/);
+ assert.doesNotMatch(source,/if\(saved\.meta\?\.changes===1&&source==='human'&&!addressed\)/);
  assert.match(source,/if\(councilRecipientForTurn\(latestHuman\?\.content,items\)&&councilRecipientForTurn\(latestHuman\?\.content,items\)!=='chatgpt'\)return;/);
  assert.match(source,/if\(!controlled&&addressed&&addressed!=='chatgpt'&&!turns\[i\]\?\.manualRequest\)continue;/);
  assert.match(source,/const target=v\.recipient\|\|councilDirectedRecipient\(v\.content\)/);
