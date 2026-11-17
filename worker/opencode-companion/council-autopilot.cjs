@@ -76,7 +76,7 @@ function runModel(text,history=[],preferences={}){
  return new Promise(async(resolve)=>{
   const cli=path.join(os.homedir(),'AppData','Roaming','npm','node_modules','@opencode','cli','bin','opencode.exe');
   if(!fs.existsSync(cli))return resolve({ok:false,reason:'OPENCODE_NOT_FOUND'});
-  const context=history.filter(x=>x&&typeof x.content==='string').slice(-8).map(x=>'['+String(x.speaker||'other').slice(0,24)+'] '+String(x.content).slice(0,350)).join('\n');
+  const context=history.filter(x=>x&&typeof x.content==='string').slice(-16).map(x=>'['+String(x.speaker||'other').slice(0,24)+'] '+String(x.content).slice(0,350)).join('\n');
   const prompt=[
     'Konseyde sana gelen GERÇEK kullanıcı mesajını yanıtla. Sen OpenCode katılımcısısın.',
     'Türkçe, doğal, doğrudan ve en fazla üç kısa cümle yaz.',
@@ -150,7 +150,11 @@ async function tick(){
   let result=state.pending[id];
   if(!result){
    state.quota.used++;atomic(STATE,state);
-   result=await runModel(item.content,poll.context||[],poll.preferences||{});
+   // Prefer this event's immutable authorized snapshot over a later room state.
+   const packet=item.context_packet;
+   const history=packet?.schema==='council.context.v1'&&packet.room_id===cfg.room_id&&packet.turn_id===id&&Array.isArray(packet.messages)
+     ?packet.messages.map(m=>({speaker:m.speakerId,content:m.content})):poll.context||[];
+   result=await runModel(item.content,history,poll.preferences||{});
    if(!result.ok){state.last_error=result.reason;state.seen[id]=Date.now();log('event_model_failed',result.reason);atomic(STATE,state);continue}
    state.pending[id]={text:result.text,model:result.model,created_at:item.created_at};
    atomic(STATE,state);

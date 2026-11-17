@@ -15,6 +15,20 @@ test('Meta Llama inference keeps its own identity and model',async()=>{
  assert.ok(call.input.messages[0].content.startsWith('Sen Meta Llama 3.1 8B modelisin.'));
  assert.equal(data.text,'Merhaba.');
 });
+test('Llama receives recent human and named model history rather than just six user turns',async()=>{
+ let input;
+ const messages=[{role:'user',content:'Llama nerde',speaker:'human'},{role:'assistant',content:'Buradayım',speaker:'meta'},{role:'user',content:'Sen niye cevap vermiyosun',speaker:'human'}];
+ const response=await worker.fetch(new Request('https://atlas-council.sshrrgoktas.workers.dev/api/chat',{
+  method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:'llama',messages})
+ }),{AI:{run:async(model,args)=>{input=args;return {response:'Sorunu anladım.'}}}},{});
+ assert.equal(response.status,200);
+ assert.equal(input.messages.length,4);
+ assert.match(input.messages[1].content,/\[İnsan\] Llama nerde/);
+ assert.equal(input.messages[2].role,'assistant');
+ assert.match(input.messages[2].content,/\[Konsey meta\] Buradayım/);
+ assert.match(input.messages[3].content,/Sen niye cevap/);
+});
+
 test('Retired QwQ 32B endpoint cannot spend inference, cloud Qwen 3.8 remains available',async()=>{
  let calls=0;
  const response=await worker.fetch(new Request('https://atlas-council.sshrrgoktas.workers.dev/api/chat',{
@@ -68,7 +82,9 @@ test('direct Council address recognizes first- and last-position names without m
 
 test('directed turns do not call unrelated Qwen/Gemini/Atha auto-routes or OpenCode poll',()=>{
  assert.match(source,/if\(addressed&&addressed!=='qwen'\)return false;/);
- assert.match(source,/if\(saved\.meta\?\.changes===1&&source==='human'&&!addressed\)/);
+ assert.match(source,/const COUNCIL_HUMAN_TURNS_ONLY=true;/);
+ assert.match(source,/source!=='human'/);
+ assert.doesNotMatch(source,/if\(saved\.meta\?\.changes===1&&source==='human'&&!addressed\)/);
  assert.match(source,/if\(councilRecipientForTurn\(latestHuman\?\.content,items\)&&councilRecipientForTurn\(latestHuman\?\.content,items\)!=='chatgpt'\)return;/);
  assert.match(source,/if\(!controlled&&addressed&&addressed!=='chatgpt'&&!turns\[i\]\?\.manualRequest\)continue;/);
  assert.match(source,/const target=v\.recipient\|\|councilDirectedRecipient\(v\.content\)/);
