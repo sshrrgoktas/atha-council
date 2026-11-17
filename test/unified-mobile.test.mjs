@@ -93,3 +93,9 @@ test('export, backup and import stay under one collapsed button without changing
  assert.ok(menu.includes('actions.append(action)'));
  assert.ok(menu.includes('first.before(group)'));
 });
+
+test('native workspace preserves upstream chat composer controls used by live app.js',()=>{
+ assert.doesNotMatch(shell,/form\.replaceChildren\(/);
+ assert.match(shell,/actions\.append\(send\);form\.append\(actions\)/);
+ assert.match(shell,/if\(draft\)draft\.className='sr-only'/);
+});
