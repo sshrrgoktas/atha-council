@@ -300,3 +300,47 @@ test("Mobile Council keeps diagnostics accessible while prioritizing the chat",(
  assert.match(html,/@media\(max-width:650px\)\{[\s\S]*?#chat\{height:calc\(100dvh - 52px\)\}/);
  assert.match(html,/#chatConnections \.athaInviteRow \.muted\{display:block/);
 });
+
+test('Retired QwQ messages are selectively removed from synced and restored Council rooms',async()=>{
+ const room='/api/atha-sync/rooms/c99009900';
+ const items=[
+  {role:'user',name:'Sen',content:'QwQ neden bozuldu?',speakerId:'human'},
+  {role:'assistant',name:'Qwen QwQ 32B',content:'Eski model yanıtı',speakerId:'qwen'},
+  {role:'assistant',name:'Qwen 3.8 · Workers AI',content:'Yeni Qwen yanıtı',speakerId:'qwen'},
+  {role:'assistant',name:'Google Gemini',content:'Gemini yanıtı',speakerId:'gemini'}
+ ];
+ const saved=await request(room,{method:'PUT',user:'1',body:{consent:true,title:'Kontrol',items}});
+ assert.equal(saved.status,200);
+ const response=await request(room,{user:'1'});
+ assert.equal(response.status,200);
+ const result=(await response.json()).snapshot.items;
+ assert.equal(result.length,3);
+ assert.deepEqual(result.map(x=>x.name),['Sen','Qwen 3.8 · Workers AI','Google Gemini']);
+ assert.equal(result[0].content,'QwQ neden bozuldu?','human content must never be deleted');
+ const index=source.indexOf('const HTML='),html=JSON.parse(source.slice(index+11,source.lastIndexOf(';')));
+ const a=html.indexOf('function councilClientRetiredQwqEntry(item){'),b=html.indexOf("const storageKey='atlasCouncilChatsV1';",a);
+ assert.ok(a>0&&b>a);
+ const filter=Function(html.slice(a,b)+'return councilClientRetiredQwqEntry')();
+ assert.equal(filter({role:'assistant',name:'Qwen QwQ 32B bağlantı hatası'}),true);
+ assert.equal(filter({role:'user',name:'Sen',content:'Qwen QwQ 32B'}),false);
+ assert.equal(filter({role:'assistant',name:'Qwen 3.8 · Workers AI'}),false);
+ assert.match(html,/items:c\.items\.filter\(i=>!councilClientRetiredQwqEntry\(i\)\)/);
+ assert.match(html,/!councilClientRetiredQwqEntry\(i\)\)\.map/);
+ assert.match(html,/old\.includes\('qwen'\)/);
+});
+
+test('Public model list never advertises retired QwQ and old requests cannot infer',async()=>{
+ const status=await worker.fetch(new Request(ORIGIN+'/api/status'),env);
+ assert.equal(status.status,200);
+ const info=await status.json();
+ assert.ok(info.models.includes('Qwen 3.8 · Workers AI'));
+ assert.ok(!info.models.some(x=>/QwQ/i.test(x)));
+ let calls=0;
+ const legacy=await worker.fetch(new Request(ORIGIN+'/api/chat',{
+  method:'POST',headers:{'content-type':'application/json'},
+  body:JSON.stringify({model:'qwen',messages:[{role:'user',content:'hi'}]})
+ }),{AI:{run:async()=>{calls++;return {response:'old model'};}}},{});
+ assert.equal(legacy.status,410);
+ assert.equal(calls,0);
+ assert.doesNotMatch((await legacy.json()).error,/QwQ/i);
+});
