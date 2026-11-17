@@ -691,7 +691,7 @@ async function runCouncilDialogue(env,owner,room){
   const items=JSON.parse(row.snapshot).items;
   const latestHuman=[...items].reverse().find(i=>i.role==='user');
   // A direct message should not continue an unrelated Qwen/Gemini dialogue.
-  if(councilDirectedRecipient(latestHuman?.content))return;
+  if(councilDirectedRecipient(latestHuman?.content)&&councilDirectedRecipient(latestHuman?.content)!=='chatgpt')return;
   const messages=items.filter(i=>['user','assistant'].includes(i.role)).map(i=>({role:i.role,content:i.content,speaker:i.speakerId}));
   const replies=(await db.prepare('SELECT reply_id,content,created_at FROM atha_sync_replies WHERE owner_id=? AND room_id=? ORDER BY created_at DESC LIMIT 20').bind(owner,room).all()).results||[];
   const turns=(await db.prepare("SELECT message_excerpt,created_at FROM atha_sync_events WHERE owner_id=? AND room_id=? AND message_excerpt LIKE '{\"kind\":\"dialogue\",%' ORDER BY created_at DESC LIMIT 20").bind(owner,room).all()).results||[];
