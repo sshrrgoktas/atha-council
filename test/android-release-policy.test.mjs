@@ -44,3 +44,11 @@ test("Same APK version is not repeatedly downloaded",()=>{
  assert.match(app,/STATUS_PAUSED/);
  assert.match(app,/"atha-council-update-"\+version\+"\.apk"/);
 });
+
+test("Android Council WebView reports only top-level connection failures and allows recovery",()=>{
+ assert.match(app,/override fun onReceivedError\(view:WebView\?,request:WebResourceRequest\?,error:android\.webkit\.WebResourceError\?\)/);
+ assert.match(app,/request\?\.isForMainFrame==true/);
+ assert.match(app,/Konsey bağlantısı kurulamadı/);
+ assert.match(app,/101 -> \{if\(::councilWeb\.isInitialized\)councilWeb\.reload\(\);return true\}/);
+ assert.match(gradle,/versionName = \"0\.3-council-context\"/);
+});
