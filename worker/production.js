@@ -1071,7 +1071,8 @@ async function councilQwenAutoRespond(env,owner,room,eventId,userText,source='hu
    await db.prepare("UPDATE atha_qwen_auto_jobs SET state='quota',completed_at=?,error_code='DAILY_LIMIT' WHERE owner_id=? AND room_id=? AND event_id=?").bind(Date.now(),owner,room,eventId).run();
    return false;
   }
-  const contextPacket=await councilContextPacket(items,room,eventId);
+  let frozen=null;try{frozen=JSON.parse(event.message_excerpt)?.context_packet}catch{}
+  const contextPacket=frozen?.schema==='council.context.v1'&&frozen.room_id===room&&frozen.turn_id===eventId&&Array.isArray(frozen.messages)?frozen:await councilContextPacket(items,room,eventId);
   const context=contextPacket.messages.map(i=>({role:i.role,content:'['+(i.role==='user'?'İnsan':i.speakerId)+'] '+i.content}));
   if(source==='gemini'){
    const recent=(await db.prepare("SELECT reply_id,content FROM atha_sync_replies WHERE owner_id=? AND room_id=? AND reply_id LIKE 'qwen_evt_%' ORDER BY created_at DESC LIMIT 3").bind(owner,room).all()).results||[];
@@ -1170,13 +1171,14 @@ async function handleOpenCodeAgent(req,env){
   if(mode?.mode==='paused')return respond({room_id:room,events:[],paused:true,server_time:now});
   const rows=(await db.prepare("SELECT event_id,message_excerpt,created_at FROM atha_sync_events WHERE owner_id=? AND room_id=? AND created_at>? AND message_excerpt LIKE '{\"kind\":\"human\",%' ORDER BY created_at,event_id LIMIT 20").bind(owner,room,from).all()).results||[];
   const events=rows.flatMap(r=>{let v;try{v=JSON.parse(r.message_excerpt)}catch{return []}
-   const target=v.recipient||councilDirectedRecipient(v.content);return typeof v.content==='string'&&v.content.trim()&&!councilStopIntent(v.content)&&(!target||target==='opencode')?[{event_id:r.event_id,content:v.content.slice(0,1200),created_at:r.created_at}]:[]});
+   const target=v.recipient||councilDirectedRecipient(v.content);return typeof v.content==='string'&&v.content.trim()&&!councilStopIntent(v.content)&&(!target||target==='opencode')?[{event_id:r.event_id,content:v.content.slice(0,1200),created_at:r.created_at,
+    ...(v.context_packet?.schema==='council.context.v1'&&v.context_packet.room_id===room&&v.context_packet.turn_id===r.event_id?{context_packet:v.context_packet}:{})}]:[]});
   let context=[],contextPacket=null,preferences={turkishOnly:false};
   if(events.length){
    const row=await db.prepare('SELECT snapshot FROM atha_sync_rooms WHERE owner_id=? AND room_id=?').bind(owner,room).first();
    try{const items=JSON.parse(row?.snapshot||'{}').items||[];
     preferences=councilRoomPreferences(items);
-    contextPacket=await councilContextPacket(items,room,events.at(-1)?.event_id);
+    contextPacket=events.at(-1)?.context_packet||await councilContextPacket(items,room,events.at(-1)?.event_id);
     context=contextPacket.messages.map(m=>({speaker:m.speakerId,content:m.content}));
    }catch{}
   }
@@ -1380,6 +1382,7 @@ async function handleAthaRoomSync(req,env,ctx){
      .bind(owner,roomId,id,JSON.stringify({kind:'human',content:appended[i].content.slice(0,1200),turn_id:id,
       task_id:'council:'+id,context_version:contextPacket.context_version,
       snapshot_hash:contextPacket.snapshot_hash,
+      context_packet:{...contextPacket,turn_id:id},
       ...(appended[i].recipient?{recipient:appended[i].recipient}:{})}),now));
   }
   if(eventIds.length){
