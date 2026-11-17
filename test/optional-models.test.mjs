@@ -73,7 +73,7 @@ test('directed turns do not call unrelated Qwen/Gemini/Atha auto-routes or OpenC
  assert.match(source,/if\(councilRecipientForTurn\(latestHuman\?\.content,items\)&&councilRecipientForTurn\(latestHuman\?\.content,items\)!=='chatgpt'\)return;/);
  assert.match(source,/if\(!controlled&&addressed&&addressed!=='chatgpt'&&!turns\[i\]\?\.manualRequest\)continue;/);
  assert.match(source,/const target=v\.recipient\|\|councilDirectedRecipient\(v\.content\)/);
- assert.match(source,/councilDirectedRecipient\(turn\.content\)!=='opencode'/);
+ assert.match(source,/turn\.recipient\|\|councilDirectedRecipient\(turn\.content\)/);
 });
 
 test('Android WebView send handler isolates both prefix and suffix direct addresses',()=>{
