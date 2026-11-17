@@ -283,3 +283,20 @@ test("Minute scheduler persists a heartbeat without impersonating an AI response
  assert.equal(details.monitor.modelDeliveryConnected,false);
  d1.events.delete(key);
 });
+
+test("Mobile Council keeps diagnostics accessible while prioritizing the chat",()=>{
+ const k=source.indexOf("const HTML="),html=JSON.parse(source.slice(k+11,source.lastIndexOf(";")));
+ const chatStart=html.indexOf('<section class="view active" id="chat">');
+ const chatEnd=html.indexOf('</section>',chatStart);
+ const chat=html.slice(chatStart,chatEnd);
+ assert.ok(chatStart>0&&chatEnd>chatStart,"chat screen exists");
+ assert.match(chat,/<details class="chatConnections" id="chatConnections"><summary>⚙ Bağlantı durumu/);
+ assert.doesNotMatch(chat,/<details class="chatConnections" id="chatConnections" open/,"details are collapsed by default");
+ assert.ok(chat.indexOf('id="chatConnections"')<chat.indexOf('id="feed"'),"diagnostics precede the message feed");
+ for(const id of ["athaSettings","athaQuickStatus","openCodeQuickStatus","councilDialogueNotice","reset","feed","input","send","attachInput"]){
+  assert.equal((chat.match(new RegExp('id="'+id+'"','g'))||[]).length,1,id+" remains accessible exactly once");
+ }
+ assert.match(html,/#chatConnections>summary:focus-visible/);
+ assert.match(html,/@media\(max-width:650px\)\{[\s\S]*?#chat\{height:calc\(100dvh - 52px\)\}/);
+ assert.match(html,/#chatConnections \.athaInviteRow \.muted\{display:block/);
+});
