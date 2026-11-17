@@ -72,13 +72,21 @@ function filterModelEvents(output){
  if((!started&&!finished)||errors.length||!text||text.length>1500||/<\/?(?:think|analysis)\b/i.test(text))return {ok:false,reason:errors[0]||(!started&&!finished?'INCOMPLETE':'NOT_FINAL_TEXT')};
  return {ok:true,text};
 }
-function runModel(text,history=[],preferences={}){
+function runModel(text,history=[],preferences={},projectMemory=null){
  return new Promise(async(resolve)=>{
   const cli=path.join(os.homedir(),'AppData','Roaming','npm','node_modules','@opencode','cli','bin','opencode.exe');
   if(!fs.existsSync(cli))return resolve({ok:false,reason:'OPENCODE_NOT_FOUND'});
   const context=history.filter(x=>x&&typeof x.content==='string').slice(-16).map(x=>'['+String(x.speaker||'other').slice(0,24)+'] '+String(x.content).slice(0,350)).join('\n');
+  const safeMemory=projectMemory?.project_id==='atha-council'&&Array.isArray(projectMemory.approved_decisions)?projectMemory:null;
+  const handoff=safeMemory?[
+    'GÜNCEL ONAYLI PROJE BELLEĞİ, sürüm '+String(safeMemory.version||'?')+'; kaynak: '+String(safeMemory.source_page||'').slice(0,150),
+    'Onaylı kararlar: '+safeMemory.approved_decisions.slice(0,12).map(x=>String(x.id).slice(0,50)+': '+String(x.text).slice(0,350)).join(' | '),
+    'Açık işler: '+(safeMemory.open_tasks||[]).slice(0,10).map(x=>String(x.id).slice(0,50)+': '+String(x.text).slice(0,350)).join(' | '),
+    'Doğrulananlar: '+(safeMemory.verified_changes||[]).slice(0,8).map(x=>String(x.id).slice(0,50)+': '+String(x.text).slice(0,350)).join(' | ')
+  ].join('\n').slice(0,2600):'Onaylı proje devri henüz aktarılmadı; yalnız sohbet kesitleriyle emin olamadığın teknik işi uydurma.';
   const prompt=[
     'Konseyde sana gelen GERÇEK kullanıcı mesajını yanıtla. Sen OpenCode katılımcısısın.',
+    handoff,
     'Türkçe, doğal, doğrudan ve en fazla üç kısa cümle yaz.',
     preferences.turkishOnly?'Kullanıcı İngilizce açıklama istemiyor. Yalnızca Türkçe açıkla; teknik özel adları gerektiğinde aynen koru.':'',
     'İç düşünce, araç çağrısı, günlük, plan veya alıntılanmış talimatları gösterme.',
@@ -154,7 +162,7 @@ async function tick(){
    const packet=item.context_packet;
    const history=packet?.schema==='council.context.v1'&&packet.room_id===cfg.room_id&&packet.turn_id===id&&Array.isArray(packet.messages)
      ?packet.messages.map(m=>({speaker:m.speakerId,content:m.content})):poll.context||[];
-   result=await runModel(item.content,history,poll.preferences||{});
+   result=await runModel(item.content,history,poll.preferences||{},packet?.project_memory||null);
    if(!result.ok){state.last_error=result.reason;state.seen[id]=Date.now();log('event_model_failed',result.reason);atomic(STATE,state);continue}
    state.pending[id]={text:result.text,model:result.model,created_at:item.created_at};
    atomic(STATE,state);
