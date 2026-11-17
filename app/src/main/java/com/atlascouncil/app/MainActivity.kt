@@ -326,6 +326,13 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
     }
    }
    webViewClient=object:WebViewClient(){
+    override fun onReceivedError(view:WebView?,request:WebResourceRequest?,error:android.webkit.WebResourceError?){
+     super.onReceivedError(view,request,error)
+     // Report only top-level page connection failures, never errors from subresources.
+     if(request?.isForMainFrame==true&&request.url?.host=="atlas-council.sshrrgoktas.workers.dev"){
+      Toast.makeText(this@MainActivity,"Konsey bağlantısı kurulamadı. Menüden Yenile ile tekrar deneyebilirsin.",Toast.LENGTH_LONG).show()
+     }
+    }
     override fun onPageFinished(view:WebView?,url:String?){
      super.onPageFinished(view,url)
      val page=Uri.parse(url?:"")
