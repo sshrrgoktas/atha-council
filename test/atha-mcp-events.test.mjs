@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {createHmac,createHash,generateKeyPairSync,sign} from 'node:crypto';
 const source=readFileSync(new URL('../worker/production.js',import.meta.url),'utf8');
-const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues,councilStopIntent,councilQwenAutoRespond,councilQwenAutoStatus,councilModelProviderStatus,councilRoomPreferences,councilFinalAnswer};').toString('base64'));
+const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues,councilStopIntent,councilRecipientForTurn,councilQwenAutoRespond,councilQwenAutoStatus,councilModelProviderStatus,councilRoomPreferences,councilFinalAnswer};').toString('base64'));
 const worker=runtime.default,origin='https://atlas-council.sshrrgoktas.workers.dev',resource=origin+'/mcp';
 const owner='github:101',room='room_one',now=()=>Date.now();
 const oldFetch=globalThis.fetch;
@@ -132,6 +132,26 @@ test('Provider status distinguishes unchecked, disconnected, absent subscription
  assert.equal(offline.chatgpt.toolConnection,'not_connected');
  assert.equal(offline.chatgpt.manualCouncilReplyAvailable,false);
 });
+
+test('A short follow-up to Llama is not sent to Qwen, Gemini or automatic Atha callbacks',async()=>{
+ const text='Sen niye bişi demiyosun';
+ const row=sql.prepare('SELECT snapshot FROM atha_sync_rooms WHERE owner_id=? AND room_id=?').get(owner,room);
+ const snapshot=JSON.parse(row.snapshot);
+ snapshot.items=[{role:'user',speakerId:'human',content:'Llama nerde'},{role:'assistant',speakerId:'meta',content:'Llama burada.'},{role:'user',speakerId:'human',content:text}];
+ sql.prepare('UPDATE atha_sync_rooms SET snapshot=? WHERE owner_id=? AND room_id=?').run(JSON.stringify(snapshot),owner,room);
+ assert.equal(runtime.councilRecipientForTurn(text,snapshot.items),'meta');
+ let modelCalls=0;env.AI={run:async()=>{modelCalls++;return {choices:[{message:{content:'Yanıt'}}]}}};
+ sql.prepare('INSERT INTO atha_qwen_auto_accounts(owner_id,enabled,updated_at) VALUES(?,1,?)').run(owner,now());
+ seedEvent('evt_llama_followup');
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_llama_followup',text),false);
+ assert.equal(modelCalls,0,'a direct Llama follow-up must not spend Qwen inference');
+ await subscribe();
+ sql.prepare('INSERT INTO atha_mcp_participation VALUES(?,?,?,?)').run(owner,room,'dialogue',now());
+ await runtime.mcpQueueEvents(env,owner,room,['evt_llama_followup'],[{role:'user',content:text,recipient:'meta'}]);
+ await runtime.mcpDeliver(env);
+ assert.equal(callbackCalls.length,1,'subscription verification only; no unrelated Atha webhook');
+});
+
 test('Qwen temporary member is opt-in, owner-scoped and never impersonates ChatGPT',async()=>{
  setLatestHuman('Merhaba Konsey');
  let calls=0;

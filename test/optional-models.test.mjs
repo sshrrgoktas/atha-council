@@ -70,10 +70,10 @@ test('direct Council address recognizes first- and last-position names without m
 test('directed turns do not call unrelated Qwen/Gemini/Atha auto-routes or OpenCode poll',()=>{
  assert.match(source,/if\(addressed&&addressed!=='qwen'\)return false;/);
  assert.match(source,/if\(saved\.meta\?\.changes===1&&source==='human'&&!addressed\)/);
- assert.match(source,/if\(councilDirectedRecipient\(latestHuman\?\.content\)&&councilDirectedRecipient\(latestHuman\?\.content\)!=='chatgpt'\)return;/);
+ assert.match(source,/if\(councilRecipientForTurn\(latestHuman\?\.content,items\)&&councilRecipientForTurn\(latestHuman\?\.content,items\)!=='chatgpt'\)return;/);
  assert.match(source,/if\(!controlled&&addressed&&addressed!=='chatgpt'&&!turns\[i\]\?\.manualRequest\)continue;/);
- assert.match(source,/\(!councilDirectedRecipient\(v\.content\)\|\|councilDirectedRecipient\(v\.content\)==='opencode'\)/);
- assert.match(source,/councilDirectedRecipient\(turn\.content\)!=='opencode'/);
+ assert.match(source,/const target=v\.recipient\|\|councilDirectedRecipient\(v\.content\)/);
+ assert.match(source,/turn\.recipient\|\|councilDirectedRecipient\(turn\.content\)/);
 });
 
 test('Android WebView send handler isolates both prefix and suffix direct addresses',()=>{
@@ -82,7 +82,10 @@ test('Android WebView send handler isolates both prefix and suffix direct addres
  const start=html.indexOf('const directCall=t.trim().replace');
  const end=html.indexOf(';if(!start)start=Date.now();',start);
  assert.ok(start>=0&&end>start,'client-side recipient detector exists');
- const detect=Function('t',html.slice(start,end+1)+'return addressed;');
+ const helperStart=html.indexOf('function councilClientDirectedRecipient(value){');
+ const helperEnd=html.indexOf("document.getElementById('send').onclick=",helperStart);
+ assert.ok(helperStart>=0&&helperEnd>helperStart);
+ const detect=Function('t','chats','currentChatId',html.slice(helperStart,helperEnd)+html.slice(start,end+1)+'return addressed;');
  for(const [message,speaker] of [
   ['OpenCode, beni duyuyor musun?','opencode'],
   ['Ne hatırlıyorsun Opencode','opencode'],
@@ -90,5 +93,38 @@ test('Android WebView send handler isolates both prefix and suffix direct addres
   ['Qwen, ne düşünüyorsun?','qwen'],
   ['Atha, bir şey soracağım','chatgpt'],
   ['Konsey, hepiniz yanıtlayın',null]
- ])assert.equal(detect(message),speaker,message);
+ ])assert.equal(detect(message,[],null),speaker,message);
+});
+
+test('Llama response strips the echoed human role label but keeps the genuine answer',async()=>{
+ for(const [raw,expected] of [
+  ['[İNSAN / SEHER] Llama, burada Atha Council\'de.',"Llama, burada Atha Council'de."],
+  ['[qwen] [qwen] Merhaba, ben Qwen.','Merhaba, ben Qwen.'],
+  ['Llama burada ve dinliyor.','Llama burada ve dinliyor.']
+ ]){
+  const resp=await worker.fetch(new Request('https://atlas-council.sshrrgoktas.workers.dev/api/chat',{
+   method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:'llama',messages:[{role:'user',content:'Llama nerde'}]})
+  }),{AI:{run:async()=>({response:raw})}},{});
+  assert.equal(resp.status,200,raw);
+  assert.equal((await resp.json()).text,expected);
+ }
+});
+test('One-to-one follow-up targets the previously addressed Llama and not the whole Council',()=>{
+ const a=source.indexOf('function councilDirectedRecipient(value){'),b=source.indexOf('function councilStopIntent(value){',a);
+ const recipient=Function(source.slice(a,b)+'return councilRecipientForTurn')();
+ const items=[{role:'user',content:'Llama nerde'},{role:'assistant',speakerId:'meta',content:'Llama burada.'},{role:'user',content:'Sen niye bişi demiyosun'}];
+ assert.equal(recipient('Sen niye bişi demiyosun',items),'meta');
+ assert.equal(recipient('Sen niye bişi demiyosun',items.slice(0,-1)),'meta');
+ assert.equal(recipient('Millet ne durumdasınız',items),null);
+ assert.equal(recipient('Qwen, sen de konuş',items),'qwen');
+ const pos=source.indexOf('const HTML='),html=JSON.parse(source.slice(pos+11,source.lastIndexOf(';')));
+ const begin=html.indexOf('function councilClientDirectedRecipient(value){'),end=html.indexOf("document.getElementById('send').onclick=",begin);
+ const fn=Function(html.slice(begin,end)+'return councilClientRecipientForTurn')();
+ assert.equal(fn('Sen niye bişi demiyosun',items.slice(0,-1)),'meta');
+});
+test('Explicitly targeted follow-up is carried into signed server event metadata',()=>{
+ assert.match(source,/appended\[appended\.length-1\]=\{\.\.\.last,recipient:councilRecipientForTurn\(last\.content,items\)\}/);
+ assert.match(source,/recipient:appended\[i\]\.recipient/);
+ assert.match(source,/turns\[i\]\?\.recipient\|\|councilDirectedRecipient\(text\)/);
+ assert.match(source,/const target=v\.recipient\|\|councilDirectedRecipient\(v\.content\)/);
 });
