@@ -301,6 +301,21 @@ function athaAppendedHumanTurns(previousSnapshot,nextSnapshot) {
  if(overlap===0)return []; // edit/reorder/replace, not a confirmed append
  return after.slice(overlap).filter(m=>m.role==="user"&&typeof m.content==="string"&&m.content.trim()).slice(0,10);
 }
+// Council Context Packet v1 is derived from an authorized room snapshot, never from
+// model-authored claims. Empty decision IDs explicitly mean no decision ledger was read.
+async function councilContextPacket(items,roomId,turnId){
+ const all=Array.isArray(items)?items.filter(x=>x&&['user','assistant'].includes(x.role)&&typeof x.content==='string'):[];
+ const messages=all.slice(-20).map((x,i)=>({
+  role:x.role,speakerId:x.role==='user'?'human':String(x.speakerId||'unknown').slice(0,30),
+  content:x.content.slice(0,350),snapshotIndex:Math.max(0,all.length-20)+i
+ }));
+ const constraints=councilRoomPreferences(items||[]);
+ const contextHash=await mcpHash(JSON.stringify([roomId,messages,constraints.turkishOnly]));
+ return {schema:'council.context.v1',room_id:roomId,turn_id:turnId||null,
+  context_version:1,snapshot_hash:contextHash,history_truncated:all.length>20,
+  approved_decision_ids:[],user_constraints:{turkishOnly:constraints.turkishOnly},
+  messages};
+}
 async function athaEventId(ownerId,roomId,previousSnapshot,newSnapshot,index){
  const data=new TextEncoder().encode(JSON.stringify([ownerId,roomId,previousSnapshot,newSnapshot,index]));
  const digest=new Uint8Array(await crypto.subtle.digest("SHA-256",data));
@@ -1056,7 +1071,8 @@ async function councilQwenAutoRespond(env,owner,room,eventId,userText,source='hu
    await db.prepare("UPDATE atha_qwen_auto_jobs SET state='quota',completed_at=?,error_code='DAILY_LIMIT' WHERE owner_id=? AND room_id=? AND event_id=?").bind(Date.now(),owner,room,eventId).run();
    return false;
   }
-  const context=items.slice(-8).map(i=>({role:i.role==='user'?'user':'assistant',content:'['+(i.role==='user'?'Seher':String(i.speakerId||'other').slice(0,30))+'] '+String(i.content||'').slice(0,400)}));
+  const contextPacket=await councilContextPacket(items,room,eventId);
+  const context=contextPacket.messages.map(i=>({role:i.role,content:'['+(i.role==='user'?'İnsan':i.speakerId)+'] '+i.content}));
   if(source==='gemini'){
    const recent=(await db.prepare("SELECT reply_id,content FROM atha_sync_replies WHERE owner_id=? AND room_id=? AND reply_id LIKE 'qwen_evt_%' ORDER BY created_at DESC LIMIT 3").bind(owner,room).all()).results||[];
    for(const item of recent.reverse())context.push({role:'assistant',content:'[Qwen] '+String(item.content).slice(0,350)});
@@ -1155,15 +1171,16 @@ async function handleOpenCodeAgent(req,env){
   const rows=(await db.prepare("SELECT event_id,message_excerpt,created_at FROM atha_sync_events WHERE owner_id=? AND room_id=? AND created_at>? AND message_excerpt LIKE '{\"kind\":\"human\",%' ORDER BY created_at,event_id LIMIT 20").bind(owner,room,from).all()).results||[];
   const events=rows.flatMap(r=>{let v;try{v=JSON.parse(r.message_excerpt)}catch{return []}
    const target=v.recipient||councilDirectedRecipient(v.content);return typeof v.content==='string'&&v.content.trim()&&!councilStopIntent(v.content)&&(!target||target==='opencode')?[{event_id:r.event_id,content:v.content.slice(0,1200),created_at:r.created_at}]:[]});
-  let context=[],preferences={turkishOnly:false};
+  let context=[],contextPacket=null,preferences={turkishOnly:false};
   if(events.length){
    const row=await db.prepare('SELECT snapshot FROM atha_sync_rooms WHERE owner_id=? AND room_id=?').bind(owner,room).first();
    try{const items=JSON.parse(row?.snapshot||'{}').items||[];
     preferences=councilRoomPreferences(items);
-    context=items.slice(-12).map(m=>({speaker:m.speakerId||m.name||'participant',content:String(m.content||'').slice(0,350)}));
+    contextPacket=await councilContextPacket(items,room,events.at(-1)?.event_id);
+    context=contextPacket.messages.map(m=>({speaker:m.speakerId,content:m.content}));
    }catch{}
   }
-  return respond({room_id:room,events,paused:false,server_time:now,preferences,context});
+  return respond({room_id:room,events,paused:false,server_time:now,preferences,context,context_packet:contextPacket});
  }
  if(!/^evt_[A-Za-z0-9_-]{8,100}$/.test(data.event_id||'')||typeof data.content!=='string'||!data.content.trim()||data.content.length>1500||Object.keys(data).length!==3)return respond({error:'invalid_reply'},400);
  if(mode?.mode==='paused')return respond({error:'paused'},409);
@@ -1354,12 +1371,16 @@ async function handleAthaRoomSync(req,env,ctx){
     "ON CONFLICT(owner_id,room_id) DO UPDATE SET title=excluded.title,snapshot=excluded.snapshot,updated_at=excluded.updated_at")
     .bind(owner,roomId,data.title.trim(),snapshot,now)];
   const eventIds=[];
+  const contextPacket=appended.length?await councilContextPacket(JSON.parse(snapshot).items,roomId,null):null;
   for(let i=0;i<appended.length;i++){
    const id=firstLiveId||await athaEventId(owner,roomId,oldRoom?.snapshot||'',snapshot,i);
    eventIds.push(id);
    writes.push(env.ATHA_SYNC_DB.prepare(
      "INSERT OR IGNORE INTO atha_sync_events(owner_id,room_id,event_id,message_excerpt,created_at,state) VALUES(?,?,?,?,?,'pending')")
-     .bind(owner,roomId,id,JSON.stringify({kind:'human',content:appended[i].content.slice(0,1200),...(appended[i].recipient?{recipient:appended[i].recipient}:{})}),now));
+     .bind(owner,roomId,id,JSON.stringify({kind:'human',content:appended[i].content.slice(0,1200),turn_id:id,
+      task_id:'council:'+id,context_version:contextPacket.context_version,
+      snapshot_hash:contextPacket.snapshot_hash,
+      ...(appended[i].recipient?{recipient:appended[i].recipient}:{})}),now));
   }
   if(eventIds.length){
    await mcpQueueEvents(env,owner,roomId,eventIds,appended,writes);
