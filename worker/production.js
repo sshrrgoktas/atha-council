@@ -338,14 +338,19 @@ async function councilAuthorizedHandoff(req,env,room){
 function councilHandoffPrompt(handoff){
  const h=councilNormalizedHandoff(handoff);
  if(!h)return '';
+ // Preserve the task and known status even if the approved decision ledger is long.
+ // Never let older or entertaining room messages crowd the verified project memory out.
+ const brief=(items,limit,maxChars)=>items.slice(0,limit).map(x=>
+  String(x.id).slice(0,50)+': '+String(x.text).slice(0,maxChars)
+ ).join(' | ');
  return [
-  'ONAYLI GÜNCEL ATHA COUNCIL PROJE DEVİR ÖZETİ (son eğlenceli sohbetlerden bağımsız, kaynaklı):',
-  'Sürüm '+h.version+', incelenme '+h.reviewed_at+', kaynak '+h.source_page,
-  'Kullanıcının onayladığı kararlar: '+h.approved_decisions.map(x=>x.id+': '+x.text).join(' | '),
-  'Henüz açık teknik görevler: '+h.open_tasks.map(x=>x.id+': '+x.text).join(' | '),
-  'Kaynakta doğrulanmış değişiklikler: '+h.verified_changes.map(x=>x.id+': '+x.text).join(' | '),
-  'Kullanıcı son teknik işimizi sorarsa açık görevleri ve doğrulanmış değişiklikleri açıkça ayır. Bilmediğin veya doğrulanmamış işleri tamamlandı diye sunma.'
- ].join('\n').slice(0,3200);
+  'ATHA COUNCIL — YETKİLİ, ONAYLI PROJE DEVİR ÖZETİ (oda sohbetinden ayrı):',
+  'Handoff sürümü '+h.version+', son inceleme '+h.reviewed_at+', kaynak '+h.source_page,
+  'ÖNCELİKLİ, HENÜZ AÇIK TEKNİK GÖREVLER: '+brief(h.open_tasks,8,200),
+  'KULLANICININ ONAYLADIĞI KARARLAR: '+brief(h.approved_decisions,12,140),
+  'GERÇEKTEN DOĞRULANMIŞ DEĞİŞİKLİKLER: '+brief(h.verified_changes,8,110),
+  'Kullanıcı "en son neyi düzeltiyorduk" diye sorarsa önce açık teknik görevleri anlat. Doğrulanmış değişiklikleri ayrı söyle; henüz test edilmemiş çözümü tamamlandı diye sunma. Başka bir modelin sözlerini kendi kimliğin gibi aktarma.'
+ ].join('\n').slice(0,4500);
 }
 
 // Council Context Packet v1 is derived from an authorized room snapshot, never from
@@ -621,7 +626,7 @@ function councilStripModelRolePrefix(value){
 function councilFinalAnswer(value,{turkishOnly=false}={}){
    const raw=String(value||'').trim();
    if(/<(?:think|analysis)\b/i.test(raw)&&!/<\/(?:think|analysis)\s*>/i.test(raw))return {ok:false,reason:'INCOMPLETE_REASONING'};
-   const answer=raw.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi,'').replace(/<analysis\b[^>]*>[\s\S]*?<\/analysis>/gi,'').trim();
+   const answer=councilStripModelRolePrefix(raw.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi,'').replace(/<analysis\b[^>]*>[\s\S]*?<\/analysis>/gi,'').trim());
    if(!answer||/<\/?(?:think|analysis)\b/i.test(answer)||/^(?:\[(?:tool|thinking|reasoning|analysis)\]|(?:tool call|tool result|reasoning|thinking)\s*:)/im.test(answer))return {ok:false,reason:'NOT_FINAL_TEXT'};
    // Models in this chat route have no video-generation, build or file-write tool.
    // A claim of completed / ongoing media work without evidence is rejected.
