@@ -75,3 +75,20 @@ test('directed turns do not call unrelated Qwen/Gemini/Atha auto-routes or OpenC
  assert.match(source,/\(!councilDirectedRecipient\(v\.content\)\|\|councilDirectedRecipient\(v\.content\)==='opencode'\)/);
  assert.match(source,/councilDirectedRecipient\(turn\.content\)!=='opencode'/);
 });
+
+test('Android WebView send handler isolates both prefix and suffix direct addresses',()=>{
+ const pos=source.indexOf('const HTML=');
+ const html=JSON.parse(source.slice(pos+11,source.lastIndexOf(';')));
+ const start=html.indexOf('const directCall=t.trim().replace');
+ const end=html.indexOf(';if(!start)start=Date.now();',start);
+ assert.ok(start>=0&&end>start,'client-side recipient detector exists');
+ const detect=Function('t',html.slice(start,end+1)+'return addressed;');
+ for(const [message,speaker] of [
+  ['OpenCode, beni duyuyor musun?','opencode'],
+  ['Ne hatırlıyorsun Opencode','opencode'],
+  ['Ne dersin Gemini?','gemini'],
+  ['Qwen, ne düşünüyorsun?','qwen'],
+  ['Atha, bir şey soracağım','chatgpt'],
+  ['Konsey, hepiniz yanıtlayın',null]
+ ])assert.equal(detect(message),speaker,message);
+});
