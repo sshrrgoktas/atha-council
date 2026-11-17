@@ -1,3 +1,6 @@
+// Historic automatic Gemini ↔ Qwen/Atha dialogue tests are retained as skipped regression
+// records because the user explicitly replaced that behavior with human-only turns.
+// The new test/council-human-turn.test.mjs enforces the replacement policy.
 import test,{beforeEach,afterEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -62,7 +65,7 @@ async function dialogueSetup(){
  sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,'mcp_evt_current','Gemini, ne düşünüyorsun?',now());
  return {req,body:{dialogue:{room_id:room,parent_reply_id:'mcp_evt_current'}}};
 }
-test('Controlled real-model dialogue is owner-scoped, current-parent-only and idempotent',async()=>{
+test.skip('LEGACY model-to-model (disabled): Controlled real-model dialogue is owner-scoped, current-parent-only and idempotent',async()=>{
  const {req,body}=await dialogueSetup();
  await assert.rejects(runtime.beginCouncilDialogue(new Request(origin),env,body),/GitHub/);
  await assert.rejects(runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:'foreign',parent_reply_id:'mcp_evt_current'}}),/inactive/);
@@ -78,7 +81,7 @@ test('Controlled real-model dialogue is owner-scoped, current-parent-only and id
  const read=await rpc('tools/call',{name:'council_read',arguments:{room_id:room}});
  assert.equal(read.result.structuredContent.events[0].controlledDialogue.speakerId,'gemini');
 });
-test('Dialogue continues beyond three turns and twenty minutes until explicitly paused',async()=>{
+test.skip('LEGACY model-to-model (disabled): Dialogue continues beyond three turns and twenty minutes until explicitly paused',async()=>{
  const {req}=await dialogueSetup();
  sql.prepare('UPDATE atha_mcp_participation SET updated_at=?').run(now()-24*3600000);
  for(let i=0;i<8;i++){
@@ -91,7 +94,7 @@ test('Dialogue continues beyond three turns and twenty minutes until explicitly 
  sql.prepare("UPDATE atha_mcp_participation SET mode='paused'").run();
  await assert.rejects(runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:'mcp_evt_round_7'}}),/inactive/);
 });
-test('An intervening user turn or stop cancels a reserved dialogue; short text stays bounded',async()=>{
+test.skip('LEGACY model-to-model (disabled): An intervening user turn or stop cancels a reserved dialogue; short text stays bounded',async()=>{
  const {req,body}=await dialogueSetup();const turn=await runtime.beginCouncilDialogue(req,env,body);
  sql.prepare('UPDATE atha_mcp_participation SET updated_at=updated_at+1').run();
  await assert.rejects(runtime.finishCouncilDialogue(env,turn,'Geç kalan yanıt.',null),/superseded/);
@@ -208,7 +211,7 @@ test('Qwen auto ignores human messages explicitly addressed to OpenCode or Atha'
  }
  assert.equal(calls,0,'direct messages to other recipients must consume no Qwen inference');
 });
-test('A verified Qwen turn may initiate a Gemini dialogue but a stale Qwen turn may not',async()=>{
+test.skip('LEGACY model-to-model (disabled): A verified Qwen turn may initiate a Gemini dialogue but a stale Qwen turn may not',async()=>{
  const {req}=await dialogueSetup();
  sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,'qwen_evt_from_user','Merhaba Gemini, ne düşünüyorsun?',now()+100);
  const turn=await runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:'qwen_evt_from_user'}});
@@ -218,7 +221,7 @@ test('A verified Qwen turn may initiate a Gemini dialogue but a stale Qwen turn 
  const row=sql.prepare('SELECT message_excerpt FROM atha_sync_events WHERE event_id=?').get(turn.id);
  assert.equal(JSON.parse(row.message_excerpt).phase,'complete');
 });
-test('Qwen responds to verified Gemini turn; it never replays, relabels, or answers a superseded turn',async()=>{
+test.skip('LEGACY model-to-model (disabled): Qwen responds to verified Gemini turn; it never replays, relabels, or answers a superseded turn',async()=>{
  const {req}=await dialogueSetup();
  sql.prepare('INSERT INTO atha_qwen_auto_accounts(owner_id,enabled,updated_at) VALUES(?,1,?)').run(owner,now());
  sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,'qwen_evt_auto_parent','Gemini merhaba',now()+100);
@@ -275,16 +278,17 @@ test('Punctuation-only and emoji-only user turns queue real automatic events wit
  assert.deepEqual(bodies,['evt_emoji','evt_period']);
  assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_sync_replies').get().n,0,'a webhook receipt is not an Atha answer');
 });
-test('Retry creates a fresh real-model event for the latest reply; it never overwrites content',async()=>{
- const {req}=await dialogueSetup();const headers={cookie:req.headers.get('cookie'),origin,'x-atha-sync':'1'};
- const path='/api/atha-sync/rooms/'+room+'/retry',body={request_id:'retry_request_1234567890',parent_reply_id:'mcp_evt_current'};
- assert.equal((await request(path,'PUT',{...body,parent_reply_id:'mcp_evt_old'},null,headers)).status,409);
- const r=await request(path,'PUT',body,null,headers);assert.equal(r.status,200);
+test('Retry cannot create a new model turn without a fresh user message',async()=>{
+ const {req}=await dialogueSetup();
+ const headers={cookie:req.headers.get('cookie'),origin,'x-atha-sync':'1'};
+ const path='/api/atha-sync/rooms/'+room+'/retry';
+ const body={request_id:'retry_request_1234567890',parent_reply_id:'mcp_evt_current'};
+ const response=await request(path,'PUT',body,null,headers);
+ assert.equal(response.status,409);
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_sync_events').get().n,0);
  assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_sync_replies').get().n,1);
- assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_sync_events').get().n,1);
- sql.prepare("UPDATE atha_mcp_participation SET mode='paused'").run();
- assert.equal((await request(path,'PUT',{...body,request_id:'different_retry_1234567890'},null,headers)).status,409);
 });
+
 test('MCP requires OAuth, advertises tools/events, denies foreign origin and room',async()=>{
  const unauth=await request('/mcp','POST',{jsonrpc:'2.0',method:'initialize',id:1},null);assert.equal(unauth.status,401);assert.match(unauth.headers.get('www-authenticate'),/oauth-protected-resource\/mcp/);
  assert.deepEqual((await rpc('initialize')).result.capabilities,{tools:{},events:{}});
@@ -604,7 +608,7 @@ async function serverDialogueSetup(){
  assert.equal(await runtime.rememberCouncilDialogue(request,env,owner,room),true);
  return {request,generations:()=>generations,setUnavailable:v=>{unavailable=v}};
 }
-test('Server hands Atha to Gemini and back for multiple turns without any browser polling',async()=>{
+test.skip('LEGACY model-to-model (disabled): Server hands Atha to Gemini and back for multiple turns without any browser polling',async()=>{
  const h=await serverDialogueSetup();
  // First real provider call is initiated by the server, with no UI involved.
  await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),1);
@@ -624,13 +628,13 @@ test('Server hands Atha to Gemini and back for multiple turns without any browse
  assert.ok(data.replies.every((r,i)=>!i||r.createdAt>=data.replies[i-1].createdAt));
 });
 
-test('Server does not wake Gemini dialogue for an OpenCode-directed newest user turn',async()=>{
+test.skip('LEGACY model-to-model (disabled): Server does not wake Gemini dialogue for an OpenCode-directed newest user turn',async()=>{
  const h=await serverDialogueSetup();
  setLatestHuman('Ne hatırlıyorsun Opencode');
  await runtime.runCouncilDialogue(env,owner,room);
  assert.equal(h.generations(),0,'no Gemini inference on a direct OpenCode message');
 });
-test('Failed provider calls retry without a user message and concurrent runners never duplicate',async()=>{
+test.skip('LEGACY model-to-model (disabled): Failed provider calls retry without a user message and concurrent runners never duplicate',async()=>{
  const h=await serverDialogueSetup();h.setUnavailable(true);
  await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),0);
  assert.equal(sql.prepare('SELECT attempts FROM atha_dialogue_sessions').get().attempts,1);
@@ -639,13 +643,13 @@ test('Failed provider calls retry without a user message and concurrent runners 
  await Promise.all([runtime.runCouncilDialogue(env,owner,room),runtime.runCouncilDialogue(env,owner,room)]);
  assert.equal(h.generations(),1);assert.equal(callbackCalls.length,2);
 });
-test('Server dialogue respects pause, revoked subscriptions and expired authorization',async()=>{
+test.skip('LEGACY model-to-model (disabled): Server dialogue respects pause, revoked subscriptions and expired authorization',async()=>{
  const h=await serverDialogueSetup();
  sql.prepare("UPDATE atha_mcp_participation SET mode='paused'").run();await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),0);
  sql.prepare("UPDATE atha_mcp_participation SET mode='dialogue'").run();sql.prepare('UPDATE atha_mcp_grants SET revoked=1').run();await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),0);
  sql.prepare('UPDATE atha_mcp_grants SET revoked=0').run();sql.prepare('UPDATE atha_dialogue_sessions SET expires_at=0').run();await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),0);
 });
-test('Repeated Gemini output stops the automatic chain instead of sending another event',async()=>{
+test.skip('LEGACY model-to-model (disabled): Repeated Gemini output stops the automatic chain instead of sending another event',async()=>{
  const {req,body}=await dialogueSetup();let turn=await runtime.beginCouncilDialogue(req,env,body);
  await runtime.finishCouncilDialogue(env,turn,'Aynı yanıt.',null);
  sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,'mcp_evt_followup','Yeni Atha yanıtı.',now()+1);
@@ -653,7 +657,7 @@ test('Repeated Gemini output stops the automatic chain instead of sending anothe
  await assert.rejects(runtime.finishCouncilDialogue(env,turn,'Aynı yanıt.',null),/Repeating/);
  assert.equal(sql.prepare('SELECT count(*) n FROM atha_mcp_delivery').get().n,1);
 });
-test('Server cannot reuse another room provider session or execute an expired turn',async()=>{
+test.skip('LEGACY model-to-model (disabled): Server cannot reuse another room provider session or execute an expired turn',async()=>{
  const h=await serverDialogueSetup();
  const wrong=await runtime.mcpSeal(JSON.stringify({owner:'github:999',room,google:'private',github:'private'}),env);
  sql.prepare('UPDATE atha_dialogue_sessions SET cookie_cipher=?').run(wrong);
@@ -670,7 +674,7 @@ test('First live user send in a new synced room triggers Atha once; history-only
  await request('/api/atha-sync/rooms/'+newRoom,'PUT',body,null,headers);assert.equal(callbackCalls.length,2);
  delete body.live_turn;await request('/api/atha-sync/rooms/history_import_room','PUT',body,null,headers);assert.equal(callbackCalls.length,2);
 });
-test('Natural farewells stop the room silently and cancel in-flight automatic delivery',async()=>{
+test.skip('LEGACY model-to-model (disabled): Natural farewells stop the room silently and cancel in-flight automatic delivery',async()=>{
  const {req,body}=await dialogueSetup();const turn=await runtime.beginCouncilDialogue(req,env,body);
  await queue('evt_pending_before_farewell','Atha merhaba');
  seedEvent('evt_farewell');await runtime.mcpQueueEvents(env,owner,room,['evt_farewell'],[{role:'user',content:'Tamam artık susalım, yeter. İyi geceler 💚'}]);
@@ -702,7 +706,7 @@ test('A first-message farewell is transactional and never starts a new model con
  assert.equal(r.status,200);assert.equal(callbackCalls.length,1);
  assert.equal(sql.prepare('SELECT mode FROM atha_mcp_participation WHERE room_id=?').get('first_farewell').mode,'paused');
 });
-test('A server provider session is bound to authorization expiry instead of conversation age',async()=>{
+test.skip('LEGACY model-to-model (disabled): A server provider session is bound to authorization expiry instead of conversation age',async()=>{
  const h=await serverDialogueSetup();sql.prepare('UPDATE atha_mcp_participation SET updated_at=?').run(now()-24*3600000);
  assert.equal(await runtime.rememberCouncilDialogue(h.request,env,owner,room),true);
  const saved=sql.prepare('SELECT expires_at FROM atha_dialogue_sessions').get().expires_at;
@@ -803,7 +807,7 @@ test('Concurrent conflicting council_reply requests persist one immutable reply'
  await subscribe();await queue();const rs=await Promise.all([saveReply(),saveReply({...replyArgs,content:'Other test reply.'})]);
  assert.equal(rs.filter(r=>r.result).length,1);assert.equal(rs.filter(r=>r.error).length,1);assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,1);assert.equal(deliveryRow().state,'replied');
 });
-test('A new user epoch cancels stale Gemini redelivery and rejects its late reply',async()=>{
+test.skip('LEGACY model-to-model (disabled): A new user epoch cancels stale Gemini redelivery and rejects its late reply',async()=>{
  const {req,body}=await dialogueSetup();const turn=await runtime.beginCouncilDialogue(req,env,body);await runtime.finishCouncilDialogue(env,turn,'Gemini test output.',null);await runtime.mcpDeliver(env);
  sql.prepare('UPDATE atha_mcp_participation SET updated_at=updated_at+1').run();forceDue();const n=callbackCalls.length;await runtime.mcpDeliver(env);
  assert.equal(callbackCalls.length,n);assert.equal(deliveryRow().state,'cancelled');assert.ok((await saveReply({...replyArgs,event_id:turn.id})).error);
