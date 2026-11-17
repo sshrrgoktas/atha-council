@@ -22,6 +22,13 @@ async function request(path,method='GET',body,token=access,headers={}){
 }
 async function rpc(method,params={},token=access){const r=await request('/mcp','POST',{jsonrpc:'2.0',id:1,method,params},token);return {status:r.status,...await r.json()}}
 function seedEvent(id='evt_test'){sql.prepare('INSERT OR IGNORE INTO atha_sync_events(owner_id,room_id,event_id,created_at) VALUES(?,?,?,?)').run(owner,room,id,now())}
+function setLatestHuman(text){
+ const row=sql.prepare('SELECT snapshot FROM atha_sync_rooms WHERE owner_id=? AND room_id=?').get(owner,room);
+ const snapshot=JSON.parse(row.snapshot);
+ const latest=[...snapshot.items].reverse().find(x=>x.role==='user');
+ latest.content=text;
+ sql.prepare('UPDATE atha_sync_rooms SET snapshot=? WHERE owner_id=? AND room_id=?').run(JSON.stringify(snapshot),owner,room);
+}
 const secret='whsec_'+Buffer.alloc(32,7).toString('base64');
 const subscription=(url='https://callbacks.openai.com/test')=>({name:'message.created',arguments:{room_id:room},delivery:{mode:'webhook',url,secret}});
 async function subscribe(){const r=await rpc('events/subscribe',subscription());assert.ok(r.result,JSON.stringify(r));return r.result.id}
@@ -126,14 +133,15 @@ test('Provider status distinguishes unchecked, disconnected, absent subscription
  assert.equal(offline.chatgpt.manualCouncilReplyAvailable,false);
 });
 test('Qwen temporary member is opt-in, owner-scoped and never impersonates ChatGPT',async()=>{
+ setLatestHuman('Merhaba Konsey');
  let calls=0;
  env.AI={run:async(model,args)=>{calls++;assert.equal(model,'@cf/qwen/qwen3.8-27b');assert.equal(args.reasoning_effort,'low');assert.equal(args.chat_template_kwargs?.enable_thinking,false);return {choices:[{message:{content:'Merhaba, ben bağımsız Qwen!'}}]}}};
  seedEvent('evt_qwen_safe');
- assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Atha selam'),false);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Merhaba Konsey'),false);
  assert.equal(calls,0,'Default-off must never invoke billable AI');
  sql.prepare('INSERT INTO atha_qwen_auto_accounts(owner_id,enabled,updated_at) VALUES(?,1,?)').run(owner,now());
- assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Atha selam'),true);
- assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Atha selam'),false);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Merhaba Konsey'),true);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Merhaba Konsey'),false);
  assert.equal(calls,1,'Same event must consume one inference only');
  const out=sql.prepare("SELECT * FROM atha_sync_replies WHERE reply_id='qwen_evt_qwen_safe'").get();
  assert.equal(out.content,'Merhaba, ben bağımsız Qwen!');
@@ -145,24 +153,40 @@ test('Qwen temporary member is opt-in, owner-scoped and never impersonates ChatG
  assert.notEqual(reply.speakerId,'chatgpt');
 });
 test('Qwen enforces stop, room pause, newest user and per-account daily budget',async()=>{
+ setLatestHuman('Merhaba Konsey');
  let calls=0;
  env.AI={run:async()=>{calls++;return {choices:[{message:{content:'Yanıt Qwen'}}]}}};
  sql.prepare('INSERT INTO atha_qwen_auto_accounts(owner_id,enabled,updated_at) VALUES(?,1,?)').run(owner,now());
- for(const [eventId,content] of [['evt_stop_qwen','sus'],['evt_old_qwen','Merhaba'],['evt_qwen_quota','Atha selam']])seedEvent(eventId);
+ for(const [eventId,content] of [['evt_stop_qwen','sus'],['evt_old_qwen','Merhaba'],['evt_qwen_quota','Merhaba Konsey']])seedEvent(eventId);
  assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_stop_qwen','sus'),false);
  assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_old_qwen','Merhaba'),false);
  sql.prepare("INSERT INTO atha_mcp_participation VALUES(?,?,?,?)").run(owner,room,'paused',now());
- assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_quota','Atha selam'),false);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_quota','Merhaba Konsey'),false);
  sql.prepare("UPDATE atha_mcp_participation SET mode='dialogue'").run();
  const day=new Date().toISOString().slice(0,10);
  sql.prepare('INSERT INTO atha_qwen_auto_usage(owner_id,utc_day,attempts) VALUES(?,?,18)').run(owner,day);
- assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_quota','Atha selam'),false);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_quota','Merhaba Konsey'),false);
  assert.equal(calls,0,'Quota exhausted must not bill for inference');
  assert.equal(sql.prepare("SELECT state FROM atha_qwen_auto_jobs WHERE event_id='evt_qwen_quota'").get().state,'quota');
  sql.prepare('UPDATE atha_qwen_auto_accounts SET enabled=0 WHERE owner_id=?').run(owner);
  seedEvent('evt_disabled_qwen');
- assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_disabled_qwen','Atha selam'),false);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_disabled_qwen','Merhaba Konsey'),false);
  assert.equal(calls,0);
+});
+
+test('Qwen auto ignores human messages explicitly addressed to OpenCode or Atha',async()=>{
+ let calls=0;
+ env.AI={run:async()=>{calls++;return {choices:[{message:{content:'Yanıt'}}]}}};
+ sql.prepare('INSERT INTO atha_qwen_auto_accounts(owner_id,enabled,updated_at) VALUES(?,1,?)').run(owner,now());
+ for(const [id,message] of [
+  ['evt_target_opencode','OpenCode, beni duyuyor musun?'],
+  ['evt_target_opencode_suffix','Ne hatırlıyorsun Opencode'],
+  ['evt_target_atha','Atha, nasılsın?']
+ ]){
+  setLatestHuman(message);seedEvent(id);
+  assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,id,message),false);
+ }
+ assert.equal(calls,0,'direct messages to other recipients must consume no Qwen inference');
 });
 test('A verified Qwen turn may initiate a Gemini dialogue but a stale Qwen turn may not',async()=>{
  const {req}=await dialogueSetup();
@@ -578,6 +602,13 @@ test('Server hands Atha to Gemini and back for multiple turns without any browse
  const response=await request('/api/atha-sync/rooms/'+room+'/replies','GET',undefined,null,{cookie:h.request.headers.get('cookie')});
  const data=await response.json();assert.equal(data.serverDialogue,true);assert.equal(data.replies.filter(r=>r.speakerId==='gemini').length,7);
  assert.ok(data.replies.every((r,i)=>!i||r.createdAt>=data.replies[i-1].createdAt));
+});
+
+test('Server does not wake Gemini dialogue for an OpenCode-directed newest user turn',async()=>{
+ const h=await serverDialogueSetup();
+ setLatestHuman('Ne hatırlıyorsun Opencode');
+ await runtime.runCouncilDialogue(env,owner,room);
+ assert.equal(h.generations(),0,'no Gemini inference on a direct OpenCode message');
 });
 test('Failed provider calls retry without a user message and concurrent runners never duplicate',async()=>{
  const h=await serverDialogueSetup();h.setUnavailable(true);
