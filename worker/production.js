@@ -578,6 +578,24 @@ function councilShortReply(text){
  const brief=sentences.slice(0,2).join('').trim();
  return brief.length<=500?brief:brief.slice(0,497).replace(/\s+\S*$/u,'')+'…';
 }
+// Direct address routing is server-enforced; UI-only detection does not protect auto agents.
+function councilDirectedRecipient(value){
+ const text=String(value||'').trim().replace(/^[@\s,.:!?]+/u,'');
+ const tail=text.replace(/[.!?…\s]+$/gu,'').trim();
+ const aliases=[
+  ['opencode',/^(?:open\s*code|opencode)(?=$|[\s,.:!?])/iu,/(?:^|[\s,])@?(?:open\s*code|opencode)$/iu],
+  ['gemini',/^(?:google\s+gemini|gemini|google)(?=$|[\s,.:!?])/iu,/(?:^|[\s,])@?(?:google\s+gemini|gemini)$/iu],
+  ['qwen',/^(?:qwen)(?=$|[\s,.:!?])/iu,/(?:^|[\s,])@?qwen$/iu],
+  ['meta',/^(?:llama|meta)(?=$|[\s,.:!?])/iu,/(?:^|[\s,])@?(?:llama|meta)$/iu],
+  ['chatgpt',/^(?:atha|chat\s*gpt|gpt)(?=$|[\s,.:!?])/iu,/(?:^|[\s,])@?(?:atha|chat\s*gpt|gpt)$/iu],
+  ['claude',/^(?:claude)(?=$|[\s,.:!?])/iu,/(?:^|[\s,])@?claude$/iu],
+  ['grok',/^(?:grok)(?=$|[\s,.:!?])/iu,/(?:^|[\s,])@?grok$/iu],
+  ['copilot',/^(?:copilot)(?=$|[\s,.:!?])/iu,/(?:^|[\s,])@?copilot$/iu]
+ ];
+ for(const [speaker,start,end] of aliases)if(start.test(text)||end.test(tail))return speaker;
+ return null;
+}
+
 function councilStopIntent(value){
  const text=String(value||'').trim();
  // Quoted examples, questions and explicit requests to continue are not farewells.
@@ -670,7 +688,11 @@ async function runCouncilDialogue(env,owner,room){
   const credentials=JSON.parse(await mcpOpen(session.cookie_cipher,env));
   if(credentials.owner!==owner||credentials.room!==room)throw Error('SESSION_SCOPE');
   const row=await db.prepare('SELECT snapshot FROM atha_sync_rooms WHERE owner_id=? AND room_id=?').bind(owner,room).first();
-  const messages=JSON.parse(row.snapshot).items.filter(i=>['user','assistant'].includes(i.role)).map(i=>({role:i.role,content:i.content,speaker:i.speakerId}));
+  const items=JSON.parse(row.snapshot).items;
+  const latestHuman=[...items].reverse().find(i=>i.role==='user');
+  // A direct message should not continue an unrelated Qwen/Gemini dialogue.
+  if(councilDirectedRecipient(latestHuman?.content))return;
+  const messages=items.filter(i=>['user','assistant'].includes(i.role)).map(i=>({role:i.role,content:i.content,speaker:i.speakerId}));
   const replies=(await db.prepare('SELECT reply_id,content,created_at FROM atha_sync_replies WHERE owner_id=? AND room_id=? ORDER BY created_at DESC LIMIT 20').bind(owner,room).all()).results||[];
   const turns=(await db.prepare("SELECT message_excerpt,created_at FROM atha_sync_events WHERE owner_id=? AND room_id=? AND message_excerpt LIKE '{\"kind\":\"dialogue\",%' ORDER BY created_at DESC LIMIT 20").bind(owner,room).all()).results||[];
   const extra=[...replies.map(r=>({role:'assistant',speaker:r.reply_id?.startsWith('qwen_evt_')?'qwen':'chatgpt',content:r.content,at:r.created_at})),...turns.flatMap(t=>{const d=JSON.parse(t.message_excerpt);return d.phase==='complete'?[{role:'assistant',speaker:'gemini',content:d.content,at:t.created_at}]:[]})].sort((a,b)=>a.at-b.at);
@@ -890,6 +912,9 @@ async function mcpQueueEvents(env,owner,room,eventIds,turns,into=null){
   const text=turns[i]?.content||'';
   const controlled=turns[i]?.controlledDialogue===true&&turns[i]?.speakerId==='gemini'&&mode?.mode==='dialogue';
   if(turns[i]?.role==='assistant'&&!controlled)continue;
+  const addressed=turns[i]?.role==='user'?councilDirectedRecipient(text):null;
+  // Direct turns belong only to their recipient, not automatic ChatGPT deliveries.
+  if(!controlled&&addressed&&addressed!=='chatgpt'&&!turns[i]?.manualRequest)continue;
   if(!controlled&&!['all_user','dialogue'].includes(mode?.mode)&&!/\b(?:atha|chatgpt)\b/iu.test(text))continue;
   const eventId=eventIds[i],body=JSON.stringify({eventId,name:'message.created',timestamp:new Date(now).toISOString(),data:{room_id:room,event_id:eventId,url:MCP_ORIGIN+'/council-v2',...(controlled?{source:'controlled-dialogue',speakerId:'gemini'}:turns[i]?.manualRequest?{source:'manual-request'}:{})},cursor:null});
   writes.push(db.prepare('INSERT OR IGNORE INTO atha_mcp_delivery(subscription_id,event_id,owner_id,room_id,body,next_at) VALUES(?,?,?,?,?,?)').bind(sub.subscription_id,eventId,owner,room,body,now));
@@ -981,6 +1006,8 @@ async function councilQwenAutoStatus(env,owner,room=null){
 async function councilQwenAutoRespond(env,owner,room,eventId,userText,source='human'){
  const db=env.ATHA_SYNC_DB;
  if(!db||!env.AI||!/^evt_[A-Za-z0-9_-]{1,100}$/.test(eventId)||typeof userText!=='string'||!userText.trim()||!['human','gemini'].includes(source)||(source==='human'&&councilStopIntent(userText)))return false;
+ const addressed=source==='human'?councilDirectedRecipient(userText):null;
+ if(addressed&&addressed!=='qwen')return false;
  const account=await db.prepare('SELECT enabled FROM atha_qwen_auto_accounts WHERE owner_id=?').bind(owner).first();
  if(account?.enabled!==1)return false;
  const active=await db.prepare("SELECT r.snapshot,COALESCE(p.mode,'dialogue') AS mode FROM atha_sync_rooms r LEFT JOIN atha_mcp_participation p ON r.owner_id=p.owner_id AND r.room_id=p.room_id WHERE r.owner_id=? AND r.room_id=?").bind(owner,room).first();
@@ -1030,8 +1057,8 @@ async function councilQwenAutoRespond(env,owner,room,eventId,userText,source='hu
   // Record only if authorization, room and participation are still active.
   const saved=await db.prepare("INSERT OR IGNORE INTO atha_sync_replies(owner_id,room_id,reply_id,content,created_at) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM atha_sync_rooms r LEFT JOIN atha_mcp_participation p ON p.owner_id=r.owner_id AND p.room_id=r.room_id JOIN atha_qwen_auto_accounts a ON a.owner_id=r.owner_id WHERE r.owner_id=? AND r.room_id=? AND a.enabled=1 AND COALESCE(p.mode,'dialogue')!='paused') AND EXISTS(SELECT 1 FROM atha_qwen_auto_jobs j WHERE j.owner_id=? AND j.room_id=? AND j.event_id=? AND j.state='running')").bind(owner,room,replyId,answer,Date.now(),owner,room,owner,room,eventId).run();
   await db.prepare("UPDATE atha_qwen_auto_jobs SET state=?,completed_at=?,error_code=NULL WHERE owner_id=? AND room_id=? AND event_id=? AND state='running'").bind(saved.meta?.changes===1?'replied':'skipped',Date.now(),owner,room,eventId).run();
-  if(saved.meta?.changes===1&&source==='human'){
-   // Qwen's genuine first reply starts a Gemini turn without waiting for the app UI.
+  if(saved.meta?.changes===1&&source==='human'&&!addressed){
+   // Only general Council turns automatically invite Gemini into Qwen's dialogue.
    await runCouncilDialogue(env,owner,room);
   }
   return saved.meta?.changes===1;
@@ -1111,7 +1138,7 @@ async function handleOpenCodeAgent(req,env){
   if(mode?.mode==='paused')return respond({room_id:room,events:[],paused:true,server_time:now});
   const rows=(await db.prepare("SELECT event_id,message_excerpt,created_at FROM atha_sync_events WHERE owner_id=? AND room_id=? AND created_at>? AND message_excerpt LIKE '{\"kind\":\"human\",%' ORDER BY created_at,event_id LIMIT 20").bind(owner,room,from).all()).results||[];
   const events=rows.flatMap(r=>{let v;try{v=JSON.parse(r.message_excerpt)}catch{return []}
-   return typeof v.content==='string'&&v.content.trim()&&!councilStopIntent(v.content)?[{event_id:r.event_id,content:v.content.slice(0,1200),created_at:r.created_at}]:[]});
+   return typeof v.content==='string'&&v.content.trim()&&!councilStopIntent(v.content)&&(!councilDirectedRecipient(v.content)||councilDirectedRecipient(v.content)==='opencode')?[{event_id:r.event_id,content:v.content.slice(0,1200),created_at:r.created_at}]:[]});
   let context=[],preferences={turkishOnly:false};
   if(events.length){
    const row=await db.prepare('SELECT snapshot FROM atha_sync_rooms WHERE owner_id=? AND room_id=?').bind(owner,room).first();
@@ -1126,7 +1153,7 @@ async function handleOpenCodeAgent(req,env){
  if(mode?.mode==='paused')return respond({error:'paused'},409);
  const event=await db.prepare('SELECT message_excerpt,created_at FROM atha_sync_events WHERE owner_id=? AND room_id=? AND event_id=?').bind(owner,room,data.event_id).first();
  let turn;try{turn=JSON.parse(event?.message_excerpt)}catch{}
- if(!turn||turn.kind!=='human'||typeof turn.content!=='string'||councilStopIntent(turn.content)||!event.created_at||event.created_at<agent.created_at||now-event.created_at>20*60000)return respond({error:'event_unavailable'},409);
+ if(!turn||turn.kind!=='human'||typeof turn.content!=='string'||councilStopIntent(turn.content)||(councilDirectedRecipient(turn.content)&&councilDirectedRecipient(turn.content)!=='opencode')||!event.created_at||event.created_at<agent.created_at||now-event.created_at>20*60000)return respond({error:'event_unavailable'},409);
  const latest=await db.prepare("SELECT event_id,created_at FROM atha_sync_events WHERE owner_id=? AND room_id=? AND message_excerpt LIKE '{\"kind\":\"human\",%' ORDER BY created_at DESC,event_id DESC LIMIT 1").bind(owner,room).first();
  if(latest?.event_id!==data.event_id)return respond({error:'superseded'},409);
  const snapshot=await db.prepare('SELECT snapshot FROM atha_sync_rooms WHERE owner_id=? AND room_id=?').bind(owner,room).first();
