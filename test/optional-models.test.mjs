@@ -3,39 +3,38 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const source=readFileSync(new URL('../worker/production.js',import.meta.url),'utf8');
 const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
-for(const [id,identity] of [['qwen','Qwen QwQ 32B'],['llama','Meta Llama 3.1 8B']])test(`${id} inference keeps its own identity`,async()=>{
+test('Meta Llama inference keeps its own identity and model',async()=>{
  let call;
- const response=await worker.fetch(new Request('https://atlas-council.sshrrgoktas.workers.dev/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:id,messages:[{role:'user',content:'Selam'}]})}),{AI:{run:async(model,input)=>{call={model,input};return {response:'Merhaba.'}}}},{});
- const data=await response.json();assert.equal(response.status,200);assert.equal(data.identity,identity);assert.ok(call.input.messages[0].content.startsWith('Sen '+identity+' modelisin.'));assert.equal(data.text,'Merhaba.');
-});
-
-test('QwQ does not display its English planning paragraphs, only the natural final Turkish answer',async()=>{
- const leaked=[
-  'Okay, the user said "Selam" which is Turkish for "Hello". I need to respond appropriately.',
-  'First, I need to respond to their greeting. I should keep it short and avoid other model names.',
-  'So, first sentence: Greet them back in Turkish. Second: Offer help with open-source code.',
-  '',
-  'Merhaba! Open-source projeleri veya kod konularında nasıl yardımcı olabilirim?'
- ].join('\n\n');
  const response=await worker.fetch(new Request('https://atlas-council.sshrrgoktas.workers.dev/api/chat',{
-  method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:'qwen',messages:[{role:'user',content:'OpenCode?'}]})
- }),{AI:{run:async()=>({response:leaked})}},{});
+  method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:'llama',messages:[{role:'user',content:'Selam'}]})
+ }),{AI:{run:async(model,input)=>{call={model,input};return {response:'Merhaba.'}}}},{});
  const data=await response.json();
  assert.equal(response.status,200);
- assert.equal(data.text,'Merhaba! Open-source projeleri veya kod konularında nasıl yardımcı olabilirim?');
- assert.doesNotMatch(data.text,/first sentence|user said|I need to/i);
+ assert.equal(data.identity,'Meta Llama 3.1 8B');
+ assert.equal(call.model,'@cf/meta/llama-3.1-8b-instruct-fast');
+ assert.ok(call.input.messages[0].content.startsWith('Sen Meta Llama 3.1 8B modelisin.'));
+ assert.equal(data.text,'Merhaba.');
 });
-test('QwQ does not publish unfinished or exclusively internal reasoning',async()=>{
- for(const raw of [
-  'Okay, the user said "Selam". I should answer briefly.',
-  '<think>I need to consider how to respond...',
-  'So, first sentence: Greet them back in Turkish. Second: be concise.'
- ]){
-  const response=await worker.fetch(new Request('https://atlas-council.sshrrgoktas.workers.dev/api/chat',{
-   method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:'qwen',messages:[{role:'user',content:'Selam'}]})
-  }),{AI:{run:async()=>({response:raw})}},{});
-  assert.equal(response.status,502,'must refuse instead of showing thinking: '+raw);
- }
+test('Retired QwQ 32B endpoint cannot spend inference, cloud Qwen 3.8 remains available',async()=>{
+ let calls=0;
+ const response=await worker.fetch(new Request('https://atlas-council.sshrrgoktas.workers.dev/api/chat',{
+  method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:'qwen',messages:[{role:'user',content:'Merhaba'}]})
+ }),{AI:{run:async()=>{calls++;return {response:'never'};}}},{});
+ assert.equal(response.status,410);
+ const data=await response.json();
+ assert.equal(data.retired,true);assert.equal(data.replacement,'qwen3.8');assert.equal(calls,0);
+ assert.doesNotMatch(source,/@cf\/qwen\/qwq-32b/);
+ assert.match(source,/const QWEN_AUTO_MODEL='@cf\/qwen\/qwen3\.8-27b'/);
+});
+test('Only the working Qwen 3.8 is selectable in Council',()=>{
+ const pos=source.indexOf('const HTML=');
+ const html=JSON.parse(source.slice(pos+11,source.lastIndexOf(';')));
+ assert.match(html,/id="qwen3MemberCard"/);
+ assert.match(html,/Qwen 3\.8 · Workers AI/);
+ assert.doesNotMatch(html,/id="toggleQwen"|id="qwenStatus"|<strong>Qwen QwQ 32B<\/strong>/);
+ assert.match(html,/if\(id==='meta'\)optionalCouncilModels\.add\(id\)/);
+ assert.match(html,/if\(addressed==='qwen'\)\{if\(!enabledAthaSyncRooms\.has\(currentChatId\)\)/);
+ assert.match(html,/document\.getElementById\('qwen3Manage'\)\.onclick=\(\)=>show\('help'\)/);
 });
 test('A message directly addressed to OpenCode does not summon Qwen or Llama',()=>{
  const pos=source.indexOf('const HTML=');
