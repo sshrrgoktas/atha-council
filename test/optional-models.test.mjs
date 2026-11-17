@@ -40,7 +40,55 @@ test('QwQ does not publish unfinished or exclusively internal reasoning',async()
 test('A message directly addressed to OpenCode does not summon Qwen or Llama',()=>{
  const pos=source.indexOf('const HTML=');
  const html=JSON.parse(source.slice(pos+11,source.lastIndexOf(';')));
- assert.ok(html.includes("/^(?:open\\s*code|opencode)(?=$|[\\s,.:!?])/i.test(directCall)?'opencode':null"));
+ assert.ok(html.includes("/^(?:open\\s*code|opencode)(?=$|[\\s,.:!?])/i.test(directCall)?'opencode':"));
  assert.ok(html.includes("if(addressed==='opencode')"));
  assert.ok(html.includes('await sendAthaSyncRoom(chats.find(c=>c.id===currentChatId))'));
+});
+
+test('direct Council address recognizes first- and last-position names without matching ordinary mentions',()=>{
+ const start=source.indexOf('function councilDirectedRecipient(value){');
+ const end=source.indexOf('function councilStopIntent(value){',start);
+ assert.ok(start>0&&end>start,'server routing helper exists');
+ const getRecipient=Function(source.slice(start,end)+'; return councilDirectedRecipient')();
+ for(const [message,expected] of [
+  ['OpenCode, beni duyuyor musun?','opencode'],
+  ['Open Code: yanıtla','opencode'],
+  ['Ne hatırlıyorsun Opencode','opencode'],
+  ['Ne hatırlıyorsun, OpenCode?','opencode'],
+  ['@OpenCode, bir şey soracağım','opencode'],
+  ['Gemini, sen ne diyorsun?','gemini'],
+  ['Bana söyle Gemini!','gemini'],
+  ['Qwen, bunu açıkla','qwen'],
+  ['Atha, ne dersin?','chatgpt'],
+  ['Llama, sıradaki sensin','meta'],
+  ['Merhaba Konsey, herkes konuşsun',null],
+  ['Bugün OpenCode hakkında konuşalım',null],
+  ['Gemini ve OpenCode birbirinden bağımsız', 'gemini']
+ ])assert.equal(getRecipient(message),expected,message);
+});
+
+test('directed turns do not call unrelated Qwen/Gemini/Atha auto-routes or OpenCode poll',()=>{
+ assert.match(source,/if\(addressed&&addressed!=='qwen'\)return false;/);
+ assert.match(source,/if\(saved\.meta\?\.changes===1&&source==='human'&&!addressed\)/);
+ assert.match(source,/if\(councilDirectedRecipient\(latestHuman\?\.content\)&&councilDirectedRecipient\(latestHuman\?\.content\)!=='chatgpt'\)return;/);
+ assert.match(source,/if\(!controlled&&addressed&&addressed!=='chatgpt'&&!turns\[i\]\?\.manualRequest\)continue;/);
+ assert.match(source,/\(!councilDirectedRecipient\(v\.content\)\|\|councilDirectedRecipient\(v\.content\)==='opencode'\)/);
+ assert.match(source,/councilDirectedRecipient\(turn\.content\)!=='opencode'/);
+});
+
+test('Android WebView send handler isolates both prefix and suffix direct addresses',()=>{
+ const pos=source.indexOf('const HTML=');
+ const html=JSON.parse(source.slice(pos+11,source.lastIndexOf(';')));
+ const start=html.indexOf('const directCall=t.trim().replace');
+ const end=html.indexOf(';if(!start)start=Date.now();',start);
+ assert.ok(start>=0&&end>start,'client-side recipient detector exists');
+ const detect=Function('t',html.slice(start,end+1)+'return addressed;');
+ for(const [message,speaker] of [
+  ['OpenCode, beni duyuyor musun?','opencode'],
+  ['Ne hatırlıyorsun Opencode','opencode'],
+  ['Ne dersin Gemini?','gemini'],
+  ['Qwen, ne düşünüyorsun?','qwen'],
+  ['Atha, bir şey soracağım','chatgpt'],
+  ['Konsey, hepiniz yanıtlayın',null]
+ ])assert.equal(detect(message),speaker,message);
 });
