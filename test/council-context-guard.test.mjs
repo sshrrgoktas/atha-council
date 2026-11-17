@@ -29,7 +29,7 @@ const handoff={
   project_id:'atha-council',version:2,
   source_page:'https://chatgpt.com/space/page_76c42313455881919ee0242109385919',
   reviewed_at:'2026-11-17',
-  approved_decisions:Array.from({length:7},(_,i)=>({id:'D'+i,text:'Yalnız insan mesajı tur açar; onaylı konsey düzenini koru. '+('A'.repeat(270))})),
+  approved_decisions:Array.from({length:7},(_,i)=>({id:'DEC'+i,text:'Yalnız insan mesajı tur açar; onaylı konsey düzenini koru. '+('A'.repeat(270))})),
   open_tasks:Array.from({length:5},(_,i)=>({id:'TASK'+i,text:i===0?'Ortak Handoff bağlamını ve modellerin görev sınırlarını düzelt':('Modelin gerçek görevini doğrula '+i)})),
   verified_changes:Array.from({length:4},(_,i)=>({id:'PR'+i,text:'PR kod değişikliği CI ile sınandı'}))
 };
@@ -37,7 +37,7 @@ test('technical open tasks survive long approved decision lists and are not mixe
   const prompt=runtime.councilHandoffPrompt(handoff);
   assert.match(prompt,/Handoff sürümü 2/);
   assert.match(prompt,/TASK0: Ortak Handoff bağlamını/);
-  assert.match(prompt,/D6: Yalnız insan mesajı tur açar/);
+  assert.match(prompt,/DEC6: Yalnız insan mesajı tur açar/);
   assert.match(prompt,/PR3: PR kod değişikliği CI ile sınandı/);
   assert.ok(prompt.indexOf('ÖNCELİKLİ, HENÜZ AÇIK TEKNİK GÖREVLER')<prompt.indexOf('KULLANICININ ONAYLADIĞI KARARLAR'));
   assert.ok(prompt.length<=4500);
