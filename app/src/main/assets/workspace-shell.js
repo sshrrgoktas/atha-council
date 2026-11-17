@@ -33,7 +33,11 @@
       send.className='primary';send.textContent='Gönder';send.setAttribute('aria-label','Mesajı gönder');
       const actions=document.createElement('div');actions.className='workspace-send-actions';
       if(stop){stop.className='secondary';stop.textContent='Durdur';actions.append(stop);}
-      actions.append(send);form.replaceChildren(input,actions);if(draft){draft.className='sr-only';form.append(draft);}
+      // Keep the host web app's existing form controls and their event handlers.
+      // Replacing every child removes controls added by newer app.js builds and
+      // makes its send-state updater throw when it toggles a missing button.
+      actions.append(send);form.append(actions);
+      if(draft)draft.className='sr-only';
     }
     const listTitle=document.getElementById('chats-title');if(listTitle)listTitle.textContent='Çalışma sohbetleri';
     const listNew=document.getElementById('new-chat-list');if(listNew)listNew.textContent='＋ Yeni çalışma';
