@@ -451,6 +451,12 @@ test('Authorized browser sync atomically creates event and delivery; next snapsh
  const old=JSON.parse(sql.prepare('SELECT snapshot FROM atha_sync_rooms').get().snapshot),items=[...old.items,{role:'user',name:'Sen',content:'Atha, bir test daha',speakerId:'human'}];
  const sync=(next)=>request('/api/atha-sync/rooms/'+room,'PUT',{consent:true,title:'Test',items:next},null,{cookie,origin,'x-atha-sync':'1'});
  const r=await sync(items);assert.equal(r.status,200);assert.equal((await r.json()).queuedEvents,1);assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_mcp_delivery').get().n,1);
+ const event=JSON.parse(sql.prepare("SELECT message_excerpt FROM atha_sync_events WHERE message_excerpt LIKE '{\"kind\":\"human\",%'").get().message_excerpt);
+ assert.equal(event.turn_id,event.context_packet.turn_id);
+ assert.equal(event.task_id,'council:'+event.turn_id);
+ assert.equal(event.context_version,1);
+ assert.equal(event.snapshot_hash,event.context_packet.snapshot_hash);
+ assert.equal(event.context_packet.messages.at(-1).content,'Atha, bir test daha');
  assert.equal((await (await sync(items)).json()).queuedEvents,0);
  const model=[...items,{role:'assistant',name:'Atha / ChatGPT · MCP',speakerId:'chatgpt',content:'Only a fixture.'}];assert.equal((await (await sync(model)).json()).queuedEvents,0);
  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_mcp_delivery').get().n,1);
