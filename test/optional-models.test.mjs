@@ -40,7 +40,7 @@ test('QwQ does not publish unfinished or exclusively internal reasoning',async()
 test('A message directly addressed to OpenCode does not summon Qwen or Llama',()=>{
  const pos=source.indexOf('const HTML=');
  const html=JSON.parse(source.slice(pos+11,source.lastIndexOf(';')));
- assert.ok(html.includes("/^(?:open\\s*code|opencode)(?=$|[\\s,.:!?])/i.test(directCall)?'opencode':null"));
+ assert.ok(html.includes("/^(?:open\\s*code|opencode)(?=$|[\\s,.:!?])/i.test(directCall)?'opencode':"));
  assert.ok(html.includes("if(addressed==='opencode')"));
  assert.ok(html.includes('await sendAthaSyncRoom(chats.find(c=>c.id===currentChatId))'));
 });
