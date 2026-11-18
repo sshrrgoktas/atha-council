@@ -238,3 +238,37 @@ test("Minute scheduler persists a heartbeat without impersonating an AI response
  assert.equal(details.monitor.modelDeliveryConnected,false);
  d1.events.delete(key);
 });
+
+
+test("History-only mirror requires an optimistic version and never queues model events",async()=>{
+ const room="/api/atha-sync/rooms/c_mirror_101";
+ const first={consent:true,history_only:true,expected_updated_at:-1,title:"Telefon ve PC",items:[{role:"user",name:"Sen",content:"İlk mesaj",speakerId:"human"}]};
+ const res=await request(room,{method:"PUT",user:"1",body:first});
+ assert.equal(res.status,200);
+ assert.equal((await res.json()).queuedEvents,0);
+ const stored=await request(room,{user:"1"});assert.equal(stored.status,200);
+ const data=await stored.json();
+ const bad=await request(room,{method:"PUT",user:"1",body:{...first,items:[...first.items,{role:"user",name:"Sen",content:"Güncel mesaj",speakerId:"human"}]}});
+ assert.equal(bad.status,409,"An update with a stale revision must not overwrite cloud state");
+ const next=await request(room,{method:"PUT",user:"1",body:{...first,expected_updated_at:data.updatedAt,items:[...first.items,{role:"user",name:"Sen",content:"Güncel mesaj",speakerId:"human"}]}});
+ assert.equal(next.status,200);
+ assert.equal((await next.json()).queuedEvents,0);
+ assert.equal(d1.events.size,0);
+ assert.equal((await (await request(room,{user:"1"})).json()).snapshot.items.length,2);
+ const sameOwner=await request('/api/atha-sync/rooms',{user:"1"});assert.equal((await sameOwner.json()).rooms.some(x=>x.room_id==='c_mirror_101'),true);
+ const other=await request(room,{user:"2"});assert.equal(other.status,404);
+ assert.equal((await request(room,{method:"DELETE",user:"1"})).status,200);
+});
+test("Device mirror is opt-in and never silently overwrites conflicting chat histories",()=>{
+ const k=source.indexOf("const HTML="),html=JSON.parse(source.slice(k+11,source.lastIndexOf(";")));
+ assert.match(html,/id="councilCloudMirrorToggle"/);
+ assert.match(html,/id="councilCloudMirrorNow"/);
+ assert.match(html,/councilMirrorEnabled=localStorage.getItem/);
+ assert.match(html,/confirmAthaSyncAction\('Telefon ve PC sohbet eşitlemesi'/);
+ assert.match(html,/history_only:true,expected_updated_at:expected/);
+ assert.match(html,/councilMirrorPrefix\(localItems,remote\)/);
+ assert.match(html,/councilMirrorPrefix\(remote,localItems\)/);
+ assert.match(html,/else\{conflicts\+\+;\}/);
+ assert.match(html,/if\(items.length>60\)/);
+ assert.match(html,/if\(!councilMirrorEnabled\|\|councilMirrorBusy\|\|document.hidden\)return/);
+});
