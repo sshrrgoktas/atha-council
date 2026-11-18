@@ -32,7 +32,7 @@ test("New native update bridge reports actual installed version and all result s
   assert.match(kotlin,/sendUpdateResult\("error"/);
   assert.match(kotlin,/@JavascriptInterface fun openUpdates\(\)/);
   assert.doesNotMatch(kotlin,/val toolbar=/);
-  assert.match(kotlin,/layout\.addView\(councilWeb,LinearLayout\.LayoutParams\(-1,-1\)\)/);
+  assert.match(kotlin,/layout\.addView\(councilWeb,LinearLayout\.LayoutParams\(-1,0,1f\)\)/);
 });
 
 test("Every Android APK offers a visible recovery download link",()=>{
@@ -62,7 +62,8 @@ test("AthalAI branding appears in page, menus, APK and model labels without old 
   assert.match(html,/Atha Council APK güncellemesi/);
   assert.match(html,/Atha \/ ChatGPT/);
   assert.match(worker,/name:'Atha \/ ChatGPT'/);
-  assert.match(manifest,/android:label="AthalAI"/);
+  assert.match(manifest,/android:label="Atha Council"/);
+  assert.match(manifest,/<package android:name="com\.athalai\.companion"\/>/);
   assert.match(kotlin,/text="AthalAI"/);
   assert.doesNotMatch(html,/<(?:strong|h1|h2|h3|title)[^>]*>[^<]*Atlas/i);
   assert.doesNotMatch(html,/Atlas Council uygulamanın adıdır/);
@@ -71,7 +72,8 @@ test("AthalAI branding appears in page, menus, APK and model labels without old 
 test("Android launcher, existing package identity and new GitHub update location",()=>{
   const manifest=readFileSync(new URL("../app/src/main/AndroidManifest.xml",import.meta.url),"utf8");
   const gradle=readFileSync(new URL("../app/build.gradle.kts",import.meta.url),"utf8");
-  assert.match(manifest,/android:label="AthalAI"/);
+  assert.match(manifest,/android:label="Atha Council"/);
+  assert.match(manifest,/<package android:name="com\.athalai\.companion"\/>/);
   assert.match(manifest,/@drawable\/atha_launcher/);
   assert.match(gradle,/applicationId = "com\.atlascouncil\.app"/);
   assert.match(kotlin,/api\.github\.com\/repos\/sshrrgoktas\/atha-council\/releases\/tags\/latest-debug/);
