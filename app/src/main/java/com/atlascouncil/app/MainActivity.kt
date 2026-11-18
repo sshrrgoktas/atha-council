@@ -208,6 +208,22 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
   }.start()
  }
 
+ private fun openMainAthalAI(){
+  // Keep the main QR/camera-enabled mobile application as a separate Android app.
+  // This Council APK must never replace or pretend to provide its scanner.
+  val target=Intent(Intent.ACTION_MAIN).apply {
+   addCategory(Intent.CATEGORY_LAUNCHER)
+   setClassName("com.athalai.companion","com.athalai.companion.MainActivity")
+   addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+  }
+  try { startActivity(target) }
+  catch(_:android.content.ActivityNotFoundException){
+   Toast.makeText(this,"AthalAI Mobile (QR ve PC eşleştirme) bu telefonda yüklü görünmüyor. Konsey ile ana uygulama iki ayrı uygulamadır.",Toast.LENGTH_LONG).show()
+  }
+  catch(_:SecurityException){
+   Toast.makeText(this,"AthalAI Mobile açılamadı. Ana ekrandan AthalAI Mobile simgesini seç.",Toast.LENGTH_LONG).show()
+  }
+ }
  private fun startGitHubLogin(){
   val verifier=token(48)
   githubVerifier=verifier
@@ -362,8 +378,34 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
    clearCache(true)
    loadUrl("https://atlas-council.sshrrgoktas.workers.dev/council-v2?source=android&refresh="+System.currentTimeMillis())
   }
-  // Full-screen WebView: all update and connection actions live in the side menu.
-  layout.addView(councilWeb,LinearLayout.LayoutParams(-1,-1))
+  // Never trap users inside Council: direct native route back to the
+  // QR/camera and ordinary mobile-chat owner application, even while offline.
+  val topBar=LinearLayout(this).apply {
+   orientation=LinearLayout.HORIZONTAL
+   gravity=android.view.Gravity.CENTER_VERTICAL
+   setPadding(10,0,10,0)
+   setBackgroundColor(Color.rgb(16,36,55))
+  }
+  val openMobile=Button(this).apply {
+   text="← AthalAI Mobile / QR"
+   isAllCaps=false
+   textSize=13f
+   setTextColor(Color.rgb(77,214,193))
+   setBackgroundColor(Color.TRANSPARENT)
+   contentDescription="Ana AthalAI Mobile uygulamasına dön; kamera ve QR eşleştirme"
+   setOnClickListener{openMainAthalAI()}
+  }
+  val councilTitle=TextView(this).apply {
+   text="Atha Council"
+   textSize=15f
+   setTextColor(Color.WHITE)
+   gravity=android.view.Gravity.CENTER_VERTICAL
+  }
+  topBar.addView(openMobile,LinearLayout.LayoutParams(0,-1,2f))
+  topBar.addView(councilTitle,LinearLayout.LayoutParams(0,-1,1f))
+  val barHeight=(52*resources.displayMetrics.density).toInt()
+  layout.addView(topBar,LinearLayout.LayoutParams(-1,barHeight))
+  layout.addView(councilWeb,LinearLayout.LayoutParams(-1,0,1f))
   setContentView(layout)
   // Web UI updates arrive from Cloudflare; APK updates are checked only on request.
   val incoming=intent?.data;if(incoming?.scheme=="atlascouncil"&&incoming.host=="google-auth"){incoming.getQueryParameter("ticket")?.let{completeGoogleLogin(it)}}else if(incoming?.scheme=="atlascouncil"&&incoming.host=="github-auth"){incoming.getQueryParameter("ticket")?.let{completeGitHubLogin(it)}}
@@ -638,12 +680,14 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
   }
  }
  override fun onCreateOptionsMenu(menu:Menu):Boolean {
-  menu.add(0,100,0,"Bağlantılar ve güncellemeler")
-  menu.add(0,101,1,"Konseyi yenile")
+  menu.add(0,102,0,"← Ana AthalAI Mobile / QR")
+  menu.add(0,100,1,"Bağlantılar ve güncellemeler")
+  menu.add(0,101,2,"Konseyi yenile")
   return true
  }
  override fun onOptionsItemSelected(item:MenuItem):Boolean {
   when(item.itemId){
+   102 -> {openMainAthalAI();return true}
    100 -> {if(::nativeSettingsDialog.isInitialized)nativeSettingsDialog.show();return true}
    101 -> {if(::councilWeb.isInitialized)councilWeb.reload();return true}
   }
