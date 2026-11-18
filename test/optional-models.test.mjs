@@ -87,8 +87,8 @@ test('directed turns do not call unrelated Qwen/Gemini/Atha auto-routes or OpenC
  assert.doesNotMatch(source,/if\(saved\.meta\?\.changes===1&&source==='human'&&!addressed\)/);
  assert.match(source,/if\(councilRecipientForTurn\(latestHuman\?\.content,items\)&&councilRecipientForTurn\(latestHuman\?\.content,items\)!=='chatgpt'\)return;/);
  assert.match(source,/if\(!controlled&&addressed&&addressed!=='chatgpt'&&!turns\[i\]\?\.manualRequest\)continue;/);
- assert.match(source,/const target=v\.recipient\|\|councilDirectedRecipient\(v\.content\)/);
- assert.match(source,/turn\.recipient\|\|councilDirectedRecipient\(turn\.content\)/);
+ assert.match(source,/if\(verb==='poll'\)return respond\(\{room_id:room,events:\[\],retired_to:'task_center'/);
+ assert.match(source,/if\(verb==='work-poll'\)/);
 });
 
 test('Android WebView send handler isolates both prefix and suffix direct addresses',()=>{
@@ -141,5 +141,5 @@ test('Explicitly targeted follow-up is carried into signed server event metadata
  assert.match(source,/appended\[appended\.length-1\]=\{\.\.\.last,recipient:councilRecipientForTurn\(last\.content,items\)\}/);
  assert.match(source,/recipient:appended\[i\]\.recipient/);
  assert.match(source,/turns\[i\]\?\.recipient\|\|councilDirectedRecipient\(text\)/);
- assert.match(source,/const target=v\.recipient\|\|councilDirectedRecipient\(v\.content\)/);
+ assert.match(source,/if\(verb==='poll'\)return respond\(\{room_id:room,events:\[\],retired_to:'task_center'/);
 });

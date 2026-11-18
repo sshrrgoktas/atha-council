@@ -201,7 +201,8 @@ test("Every typed message starts without manual calls; reply inbox deduplicates 
 test("OpenCode has a visible agent card and honest room-specific status in the Android WebView",()=>{
  const pos=source.indexOf("const HTML=");
  const html=JSON.parse(source.slice(pos+11,source.lastIndexOf(";")));
- assert.match(html,/<strong>OpenCode · Ücretsiz Ajan<\/strong>/);
+ assert.match(html,/<strong>OpenCode · Görev Merkezi İşçisi<\/strong>/);
+ assert.match(html,/id="openCodeWorkCenter"/);
  assert.match(html,/id="openCodeMemberBadge"/);
  assert.match(html,/id="openCodeMemberInfo"/);
  assert.match(html,/id="openCodeRoomInfo"/);
