@@ -74,7 +74,8 @@ test("Android launcher, existing package identity and new GitHub update location
   const gradle=readFileSync(new URL("../app/build.gradle.kts",import.meta.url),"utf8");
   assert.match(manifest,/android:label="Atha Council"/);
   assert.doesNotMatch(manifest,/com\.athalai\.companion/);
-  assert.match(manifest,/@drawable\/atha_launcher/);\n  assert.doesNotMatch(kotlin,/AthalAI Mobile|openMainAthalAI/);
+  assert.match(manifest,/@drawable\/atha_launcher/);
+  assert.doesNotMatch(kotlin,/AthalAI Mobile|openMainAthalAI/);
   assert.match(gradle,/applicationId = "com\.atlascouncil\.app"/);
   assert.match(kotlin,/api\.github\.com\/repos\/sshrrgoktas\/atha-council\/releases\/tags\/latest-debug/);
   assert.match(kotlin,/assetName=="atha-council\.apk"/);
