@@ -465,6 +465,15 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
   }
  }
  private fun checkForUpdates(showCurrent:Boolean) {
+   // The standalone app ID has no compatible release channel yet.
+   if(packageName=="com.atlascouncil.app.standalone"){
+    if(showCurrent)runOnUiThread{
+      val notice="Bağımsız Konsey test sürümü. Bu uygulama için henüz ayrı güncelleme yayımlanmadı."
+      updateStatus.text=notice
+      sendUpdateResult("current",null,notice)
+    }
+    return
+   }
   if(showCurrent){
    updateStatus.text="Yeni sürüm kontrol ediliyor…"
    sendUpdateResult("checking",null,"Güncelleme kontrol ediliyor…")
@@ -580,6 +589,10 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
   updatePoll=poll;updatePollHandler.post(poll)
  }
  private fun downloadUpdate(url:String,version:Long) {
+   if(packageName=="com.atlascouncil.app.standalone"){
+    val notice="Eski Konsey APK'sı bu bağımsız uygulamaya yüklenemez."
+    updateStatus.text=notice;sendUpdateResult("error",null,notice);return
+   }
   try{
    val uri=Uri.parse(url)
    if(uri.scheme!="https"||uri.host!="github.com"||!uri.path.orEmpty().startsWith("/sshrrgoktas/atha-council/releases/download/latest-debug/"))throw Exception("Güvenilmeyen indirme adresi")
