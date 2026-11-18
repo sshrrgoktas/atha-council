@@ -1,0 +1,51 @@
+name: Atha Council iOS real simulator build
+on:
+  push:
+    branches:
+      - fix/council-fully-independent-20261119
+    paths:
+      - 'ios/**'
+      - 'codemagic.yaml'
+      - '.github/workflows/council-ios-macos-build.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'codemagic.yaml'
+      - '.github/workflows/council-ios-macos-build.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  council-ios-simulator:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify standalone Council source
+        run: |
+          node --test ios/validation/source-guard.test.mjs
+          swiftc ios/AthaCouncil/CouncilEndpoint.swift ios/validation/main.swift -o /tmp/council-url-test
+          /tmp/council-url-test
+      - name: Generate project and approved app icon
+        run: |
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          swift ios/scripts/build-brand-icon.swift app/src/main/res/drawable-nodpi/atha_launcher.webp ios/AthaCouncil/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
+          (cd ios && xcodegen generate --spec project.yml)
+          plutil -lint ios/AthaCouncil/Info.plist
+      - name: Compile actual iPhone Simulator app
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/AthaCouncil.xcodeproj -scheme AthaCouncil -configuration Debug -sdk iphonesimulator -destination "generic/platform=iOS Simulator" -derivedDataPath "$RUNNER_TEMP/council-ios" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build | tee "$RUNNER_TEMP/council-build.log"
+      - name: Verify generated app and package
+        run: |
+          APP="$RUNNER_TEMP/council-ios/Build/Products/Debug-iphonesimulator/AthaCouncil.app"
+          test -d "$APP"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist" | grep -Fx 'com.atlascouncil.ios'
+          mkdir -p artifacts
+          ditto -c -k --sequesterRsrc --keepParent "$APP" artifacts/AthaCouncil-iPhone-Simulator-unsigned.zip
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: atha-council-ios-simulator-unsigned
+          path: artifacts/AthaCouncil-iPhone-Simulator-unsigned.zip
+          retention-days: 7
