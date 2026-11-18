@@ -232,7 +232,7 @@ async function handleProductionGithubHandoff(request,env){
 
 // Opt-in Cloudflare D1 room sync. Database binding and GitHub OAuth must both be present.
 // This does NOT automatically connect ChatGPT: no unverified MCP access is exposed.
-const ATHA_SYNC_PATH=/^\/api\/atha-sync(?:\/(?:status|qwen-auto|rooms(?:\/[A-Za-z0-9_-]{3,100}(?:\/(?:replies|participation|retry))?)?))?$/;
+const ATHA_SYNC_PATH=/^\/api\/atha-sync(?:\/(?:status|qwen-auto|deleted|rooms(?:\/[A-Za-z0-9_-]{3,100}(?:\/(?:replies|participation|retry))?)?))?$/;
 const ATHA_SYNC_HEADERS={"cache-control":"no-store","x-content-type-options":"nosniff"};
 function athaSyncReply(value,status=200){return Response.json(value,{status,headers:ATHA_SYNC_HEADERS})}
 async function athaSyncOwner(req,env){
@@ -1130,6 +1130,10 @@ async function handleAthaRoomSync(req,env,ctx){
       monitor:{lastTickAt:check?.last_tick_at||null,pendingEvents:Number(ownQueue?.count||0),
         modelDeliveryConnected:false}});
   }
+  if(p==="/api/atha-sync/deleted"&&req.method==="GET"){
+    const data=await env.ATHA_SYNC_DB.prepare("SELECT room_id,deleted_at FROM atha_sync_deleted_rooms WHERE owner_id=? ORDER BY deleted_at DESC LIMIT 1000").bind(owner).all();
+    return athaSyncReply({deleted:data.results||[]});
+  }
   if(p==="/api/atha-sync/rooms"&&req.method==="GET"){
     const data=await env.ATHA_SYNC_DB.prepare(
       "SELECT room_id,title,updated_at FROM atha_sync_rooms WHERE owner_id=? ORDER BY updated_at DESC LIMIT 100")
@@ -1201,6 +1205,7 @@ async function handleAthaRoomSync(req,env,ctx){
     }
     await env.ATHA_SYNC_DB.batch([
       ...accountMoves,
+      env.ATHA_SYNC_DB.prepare("INSERT INTO atha_sync_deleted_rooms(owner_id,room_id,deleted_at) VALUES(?,?,?) ON CONFLICT(owner_id,room_id) DO UPDATE SET deleted_at=excluded.deleted_at").bind(owner,roomId,Date.now()),
       env.ATHA_SYNC_DB.prepare("DELETE FROM atha_qwen_auto_jobs WHERE owner_id=? AND room_id=?").bind(owner,roomId),
       env.ATHA_SYNC_DB.prepare(
         "DELETE FROM atha_sync_events WHERE owner_id=? AND room_id=?").bind(owner,roomId),
@@ -1222,6 +1227,8 @@ async function handleAthaRoomSync(req,env,ctx){
   try{data=JSON.parse(raw)}catch{return athaSyncReply({error:"Invalid JSON"},400)}
   const snapshot=athaCleanSnapshot(data);
   if(!snapshot)return athaSyncReply({error:"Room data invalid or explicit consent missing"},400);
+  const deleted=await env.ATHA_SYNC_DB.prepare("SELECT room_id FROM atha_sync_deleted_rooms WHERE owner_id=? AND room_id=?").bind(owner,roomId).first();
+  if(deleted)return athaSyncReply({error:"ROOM_DELETED",code:"ROOM_DELETED"},410);
   const now=Date.now();
   const oldRoom=await env.ATHA_SYNC_DB.prepare(
     "SELECT snapshot,updated_at FROM atha_sync_rooms WHERE owner_id=? AND room_id=?").bind(owner,roomId).first();
