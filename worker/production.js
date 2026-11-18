@@ -1099,13 +1099,22 @@ async function handleAthaRoomSync(req,env,ctx){
   const now=Date.now();
   const oldRoom=await env.ATHA_SYNC_DB.prepare(
     "SELECT snapshot,updated_at FROM atha_sync_rooms WHERE owner_id=? AND room_id=?").bind(owner,roomId).first();
-  // Client-only mirror must not trigger models and must never overwrite a newer snapshot.
+  // Atomic compare-and-swap avoids two devices overwriting the same chat revision.
+  // A pure history mirror does not enqueue AI events, change participation, or send live turns.
   if(data.history_only===true){
     if(!Number.isSafeInteger(data.expected_updated_at) ||
        data.expected_updated_at!==Number(oldRoom?.updated_at??-1))
       return athaSyncReply({error:"SYNC_CONFLICT",code:"SYNC_CONFLICT"},409);
+    const savedAt=Math.max(now,Number(oldRoom?.updated_at||0)+1);
+    const change=await env.ATHA_SYNC_DB.prepare(
+      "INSERT INTO atha_sync_rooms(owner_id,room_id,title,snapshot,updated_at) VALUES(?,?,?,?,?) "+
+      "ON CONFLICT(owner_id,room_id) DO UPDATE SET title=excluded.title,snapshot=excluded.snapshot,updated_at=excluded.updated_at "+
+      "WHERE atha_sync_rooms.updated_at=?")
+      .bind(owner,roomId,data.title.trim(),snapshot,savedAt,data.expected_updated_at).run();
+    if(change.meta?.changes!==1)return athaSyncReply({error:"SYNC_CONFLICT",code:"SYNC_CONFLICT"},409);
+    return athaSyncReply({synced:true,roomId,messageCount:data.items.length,updatedAt:savedAt,queuedEvents:0});
   }
-  const appended=data.history_only===true?[]:athaAppendedHumanTurns(oldRoom?.snapshot,snapshot);
+  const appended=athaAppendedHumanTurns(oldRoom?.snapshot,snapshot);
   // A live Send is distinct from enabling sync/importing history: never replay a transcript.
   let firstLiveId=null;
   if(!appended.length&&data.live_turn&&/^[a-zA-Z0-9_-]{16,80}$/.test(data.live_turn.request_id||'')){
