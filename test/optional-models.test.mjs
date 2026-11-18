@@ -29,3 +29,14 @@ test('existing Qwen 3.8 auto provider is preserved and old card is absent',async
  assert.match(source,/async function handleCouncilTasks/);
  assert.match(source,/async function handleOpenCodeAgent/);
 });
+
+
+test('Llama refuses to echo a role-labelled chat transcript as its answer',async()=>{
+ const response=await send('llama',[{role:'user',content:'Selam'}],{run:async()=>({response:'[İNSAN / SEHER] Selam!\n[DİĞER KATILIMCI] Merhaba'})});
+ assert.equal(response.status,502);
+ const body=await response.json();
+ assert.equal(body.error,'MODEL_TRANSCRIPT_ECHO');
+});
+test('Qwen response cleaning strips repeated [Qwen] display prefixes',()=>{
+ assert.match(source,/replace\(\/\^\(\?:\\s\*\\\[\(\?:qwen\|assistant\|model\)/);
+});
