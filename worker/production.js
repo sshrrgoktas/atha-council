@@ -1098,8 +1098,14 @@ async function handleAthaRoomSync(req,env,ctx){
   if(!snapshot)return athaSyncReply({error:"Room data invalid or explicit consent missing"},400);
   const now=Date.now();
   const oldRoom=await env.ATHA_SYNC_DB.prepare(
-    "SELECT snapshot FROM atha_sync_rooms WHERE owner_id=? AND room_id=?").bind(owner,roomId).first();
-  const appended=athaAppendedHumanTurns(oldRoom?.snapshot,snapshot);
+    "SELECT snapshot,updated_at FROM atha_sync_rooms WHERE owner_id=? AND room_id=?").bind(owner,roomId).first();
+  // Client-only mirror must not trigger models and must never overwrite a newer snapshot.
+  if(data.history_only===true){
+    if(!Number.isSafeInteger(data.expected_updated_at) ||
+       data.expected_updated_at!==Number(oldRoom?.updated_at??-1))
+      return athaSyncReply({error:"SYNC_CONFLICT",code:"SYNC_CONFLICT"},409);
+  }
+  const appended=data.history_only===true?[]:athaAppendedHumanTurns(oldRoom?.snapshot,snapshot);
   // A live Send is distinct from enabling sync/importing history: never replay a transcript.
   let firstLiveId=null;
   if(!appended.length&&data.live_turn&&/^[a-zA-Z0-9_-]{16,80}$/.test(data.live_turn.request_id||'')){
@@ -1124,7 +1130,7 @@ async function handleAthaRoomSync(req,env,ctx){
    await mcpQueueEvents(env,owner,roomId,eventIds,appended,writes);
   }
   await env.ATHA_SYNC_DB.batch(writes);
-  await rememberCouncilDialogue(req,env,owner,roomId);
+  if(data.history_only!==true)await rememberCouncilDialogue(req,env,owner,roomId);
   if(eventIds.length&&ctx?.waitUntil){
     ctx.waitUntil(mcpDeliver(env));
     const index=appended.length-1,turn=appended[index];
