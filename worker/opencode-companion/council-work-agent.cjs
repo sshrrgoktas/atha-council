@@ -21,7 +21,7 @@ const TASK_ID=/^ct_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
 const EMPTY={lastTick:null,lastError:null,pending:null,lastTask:null};
 function readJson(file,fallback){try{return JSON.parse(fs.readFileSync(file,'utf8'))}catch{return fallback}}
 function atomic(file,value){const tmp=file+'.tmp-'+process.pid;fs.writeFileSync(tmp,JSON.stringify(value,null,2),{mode:0o600});fs.renameSync(tmp,file)}
-function conf(){const c=readJson(CFG,null);return c?.enabled&&c?.agent_id&&TASK_ID.test('ct_12345678-1234-1234-1234-123456789abc')&&c.room_id&&fs.existsSync(KEY)?c:null}
+function conf(){const c=readJson(CFG,null);return c?.enabled&&c?.agent_id&&c.room_id&&fs.existsSync(KEY)?c:null}
 function canonical(method,route,stamp,body){return [method,route,stamp,crypto.createHash('sha256').update(body).digest('base64url')].join('\n')}
 async function api(route,body){
  const cfg=conf();if(!cfg)throw Error('WORK_AGENT_UNPAIRED_OR_DISABLED');
@@ -73,7 +73,7 @@ function workerConfig(){
   }}
  };
 }
-function validPath(v){return typeof v==='string'&&v.length>0&&v.length<=160&&/^[A-Za-z0-9_.\/-]+$/.test(v)&&!v.includes('..')&&!v.startsWith('/')&&!v.startsWith('.git')&&!v.endsWith('opencode.json')&&!v.startsWith('.opencode/')}
+function validPath(v){return typeof v==='string'&&v.length>0&&v.length<=160&&/^[A-Za-z0-9_.\/-]+$/.test(v)&&!v.includes('..')&&!v.startsWith('/')&&!v.startsWith('.git')&&!v.endsWith('opencode.json')&&!v.startsWith('.opencode/')&&!/(?:^|\/)\.env(?:\.|$)|\.(?:pem|key|p12|jks)$/i.test(v)}
 async function performTask(task){
  if(!task||!TASK_ID.test(task.id)||task.repo!==ALLOWED_REPO||typeof task.request!=='string'||!task.request.trim())throw Error('INVALID_APPROVED_TASK');
  if(!fs.existsSync(CLI))throw Error('OPENCODE_CLI_NOT_FOUND');
@@ -89,7 +89,7 @@ async function performTask(task){
  const prompt=[
   'Yalnızca BU çalışma kopyasında aşağıdaki kullanıcı-onaylı göreve ait kaynak dosyaları düzenle.',
   'Terminal/shell/web/harici dosya ve cihaz kullanma, sır veya token okuma.',
-  'Bu çalışma kopyası dışına yazma. Yayın, push, merge, paket indirme veya test çalıştırma.',
+  'Bu çalışma kopyası dışına yazma. YAPMA: yayın, push, merge, paket indirme, program çalıştırma veya test yürütme.',
   'Görev başarısı için uygulanmış gerçek dosya farkı gerekir. Sadece plan yazma.',
   'Kullanıcı onaylı iş emri '+task.id+': '+task.request.slice(0,2000),
   'Yapamadığın şeyi yaptım deme. İş bitince en fazla iki cümleyle hangi kodu değiştirdiğini özetle.'
