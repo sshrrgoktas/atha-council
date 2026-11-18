@@ -1249,12 +1249,18 @@ async function handleOpenCodeAgent(req,env){
    !['review','failed'].includes(data.outcome)||typeof data.summary!=='string'||!data.summary.trim()||data.summary.length>1500||
    !Array.isArray(data.files)||data.files.length>30||!data.files.every(x=>typeof x==='string'&&x.length<=160&&/^[A-Za-z0-9_./-]+$/.test(x)&&!x.includes('..')&&!x.startsWith('/')&&!x.startsWith('.git'))||
    !Array.isArray(data.checks)||data.checks.length>15||!data.checks.every(x=>typeof x==='string'&&x.length<=200)||
-   typeof data.branch!=='string'||data.branch.length>95||!/^work\/ct_[A-Za-z0-9_-]+$/.test(data.branch))
+   typeof data.branch!=='string'||data.branch.length>95||data.branch!=='work/'+data.task_id)
    return respond({error:'invalid_work_evidence'},400);
   const evidence=JSON.stringify({files:data.files,checks:data.checks,branch:data.branch});
   const state=data.outcome;
   const updated=await db.prepare("UPDATE atha_council_tasks SET state=?,result_summary=?,result_json=?,completed_at=?,updated_at=? WHERE task_id=? AND owner_id=? AND room_id=? AND claimed_by=? AND state='running'").bind(state,data.summary.trim(),evidence,now,now,data.task_id,owner,room,id).run();
-  if(updated.meta?.changes!==1)return respond({error:'work_result_not_accepted'},409);
+  if(updated.meta?.changes!==1){
+   // A lost network acknowledgment must never relaunch OpenCode inference.
+   const previous=await db.prepare('SELECT state,claimed_by,result_summary,result_json FROM atha_council_tasks WHERE task_id=? AND owner_id=? AND room_id=?').bind(data.task_id,owner,room).first();
+   if(previous?.claimed_by===id&&['review','failed','done'].includes(previous.state)&&previous.result_summary===data.summary.trim()&&previous.result_json===evidence)
+    return respond({saved:true,duplicate:true,task_id:data.task_id,state:previous.state,review_required:previous.state==='review'});
+   return respond({error:'work_result_not_accepted'},409);
+  }
   return respond({saved:true,task_id:data.task_id,state,review_required:state==='review'});
  }
 
