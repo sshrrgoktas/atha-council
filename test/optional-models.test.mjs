@@ -26,5 +26,6 @@ test('existing Qwen 3.8 auto provider is preserved and old card is absent',async
  const data=await response.json();
  assert.ok(data.models.some(m=>m.includes('Qwen 3.8')));
  assert.doesNotMatch(source,/QwQ|qwq-32b|toggleQwen|qwenStatus|qwenMemberInfo/);
- assert.doesNotMatch(source,/opencode/i);
+ assert.match(source,/async function handleCouncilTasks/);
+ assert.match(source,/async function handleOpenCodeAgent/);
 });
