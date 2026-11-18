@@ -46,7 +46,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: athalai-work-ui-preview
+          name: atha-council-ui-preview
           path: ui-preview/*.png
       - uses: actions/setup-java@v4
         with:
