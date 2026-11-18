@@ -46,7 +46,7 @@ test("Every Android APK offers a visible recovery download link",()=>{
   assert.match(html,/id="legacyUpdateLink"/);
   assert.match(html,/href="https:\/\/github\.com\/sshrrgoktas\/atha-council\/releases\/download\/latest-debug\/atha-council\.apk"/);
   assert.match(html,/window\.AtlasNative&&typeof window\.AtlasNative\.openUpdates!=='function'/);
-  assert.match(html,/document\.getElementById\('legacyUpdateRow'\)\.hidden=false/);
+  assert.doesNotMatch(html,/document\.getElementById\('legacyUpdateRow'\)\.hidden=false/);
   assert.doesNotMatch(html,/if\(confirm\('İmzalı Atlas Council APK güncellemesini Android yükleyicisinde açmak ister misin\?'\)\)/);
 });
 
