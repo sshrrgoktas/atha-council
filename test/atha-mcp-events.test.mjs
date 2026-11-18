@@ -888,45 +888,34 @@ test('Council blocks fake video work, unfinished thinking and tool transcripts w
  assert.deepEqual(runtime.councilFinalAnswer('<think>hidden</think>Video senaryosunu yazabilirim.'),{ok:true,text:'Video senaryosunu yazabilirim.'});
 });
 
-test('signed OpenCode companion polls without inference and persists only verified final replies',async()=>{
+test('retired OpenCode chat remains authenticated but has no new chat inference or reply writes',async()=>{
  const {privateKey,publicKey}=generateKeyPairSync('ed25519');
  const agentId='ocag_'+'a'.repeat(32),ts=now();
- const pub=publicKey.export({type:'spki',format:'der'}).toString('base64url');
- sql.prepare('INSERT INTO atha_opencode_agents(agent_id,owner_id,room_id,public_key,enabled,created_at,expires_at) VALUES(?,?,?,?,1,?,?)').run(agentId,owner,room,pub,ts-1000,ts+86400000);
+ sql.prepare('INSERT INTO atha_opencode_agents(agent_id,owner_id,room_id,public_key,enabled,created_at,expires_at) VALUES(?,?,?,?,1,?,?)')
+  .run(agentId,owner,room,publicKey.export({type:'spki',format:'der'}).toString('base64url'),ts-1000,ts+86400000);
  const ev='evt_companion_1234567';
- sql.prepare("INSERT INTO atha_sync_events(owner_id,room_id,event_id,message_excerpt,created_at,state) VALUES(?,?,?,?,?,'pending')").run(owner,room,ev,JSON.stringify({kind:'human',content:'Selam, iyi misin?'}),ts);
- const signed=async(kind,payload,overrides={})=>{
-  const body=JSON.stringify(payload),stamp=String(now());
-  const digest=createHash('sha256').update(body).digest('base64url');
-  const canonical=['POST','/api/atha-opencode/'+kind,stamp,digest].join('\n');
-  const signature=sign(null,Buffer.from(canonical),privateKey).toString('base64url');
+ sql.prepare("INSERT INTO atha_sync_events(owner_id,room_id,event_id,message_excerpt,created_at,state) VALUES(?,?,?,?,?,'pending')")
+  .run(owner,room,ev,JSON.stringify({kind:'human',content:'Selam, iyi misin?'}),ts);
+ const send=async(kind,payload,overrides={})=>{
+  const body=JSON.stringify(payload),stamp=String(now()),hash=createHash('sha256').update(body).digest('base64url');
   return request('/api/atha-opencode/'+kind,'POST',body,null,{
-    'x-atha-agent-id':agentId,'x-atha-agent-ts':stamp,
-    'x-atha-agent-sig':signature,...overrides
+   'x-atha-agent-id':agentId,'x-atha-agent-ts':stamp,
+   'x-atha-agent-sig':sign(null,Buffer.from(['POST','/api/atha-opencode/'+kind,stamp,hash].join('\n')),privateKey).toString('base64url'),...overrides
   });
  };
- const poll=await signed('poll',{room_id:room,since_ms:ts-1000});
+ const poll=await send('poll',{room_id:room,since_ms:ts-1000});
  assert.equal(poll.status,200);
- const messages=await poll.json();
- assert.equal(messages.events.length,1);
- assert.equal(messages.events[0].event_id,ev);
- const invalid=await signed('poll',{room_id:room,since_ms:ts-1000},{'x-atha-agent-sig':'a'.repeat(86)});
- assert.equal(invalid.status,401);
- const reply=await signed('reply',{room_id:room,event_id:ev,content:'<think>private</think>İyiyim, teşekkürler!'});
- assert.equal(reply.status,200,await reply.text().catch(()=>'')); // body already consumed on success only by assertion message
- const stored=sql.prepare('SELECT reply_id,content FROM atha_sync_replies WHERE reply_id=?').get('opencode_'+ev);
- assert.equal(stored.content,'İyiyim, teşekkürler!');
- const duplicate=await signed('reply',{room_id:room,event_id:ev,content:'<think>private</think>İyiyim, teşekkürler!'});
- assert.equal(duplicate.status,200);
- assert.equal((await duplicate.json()).duplicate,true);
- const badAction=await signed('reply',{room_id:room,event_id:ev,content:'Şimdi video oluşturuyorum.'});
- assert.equal(badAction.status,422);
- assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,1);
+ const result=await poll.json();
+ assert.deepEqual(result.events,[]);assert.equal(result.retired_to,'task_center');
+ assert.equal((await send('poll',{room_id:room,since_ms:ts-1000},{'x-atha-agent-sig':'a'.repeat(86)})).status,401);
+ assert.equal((await send('reply',{room_id:room,event_id:ev,content:'Selam'})).status,410);
+ assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies WHERE reply_id=?').get('opencode_'+ev).n,0);
 });
-test('signed OpenCode companion refuses unpaired rooms, expired events and paused rooms',async()=>{
+test('retired OpenCode chat rejects foreign room and does not revive on pause',async()=>{
  const {privateKey,publicKey}=generateKeyPairSync('ed25519');
  const agentId='ocag_'+'b'.repeat(32),ts=now();
- sql.prepare('INSERT INTO atha_opencode_agents(agent_id,owner_id,room_id,public_key,enabled,created_at,expires_at) VALUES(?,?,?,?,1,?,?)').run(agentId,owner,room,publicKey.export({type:'spki',format:'der'}).toString('base64url'),ts-1000,ts+100000);
+ sql.prepare('INSERT INTO atha_opencode_agents(agent_id,owner_id,room_id,public_key,enabled,created_at,expires_at) VALUES(?,?,?,?,1,?,?)')
+  .run(agentId,owner,room,publicKey.export({type:'spki',format:'der'}).toString('base64url'),ts-1000,ts+100000);
  const send=async(kind,payload)=>{
   const body=JSON.stringify(payload),stamp=String(now()),hash=createHash('sha256').update(body).digest('base64url');
   return request('/api/atha-opencode/'+kind,'POST',body,null,{
@@ -935,11 +924,8 @@ test('signed OpenCode companion refuses unpaired rooms, expired events and pause
   });
  };
  assert.equal((await send('poll',{room_id:'foreign_room',since_ms:ts-1000})).status,401);
- const ev='evt_companion_1234568';
- sql.prepare("INSERT INTO atha_sync_events(owner_id,room_id,event_id,message_excerpt,created_at,state) VALUES(?,?,?,?,?,'pending')").run(owner,room,ev,JSON.stringify({kind:'human',content:'Daha önceki soru'}),ts-3000000);
- assert.equal((await send('reply',{room_id:room,event_id:ev,content:'Gecikmiş yanıt'})).status,409);
+ assert.equal((await send('reply',{room_id:room,event_id:'evt_companion_old',content:'Yasak'})).status,410);
  sql.prepare("INSERT OR REPLACE INTO atha_mcp_participation(owner_id,room_id,mode,updated_at) VALUES(?,?,'paused',?)").run(owner,room,now());
- const paused=await send('poll',{room_id:room,since_ms:ts-1000});
- assert.equal((await paused.json()).paused,true);
- assert.equal((await send('reply',{room_id:room,event_id:ev,content:'Bir yanıt'})).status,409);
+ assert.equal((await (await send('poll',{room_id:room,since_ms:ts-1000})).json()).retired_to,'task_center');
+ assert.equal((await send('reply',{room_id:room,event_id:'evt_companion_old',content:'Yasak'})).status,410);
 });
