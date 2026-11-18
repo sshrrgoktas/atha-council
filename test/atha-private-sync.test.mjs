@@ -8,7 +8,7 @@ const secret="test-sync-GitHub-session-secret-random-64-characters-long";
 const oldFetch=globalThis.fetch;
 
 class FakeD1 {
- constructor(){this.rows=new Map();this.replies=new Map();this.events=new Map();this.monitor=null}
+ constructor(){this.rows=new Map();this.deletedRooms=new Map();this.replies=new Map();this.events=new Map();this.monitor=null}
  prepare(sql){
   let args=[];
   return {
@@ -29,12 +29,13 @@ FakeD1.prototype.prepare=function(sql){
  const database=this;let args=[];
  const stmt={
   bind(...values){args=values;return stmt},
-  all:async()=>({results:sql.includes("FROM atha_sync_events")?[...database.events.values()].filter(e=>e.owner_id===args[0]&&e.room_id===args[1]&&String(e.message_excerpt||'').startsWith('{"kind":"dialogue",')):sql.includes("FROM atha_sync_replies")?
+  all:async()=>({results:sql.includes("FROM atha_sync_deleted_rooms")?[...database.deletedRooms.values()].filter(r=>r.owner_id===args[0]).sort((a,b)=>b.deleted_at-a.deleted_at):sql.includes("FROM atha_sync_events")?[...database.events.values()].filter(e=>e.owner_id===args[0]&&e.room_id===args[1]&&String(e.message_excerpt||'').startsWith('{"kind":"dialogue",')):sql.includes("FROM atha_sync_replies")?
    [...database.replies.values()].filter(r=>r.owner_id===args[0]&&r.room_id===args[1])
     .sort((a,b)=>b.created_at-a.created_at).slice(0,40).map(r=>({reply_id:r.reply_id,content:r.content,created_at:r.created_at})):
    [...database.rows.values()].filter(r=>r.owner_id===args[0])
     .sort((a,b)=>b.updated_at-a.updated_at).map(r=>({room_id:r.room_id,title:r.title,updated_at:r.updated_at}))}),
   first:async()=>{
+   if(sql.includes("FROM atha_sync_deleted_rooms"))return database.deletedRooms.get(args[0]+"|"+args[1])||null;
    if(sql.includes("FROM atha_sync_monitor"))return database.monitor?{last_tick_at:database.monitor.last_tick_at}:null;
    if(sql.includes("FROM atha_sync_events"))return {count:[...database.events.values()].filter(e=>e.state==="pending"&&(!sql.includes("owner_id=?")||e.owner_id===args[0])).length};
    const r=database.rows.get(args[0]+"|"+args[1]);
@@ -51,6 +52,7 @@ FakeD1.prototype.prepare=function(sql){
     const key=owner_id+"|"+room_id+"|"+event_id;
     if(!database.events.has(key))database.events.set(key,{owner_id,room_id,event_id,created_at,state:"pending"});
    }
+   else if(sql.startsWith("INSERT INTO atha_sync_deleted_rooms")){const [owner_id,room_id,deleted_at]=args;database.deletedRooms.set(owner_id+"|"+room_id,{owner_id,room_id,deleted_at});}
    else if(sql.startsWith("INSERT INTO atha_sync_monitor")){
     database.monitor={last_tick_at:args[0],pending_event_count:args[1]};
    }
@@ -279,4 +281,32 @@ test("Device mirror is opt-in and never silently overwrites conflicting chat his
  assert.match(html,/else\{conflicts\+\+;\}/);
  assert.match(html,/if\(items.length>60\)/);
  assert.match(html,/if\(!councilMirrorEnabled\|\|councilMirrorBusy\|\|document.hidden\)return/);
+});
+
+
+test("Owner-scoped deleted-room tombstones prevent cross-device resurrection",async()=>{
+ const id="c_deleted_3901",uri="/api/atha-sync/rooms/"+id;
+ const snapshot={consent:true,title:"Silinecek oda",items:[{role:"user",name:"Sen",content:"Eski mesaj",speakerId:"human"}]};
+ assert.equal((await request(uri,{method:"PUT",user:"1",body:snapshot})).status,200);
+ const r=await request(uri,{method:"DELETE",user:"1"});assert.equal(r.status,200);
+ assert.equal((await r.json()).deleted,true);
+ const ownerList=await request("/api/atha-sync/deleted",{user:"1"});
+ assert.equal(ownerList.status,200);
+ assert.ok((await ownerList.json()).deleted.some(x=>x.room_id===id));
+ const otherList=await request("/api/atha-sync/deleted",{user:"2"});
+ assert.ok(!(await otherList.json()).deleted.some(x=>x.room_id===id));
+ const retry=await request(uri,{method:"PUT",user:"1",body:{...snapshot,history_only:true,expected_updated_at:-1}});
+ assert.equal(retry.status,410);
+ assert.equal((await retry.json()).error,"ROOM_DELETED");
+ assert.equal((await request(uri,{user:"1"})).status,404);
+});
+test("Browser deletion persists pending tombstones and never imports deleted chats",()=>{
+ const html=JSON.parse(source.slice(source.indexOf('const HTML=')+11,source.lastIndexOf(';')));
+ assert.match(html,/councilDeletedRooms=councilReadDeletedSet/);
+ assert.match(html,/councilPendingDeletes=councilReadDeletedSet/);
+ assert.match(html,/councilRememberDeletion\(chat\.id,true\)/);
+ assert.match(html,/await councilDeleteInCloud\(chat\.id\)/);
+ assert.match(html,/councilMirrorRequest\('\/api\/atha-sync\/deleted'\)/);
+ assert.match(html,/if\(councilDeletedRooms\.has\(room\.roomId\)\)continue/);
+ assert.match(html,/if\(councilDeletedRooms\.has\(chat\.id\)\|\|remoteIds\.has\(chat\.id\)\)continue/);
 });
