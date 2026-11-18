@@ -84,7 +84,7 @@ test('signed agent can save bounded evidence for review, but cannot self-approve
  let r=await agent('POST','work-result',{...payload,files:['../../private.env']});assert.equal(r.status,400);
  r=await agent('POST','work-result',payload);assert.equal(r.status,200);
  assert.equal((await r.json()).review_required,true);
- assert.equal((await agent('POST','work-result',payload)).status,409);
+ const duplicate=await agent('POST','work-result',payload);assert.equal(duplicate.status,200);assert.equal((await duplicate.json()).duplicate,true);
  const list=await user('GET','/api/atha-tasks?room_id='+room);
  const tasks=(await list.json()).tasks;
  assert.equal(tasks[0].status,'review');
