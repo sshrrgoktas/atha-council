@@ -14,22 +14,7 @@ android {
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
         versionName = "0.3-council-LAB"
     }
-    val signingFile = System.getenv("ATLAS_SIGNING_FILE")
-    if (!signingFile.isNullOrBlank()) {
-        signingConfigs {
-            create("atlasRelease") {
-                storeFile = file(signingFile)
-                storePassword = System.getenv("ATLAS_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("ATLAS_KEY_ALIAS")
-                keyPassword = System.getenv("ATLAS_KEY_PASSWORD")
-            }
-        }
-        buildTypes {
-            getByName("release") {
-                isMinifyEnabled = false
-                signingConfig = signingConfigs.getByName("atlasRelease")
-            }
-        }
-    }
+    // LAB packages never load or reuse production Android signing keys.
+    // Gradle's debug key signs test-only APKs for side-by-side installation.
 }
 dependencies { implementation("com.nimbusds:nimbus-jose-jwt:9.47") }
