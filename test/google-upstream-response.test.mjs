@@ -15,11 +15,11 @@ async function makeCookie(){
   const encrypted=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},key,new TextEncoder().encode(JSON.stringify(session))));
   return "atlas_google="+Buffer.concat([Buffer.from(iv),Buffer.from(encrypted)]).toString("base64url");
 }
-async function ask(){
+async function ask(message="Selam, nasılsın?"){
   return worker.fetch(new Request(ORIGIN+"/api/google/chat",{
     method:"POST",
     headers:{"content-type":"application/json","origin":ORIGIN,"cookie":await makeCookie()},
-    body:JSON.stringify({messages:[{role:"user",content:"Selam, nasılsın?"}]})
+    body:JSON.stringify({messages:[{role:"user",content:message}]})
   }),env);
 }
 const htmlError=()=>new Response("<!DOCTYPE html><title>upstream unavailable</title>",{status:503,headers:{"content-type":"text/html"}});
@@ -111,4 +111,25 @@ test("Browser catches HTML responses before attempting JSON parse",()=>{
   assert.match(html,/if\(!\/json\/i\.test\(contentType\)\)/);
   assert.match(html,/Atha Council sunucusu beklenmeyen yanıt döndürdü/);
   assert.match(html,/Atha Council sunucusunun yanıtı okunamadı/);
+});
+
+
+test("Gemini prepares a complete writing draft without the normal two-sentence limit",async()=>{
+ const realFetch=globalThis.fetch;
+ const draft="Merhaba,\n\nBu birinci paragraftır. İkinci paragrafta ayrıntılı açıklama yapılır.\n\nSaygılarımla,\nAtha Council";
+ let requested=null;
+ globalThis.fetch=async(url,options)=>{
+   if(String(url).includes("pageSize=100"))return modelList();
+   requested=JSON.parse(options.body);
+   return Response.json({candidates:[{content:{parts:[{text:draft}]}}]});
+ };
+ try{
+   const response=await ask("Bana bir e-posta taslağı hazırla.");
+   assert.equal(response.status,200);
+   const body=await response.json();
+   assert.equal(body.text,draft);
+   assert.ok(requested.generationConfig.maxOutputTokens>=1000);
+   assert.match(requested.systemInstruction.parts[0].text,/eksiksiz/);
+   assert.doesNotMatch(requested.systemInstruction.parts[0].text,/en fazla 60 kelime/);
+ }finally{globalThis.fetch=realFetch}
 });
