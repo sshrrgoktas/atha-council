@@ -13,7 +13,8 @@ const manifest=read('app/src/main/AndroidManifest.xml');
 test('one launcher retains Council OAuth, speech, sharing, updates and attachments',()=>{
  assert.equal((manifest.match(/android.intent.category.LAUNCHER/g)||[]).length,1);
  for(const marker of ['startGoogleLogin','startGitHubLogin','startSpeech','stopSpeech','shareText','openUpdates','ACTION_OPEN_DOCUMENT','EXTRA_ALLOW_MULTIPLE','parseResult(resultCode,data)'])assert.ok(main.includes(marker),marker);
- assert.match(main,/layout.addView\(councilWeb,LinearLayout.LayoutParams\(-1,-1\)\)/);
+ assert.match(main,/layout\.addView\(councilWeb,LinearLayout\.LayoutParams\(-1,0,1f\)\)/);
+ assert.match(main,/layout\.addView\(topBar,LinearLayout\.LayoutParams\(-1,barHeight\)\)/);
  assert.ok(main.includes('".txt" to "text/plain"'));assert.ok(main.includes('".json" to "application/json"'));
  assert.match(main,/attachmentCallback\?\.onReceiveValue\(null\)/);
  assert.match(main,/page.host!="atlas-council.sshrrgoktas.workers.dev"/);
