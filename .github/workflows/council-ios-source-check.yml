@@ -1,0 +1,33 @@
+name: Atha Council iOS isolated source security checks
+on:
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'codemagic.yaml'
+      - '.github/workflows/council-ios-source-check.yml'
+  push:
+    branches: ['feature/ios-atha-council-standalone-20261118']
+    paths:
+      - 'ios/**'
+      - 'codemagic.yaml'
+      - '.github/workflows/council-ios-source-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  council-ios-source:
+    name: Native iOS source checks without Apple signing
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert standalone Council app never touches AthalAI PC/QR
+        run: node --test ios/validation/source-guard.test.mjs
+      - name: Compile fixed Council HTTPS/JSON rules with Swift Foundation
+        run: |
+          command -v swiftc
+          swiftc -swift-version 5 ios/AthaCouncil/CouncilEndpoint.swift ios/validation/main.swift -o /tmp/atha-council-ios-policy
+          /tmp/atha-council-ios-policy
