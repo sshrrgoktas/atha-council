@@ -37,7 +37,12 @@ test("New native update bridge reports actual installed version and all result s
 
 test("Every Android APK offers a visible recovery download link",()=>{
   assert.match(html,/id="legacyUpdateRow" style=/);
-  assert.doesNotMatch(html,/id="legacyUpdateRow" hidden/);
+  assert.match(html,/independentReleaseNotice/);
+  assert.match(html,/document\.getElementById\('appUpdate'\)\.disabled=true/);
+  assert.match(html,/document\.getElementById\('legacyUpdateLink'\)\.removeAttribute\('href'\)/);
+  assert.match(kotlin,/packageName=="com\.atlascouncil\.app\.standalone"/);
+  assert.match(kotlin,/Eski Konsey APK'sı bu bağımsız uygulamaya yüklenemez/);
+  assert.match(html,/document\.getElementById\('legacyUpdateRow'\)\.hidden=true/);
   assert.match(html,/id="legacyUpdateLink"/);
   assert.match(html,/href="https:\/\/github\.com\/sshrrgoktas\/atha-council\/releases\/download\/latest-debug\/atha-council\.apk"/);
   assert.match(html,/window\.AtlasNative&&typeof window\.AtlasNative\.openUpdates!=='function'/);
