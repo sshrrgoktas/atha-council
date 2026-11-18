@@ -1,0 +1,91 @@
+# Council only. Two manual workflows; never triggers APK, Windows, Cloudflare or automatic publishing.
+workflows:
+  atha-council-ios-simulator:
+    name: Atha Council • iPhone Simulator (imzasız)
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    environment:
+      xcode: latest
+    scripts:
+      - name: Guard independent app and Foundation status policy
+        script: |
+          set -euo pipefail
+          node --test ios/validation/source-guard.test.mjs
+          swiftc -swift-version 5 ios/AthaCouncil/CouncilEndpoint.swift ios/validation/main.swift -o /tmp/atha-council-policy
+          /tmp/atha-council-policy
+      - name: Prepare Xcode project with approved emblem
+        script: |
+          set -euo pipefail
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+          swift ios/scripts/build-brand-icon.swift app/src/main/res/drawable-nodpi/atha_launcher.webp ios/AthaCouncil/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
+          (cd ios && xcodegen generate --spec project.yml)
+          plutil -lint ios/AthaCouncil/Info.plist
+      - name: Compile unsigned native iPhone Simulator app
+        script: |
+          set -euo pipefail
+          mkdir -p build/ios-simulator/logs
+          xcodebuild -project ios/AthaCouncil.xcodeproj -scheme AthaCouncil -sdk iphonesimulator \
+            -configuration Debug -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath "$CM_BUILD_DIR/build/ios-simulator" CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO build > build/ios-simulator/logs/build.log 2>&1 || {
+              tail -n 120 build/ios-simulator/logs/build.log; exit 1;
+            }
+      - name: Run actual iPhone native tests
+        script: |
+          set -euo pipefail
+          DEVICE_ID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next((x["udid"] for a in d.values() for x in a if x["name"].startswith("iPhone")), ""))')"
+          test -n "$DEVICE_ID"
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          xcodebuild -project ios/AthaCouncil.xcodeproj -scheme AthaCouncil -configuration Debug \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -derivedDataPath "$CM_BUILD_DIR/build/ios-simulator" CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO test > build/ios-simulator/logs/test.log 2>&1 || {
+              tail -n 120 build/ios-simulator/logs/test.log; exit 1;
+            }
+      - name: Archive unsigned simulator app for inspection
+        script: |
+          set -euo pipefail
+          APP="$CM_BUILD_DIR/build/ios-simulator/Build/Products/Debug-iphonesimulator/AthaCouncil.app"
+          test -d "$APP"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$CM_BUILD_DIR/build/Atha-Council-iOS-simulator-unsigned.zip"
+    artifacts:
+      - build/Atha-Council-iOS-simulator-unsigned.zip
+      - build/ios-simulator/logs/*.log
+
+  atha-council-ios-signed:
+    name: Atha Council • İmzalı IPA (Apple üyeliği sonrası)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      xcode: latest
+      groups:
+        - atha_council_apple_signing
+      vars:
+        BUNDLE_ID: "com.atlascouncil.ios"
+    scripts:
+      - name: Ensure owner-controlled Apple signing is ready
+        script: |
+          set -euo pipefail
+          node --test ios/validation/source-guard.test.mjs
+          test -n "$APP_STORE_CONNECT_ISSUER_ID"
+          test -n "$APP_STORE_CONNECT_KEY_IDENTIFIER"
+          test -n "$APP_STORE_CONNECT_PRIVATE_KEY"
+          test -n "$CERTIFICATE_PRIVATE_KEY"
+          test -n "$BUILD_NUMBER"
+          test "$BUNDLE_ID" = "com.atlascouncil.ios"
+      - name: Generate separate Council IPA without automatic publishing
+        script: |
+          set -euo pipefail
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+          swift ios/scripts/build-brand-icon.swift app/src/main/res/drawable-nodpi/atha_launcher.webp ios/AthaCouncil/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
+          (cd ios && xcodegen generate --spec project.yml)
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
+          keychain add-certificates
+          xcode-project use-profiles --project "$CM_BUILD_DIR/ios/AthaCouncil.xcodeproj"
+          xcode-project build-ipa --project "$CM_BUILD_DIR/ios/AthaCouncil.xcodeproj" --scheme AthaCouncil \
+            --archive-xcargs "CURRENT_PROJECT_VERSION=$BUILD_NUMBER"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
