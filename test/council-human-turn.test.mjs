@@ -73,6 +73,6 @@ test('no background cron or read-only reply polling starts Gemini; user messages
  assert.match(source,/ctx\.waitUntil\(councilQwenAutoRespond\(env,owner,roomId,eventIds\[index\],turn\.content\)\)/);
  assert.doesNotMatch(source,/if\(currentChatId===roomId&&!d\.serverDialogue\)continueCouncilDialogue/);
  assert.doesNotMatch(source,/await resumeCouncilDialogues\(env\);\s*\},\s*fetch:councilFetch/);
- assert.match(source,/context_packet:contextPacket/);
+ assert.match(source,/context_packet:\{\.\.\.contextPacket,turn_id:id\}/);
  assert.match(source,/snapshot_hash:contextPacket\.snapshot_hash/);
 });
