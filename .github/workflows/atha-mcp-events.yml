@@ -4,7 +4,6 @@ on:
     paths:
       - 'worker/production.js'
       - 'worker/atha-sync/**'
-      - 'worker/opencode-companion/**'
       - 'test/**'
       - '.github/workflows/atha-mcp-events.yml'
   push:
@@ -12,7 +11,6 @@ on:
     paths:
       - 'worker/production.js'
       - 'worker/atha-sync/**'
-      - 'worker/opencode-companion/**'
       - 'test/**'
   workflow_dispatch:
 permissions:
@@ -27,5 +25,3 @@ jobs:
           node-version: '24'
       - name: Verify OAuth, callback signatures, owner isolation, retries and cancellation with real SQLite
         run: node --test test/*.test.mjs copilot-bridge/*.test.mjs
-      - name: Validate isolated OpenCode task worker permissions and receipt handling
-        run: node --test worker/opencode-companion/council-work-agent.test.cjs worker/opencode-companion/council-autopilot.test.cjs
