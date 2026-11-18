@@ -54,7 +54,15 @@ FakeD1.prototype.prepare=function(sql){
    else if(sql.startsWith("INSERT INTO atha_sync_monitor")){
     database.monitor={last_tick_at:args[0],pending_event_count:args[1]};
    }
-   else if(sql.startsWith("INSERT")){const [owner_id,room_id,title,snapshot,updated_at]=args;database.rows.set(owner_id+"|"+room_id,{owner_id,room_id,title,snapshot,updated_at})}
+   else if(sql.startsWith("INSERT")){
+    const [owner_id,room_id,title,snapshot,updated_at,expected]=args;
+    const key=owner_id+"|"+room_id,old=database.rows.get(key);
+    if(sql.includes("WHERE atha_sync_rooms.updated_at=?")&&
+      ((old&&old.updated_at!==expected)||(!old&&expected!==-1)))
+      return {success:true,meta:{changes:0}};
+    database.rows.set(key,{owner_id,room_id,title,snapshot,updated_at});
+    return {success:true,meta:{changes:1}};
+   }
    else throw Error("Unexpected SQL");
    return {success:true};
   }
