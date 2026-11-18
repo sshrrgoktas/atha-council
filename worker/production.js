@@ -1233,6 +1233,9 @@ async function handleOpenCodeAgent(req,env){
   if(Object.keys(data).length!==1)return respond({error:'invalid_work_poll'},400);
   if(mode?.mode==='paused')return respond({tasks:[],paused:true,server_time:now});
   try{
+   // Dead PC workers do not silently keep tasks in "running" forever.
+   // An interrupted task fails closed; it is NEVER automatically retried.
+   await db.prepare("UPDATE atha_council_tasks SET state='failed',error_code='WORKER_INTERRUPTED',result_summary='PC işçisi zaman aşımına uğradı; görev tekrar çalıştırılmadı.',updated_at=? WHERE owner_id=? AND room_id=? AND state='running' AND claimed_at<?").bind(now,owner,room,now-900000).run();
    const row=await db.prepare("SELECT task_id,request_text,target_repo,approved_at FROM atha_council_tasks WHERE owner_id=? AND room_id=? AND assignee='opencode' AND state='approved' ORDER BY approved_at,created_at LIMIT 1").bind(owner,room).first();
    if(!row)return respond({tasks:[],server_time:now});
    const claim=await db.prepare("UPDATE atha_council_tasks SET state='running',claimed_by=?,claimed_at=?,updated_at=? WHERE task_id=? AND owner_id=? AND room_id=? AND state='approved'").bind(id,now,now,row.task_id,owner,room).run();
