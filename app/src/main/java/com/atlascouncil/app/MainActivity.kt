@@ -213,7 +213,7 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
   // This Council APK must never replace or pretend to provide its scanner.
   val target=Intent(Intent.ACTION_MAIN).apply {
    addCategory(Intent.CATEGORY_LAUNCHER)
-   setClassName("com.athalai.companion","com.athalai.companion.MainActivity")
+   setClassName("com.athalai.companion.lab","com.athalai.companion.MainActivity")
    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
   }
   try { startActivity(target) }
@@ -225,6 +225,7 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
   }
  }
  private fun startGitHubLogin(){
+  if(packageName.endsWith(".lab")){Toast.makeText(this,"LAB test sürümünde canlı GitHub OAuth kapalı.",Toast.LENGTH_LONG).show();return}
   val verifier=token(48)
   githubVerifier=verifier
   getPreferences(MODE_PRIVATE).edit().putString("github_pending_verifier",verifier).apply()
@@ -263,6 +264,7 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
  }
 
  private fun startGoogleLogin(){
+  if(packageName.endsWith(".lab")){Toast.makeText(this,"LAB test sürümünde canlı Google OAuth kapalı.",Toast.LENGTH_LONG).show();return}
   val verifier=token(48);googleVerifier=verifier;getPreferences(MODE_PRIVATE).edit().putString("google_pending_verifier",verifier).apply()
   val digest=sha(verifier)
   val url="https://atlas-council.sshrrgoktas.workers.dev/auth/google/start?mobile=1&challenge="+enc(digest)
@@ -396,7 +398,7 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
    setOnClickListener{openMainAthalAI()}
   }
   val councilTitle=TextView(this).apply {
-   text="Atha Council"
+   text="Atha Council LAB"
    textSize=15f
    setTextColor(Color.WHITE)
    gravity=android.view.Gravity.CENTER_VERTICAL
@@ -421,7 +423,7 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
    callback?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode,data))
   }
  }
- private fun startLogin(){status.text="Deneysel yerel bağlantı hazırlanıyor…";Thread {
+ private fun startLogin(){if(packageName.endsWith(".lab")){status.text="LAB test sürümünde canlı ChatGPT girişi kapalı.";return}status.text="Deneysel yerel bağlantı hazırlanıyor…";Thread {
   var server:ServerSocket?=null
   try {
    server=ServerSocket(0,1,java.net.InetAddress.getByName("127.0.0.1"));server.soTimeout=180000
@@ -517,6 +519,11 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
   }
  }
  private fun checkForUpdates(showCurrent:Boolean) {
+  if(packageName.endsWith(".lab")){
+    updateStatus.text="LAB paketi üretim APK güncellemelerinden bağımsızdır."
+    if(showCurrent)Toast.makeText(this,"LAB APK bağımsız test sürümüdür. Üretim güncellemesi uygulanmaz.",Toast.LENGTH_LONG).show()
+    return
+  }
   if(showCurrent){
    updateStatus.text="Yeni sürüm kontrol ediliyor…"
    sendUpdateResult("checking",null,"Güncelleme kontrol ediliyor…")

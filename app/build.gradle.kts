@@ -8,11 +8,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     defaultConfig {
-        applicationId = "com.atlascouncil.app"
+        applicationId = "com.atlascouncil.app.lab"
         minSdk = 26
         targetSdk = 35
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
-        versionName = "0.3-council-context"
+        versionName = "0.3-council-LAB"
     }
     val signingFile = System.getenv("ATLAS_SIGNING_FILE")
     if (!signingFile.isNullOrBlank()) {
