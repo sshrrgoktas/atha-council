@@ -66,6 +66,40 @@ async function signedBridgeRequest(url,secret,body){
   const signature=Array.from(new Uint8Array(await crypto.subtle.sign("HMAC",macKey,bytes))).map(x=>x.toString(16).padStart(2,"0")).join("");
   return fetch(endpoint.toString(),{method:"POST",headers:{"content-type":"application/json","x-atlas-timestamp":timestamp,"x-atlas-nonce":nonce,"x-atlas-signature":signature},body,redirect:"manual",signal:AbortSignal.timeout(90000)});
 }
+// Mobile OAuth must end with a user-tapped app link, not a browser-blocked
+// HTTP 302 to a custom URI scheme. No third-party resources, script or token logs.
+function githubMobileHandoffPage(ticket){
+ if(typeof ticket!=='string'||ticket.length>7000||
+    !/^[A-Za-z0-9_-]{12,50}\.[A-Za-z0-9_-]{20,7000}$/.test(ticket))
+  return failure(403,"Invalid mobile transfer ticket");
+ const encoded=encodeURIComponent(ticket);
+ const safeIntent='intent://github-auth?ticket='+encoded+
+  '#Intent;scheme=atlascouncil;package=com.atlascouncil.app;end';
+ const fallback='atlascouncil://github-auth?ticket='+encoded;
+ const html='<!doctype html><html lang="tr"><head><meta charset="utf-8">'+
+  '<meta name="viewport" content="width=device-width,initial-scale=1">'+
+  '<meta name="referrer" content="no-referrer">'+
+  '<title>AthalAI · Uygulamaya dön</title>'+
+  '<style>*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#091624;color:#e8f5fa;font:16px system-ui;padding:22px}'+
+  'main{width:min(100%,470px);background:#122d3c;border:1px solid #36666a;padding:25px;border-radius:18px}'+
+  'h1{font-size:23px;margin:0 0 12px}p{line-height:1.5;color:#c3dbe2}a{display:block;text-align:center;min-height:50px;'+
+  'border-radius:12px;padding:14px 12px;margin:14px 0;text-decoration:none;font-weight:700}'+
+  '.primary{background:#52ddcb;color:#062a30}.secondary{background:#25485b;color:#eefeff;border:1px solid #507884}'+
+  'small{display:block;color:#aac8d4;line-height:1.45}</style></head>'+
+  '<body><main><h1>GitHub girişi hazır</h1>'+
+  '<p>Bağlantıyı AthalAI uygulamasında tamamlamak için aşağıdaki düğmeye dokun.</p>'+
+  '<a class="primary" id="returnToAthalAI" href="'+safeIntent+'">AthalAI uygulamasına dön</a>'+
+  '<a class="secondary" id="fallbackReturn" href="'+fallback+'">Açılmadıysa bu bağlantıyı dene</a>'+
+  '<small>APK indirmen gerekmiyor. Bu geçiş bağlantısı kısa süre geçerlidir; süre dolarsa AthalAI içinden GitHub girişini tekrar başlat. Bu sayfayı paylaşma.</small>'+
+  '</main></body></html>';
+ const headers=new Headers({'content-type':'text/html;charset=utf-8',
+  'cache-control':'no-store, private','referrer-policy':'no-referrer',
+  'x-content-type-options':'nosniff','x-frame-options':'DENY',
+  'content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"});
+ headers.append('set-cookie',secureCookie(STATE,'',0,'/auth/github'));
+ headers.append('set-cookie',secureCookie(PREVIEW_HANDOFF_COOKIE,'',0,'/auth/github'));
+ return new Response(html,{status:200,headers});
+}
 async function handleCopilotRoute(request,env) {
   const u=new URL(request.url), path=u.pathname, origin=u.origin;
   if(!["/auth/github/start","/auth/github/callback","/auth/github/logout","/api/copilot/status","/api/copilot/chat"].includes(path))return null;
@@ -107,7 +141,11 @@ async function handleCopilotRoute(request,env) {
         if(!env.ATLAS_GITHUB_HANDOFF_SECRET||pieces.length!==2||!["web","mobile"].includes(target)||!validGHOAuthChallenge(challenge))return failure(403,"GitHub session transfer invalid");
         phase="handoff-encrypt";
         const ticket=await encrypt(JSON.stringify({v:1,issuer:"atlas-council-copilot-preview",audience:"atlas-council",target,challenge,expires:Date.now()+60000,token:data.access_token}),env.ATLAS_GITHUB_HANDOFF_SECRET);
-        const location=target==="mobile"?"atlascouncil://github-auth?ticket="+encodeURIComponent(ticket):"https://atlas-council.sshrrgoktas.workers.dev/auth/github/finish?ticket="+encodeURIComponent(ticket);
+        // Android Chrome may refuse an automatic cross-origin 302 to
+        // atlascouncil://. A real user gesture on a return page is reliable.
+        // Do not put the preview browser session cookie on the mobile path.
+        if(target==="mobile")return githubMobileHandoffPage(ticket);
+        const location="https://atlas-council.sshrrgoktas.workers.dev/auth/github/finish?ticket="+encodeURIComponent(ticket);
         const headers=new Headers({location,"cache-control":"no-store","referrer-policy":"no-referrer"});
         headers.append("set-cookie",secureCookie(COOKIE,await encrypt(data.access_token,env.GITHUB_SESSION_SECRET),3600));
         headers.append("set-cookie",secureCookie(STATE,"",0,"/auth/github"));
