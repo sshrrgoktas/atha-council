@@ -50,5 +50,5 @@ test("Android Council WebView reports only top-level connection failures and all
  assert.match(app,/request\?\.isForMainFrame==true/);
  assert.match(app,/Konsey bağlantısı kurulamadı/);
  assert.match(app,/101 -> \{if\(::councilWeb\.isInitialized\)councilWeb\.reload\(\);return true\}/);
- assert.match(gradle,/versionName = \"0\.3-council-context\"/);
+ assert.match(gradle,/versionName = \"0\.3-council-standalone\"/);
 });
