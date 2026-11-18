@@ -54,17 +54,17 @@ test("Backups restore both conversations and profile before any APK migration",(
   assert.match(html,/Profil bilgileri geri yüklendi/);
 });
 
-test("AthalAI branding appears in page, menus, APK and model labels without old visible display names",()=>{
+test("Independent Atha Council branding appears without AthalAI UI text",()=>{
   const manifest=readFileSync(new URL("../app/src/main/AndroidManifest.xml",import.meta.url),"utf8");
-  assert.match(html,/<title>AthalAI · Atha Council<\/title>/);
-  assert.match(html,/<strong>Athal<span style="color:#28e3e9">AI<\/span><\/strong>/);
-  assert.match(html,/Atha Council · Konsey çalışma alanı/);
+  assert.match(html,/<title>Atha Council<\/title>/);
+  assert.match(html,/<strong>Atha Council<\/strong>/);
+  assert.match(html,/Bağımsız Konsey/);
   assert.match(html,/Atha Council APK güncellemesi/);
   assert.match(html,/Atha \/ ChatGPT/);
   assert.match(worker,/name:'Atha \/ ChatGPT'/);
   assert.match(manifest,/android:label="Atha Council"/);
   assert.match(manifest,/<package android:name="com\.athalai\.companion"\/>/);
-  assert.match(kotlin,/text="AthalAI"/);
+  assert.doesNotMatch(html,/<title>AthalAI|Athal<span|AthalAI amblemi/);
   assert.doesNotMatch(html,/<(?:strong|h1|h2|h3|title)[^>]*>[^<]*Atlas/i);
   assert.doesNotMatch(html,/Atlas Council uygulamanın adıdır/);
 });
