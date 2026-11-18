@@ -19,7 +19,7 @@ test("Web edits NEVER trigger signed APK publication",()=>{
  assert.match(workflow,/if: github\.event_name != 'pull_request' && github\.ref == 'refs\/heads\/main'/);
 });
 test("APK version only increments on a qualifying Android build; preserves signing",()=>{
- assert.match(gradle,/versionCode = \(System\.getenv\("GITHUB_RUN_NUMBER"\)\?\.toIntOrNull\(\) \?: 1\)/);
+ assert.match(gradle,/versionCode = \(System\.getenv\("GITHUB_RUN_NUMBER"\)\?\.toIntOrNull\(\) \?: 2\)/);
  assert.match(workflow,/gradle :app:assembleRelease/);
  assert.match(workflow,/gh release upload latest-debug atha-council\.apk/);
 });
@@ -50,5 +50,5 @@ test("Android Council WebView reports only top-level connection failures and all
  assert.match(app,/request\?\.isForMainFrame==true/);
  assert.match(app,/Konsey bağlantısı kurulamadı/);
  assert.match(app,/101 -> \{if\(::councilWeb\.isInitialized\)councilWeb\.reload\(\);return true\}/);
- assert.match(gradle,/versionName = \"0\.3-council-standalone\"/);
+ assert.match(gradle,/versionName = \"0\.3\.2-council-standalone\"/);
 });
