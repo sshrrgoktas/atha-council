@@ -423,7 +423,12 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
    callback?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode,data))
   }
  }
- private fun startLogin(){if(packageName.endsWith(".lab")){status.text="LAB test sürümünde canlı ChatGPT girişi kapalı.";return}status.text="Deneysel yerel bağlantı hazırlanıyor…";Thread {
+ private fun startLogin(){
+  if(packageName.endsWith(".lab")){
+    status.text="LAB test sürümünde canlı ChatGPT girişi kapalı."
+    return
+  }
+  status.text="Deneysel yerel bağlantı hazırlanıyor…";Thread {
   var server:ServerSocket?=null
   try {
    server=ServerSocket(0,1,java.net.InetAddress.getByName("127.0.0.1"));server.soTimeout=180000
