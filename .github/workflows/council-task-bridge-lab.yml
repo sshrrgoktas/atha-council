@@ -78,7 +78,8 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$TEST_APK" | tee /tmp/taskbridge-app-info.txt
           grep -q "package: name='com.atlascouncil.taskbridgelab'" /tmp/taskbridge-app-info.txt
           grep -q "application-label:'Atha Council TEST'" /tmp/taskbridge-app-info.txt
-          ! "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$TEST_APK" | grep -E 'android.permission.INTERNET|REQUEST_INSTALL_PACKAGES'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$TEST_APK" | grep -q "android.permission.INTERNET"
+          ! "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$TEST_APK" | grep -E 'REQUEST_INSTALL_PACKAGES|READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE'
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$TEST_APK" > /tmp/taskbridge-cert-info.txt
           if [[ -n "${ATHA_LAB_SIGNING_FILE:-}" ]]; then
             EXPECTED="$(tr -d '\r\n' < labapp/signing-certificate-sha256.txt)"
