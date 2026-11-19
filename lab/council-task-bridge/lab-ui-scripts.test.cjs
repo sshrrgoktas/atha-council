@@ -11,7 +11,7 @@ const engine=read('labapp/src/main/assets/task-bridge-engine.js');
 test('all scripts in the actual composed WebView HTML parse',()=>{
  const composed=source.replace('<!--ENGINE_HERE-->','<script>'+engine+'</script>');
  const scripts=[...composed.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)].map(m=>m[1]);
- assert.equal(scripts.length,3);
+ assert.equal(scripts.length,4);
  scripts.forEach((script,index)=>assert.doesNotThrow(()=>new vm.Script(script,{filename:'webview-inline-'+index+'.js'})));
 });
 test('LAB analyze click and on-load evaluation really update result area',()=>{
@@ -21,7 +21,7 @@ test('LAB analyze click and on-load evaluation really update result area',()=>{
  const ctx={window,document:{getElementById:id=>nodes[id]},console};vm.createContext(ctx);
  vm.runInContext(engine,ctx,{timeout:3000});
  const scripts=[...source.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)];
- assert.equal(scripts.length,2);
+ assert.equal(scripts.length,3);
  vm.runInContext(scripts[0][1],ctx,{timeout:3000});
  assert.match(nodes.out.innerHTML,/Benim anladığım/);
  assert.match(nodes.out.innerHTML,/e-kitap/);
@@ -59,4 +59,30 @@ test('live TEST model panel registers real native callbacks and updates all thre
  assert.match(node('qwen-answer').textContent,/Qwen anladı/);
  assert.match(node('llama-answer').textContent,/Llama anladı/);
  assert.match(node('gemini-answer').textContent,/anahtarı|anahtarı|anahtar/i);
+});
+
+test('OpenCode TEST needs human preview and separate explicit approval; cancellation blocks',()=>{
+ const handlers={},nodes={};
+ const get=id=>nodes[id]||(nodes[id]={value:'',hidden:false,disabled:false,textContent:'',style:{},
+   addEventListener:(kind,fn)=>{handlers[id+':'+kind]=fn;}});
+ get('history').value='Ana Konsey canlı kalacak, ayrı test yap.';
+ get('latest').value='Yalnız TEST klasörü için görev planı oluştur.';
+ let submissions=0,lastBody=null,statusQueries=0;
+ const native={tokenConfigured:()=>true,lastTask:()=>'',rememberTask:()=>{},createTask:(id,body)=>{submissions++;lastBody=JSON.parse(body)},taskStatus:()=>{statusQueries++}};
+ const ctx={window:{LabNative:native},document:{getElementById:get},console};vm.createContext(ctx);
+ const scripts=[...source.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)];
+ assert.equal(scripts.length,3);vm.runInContext(scripts[2][1],ctx,{timeout:3000});
+ assert.equal(submissions,0);
+ assert.notEqual(get('task-approve').disabled,false);
+ handlers['task-prepare:click']();
+ assert.equal(submissions,0);
+ assert.equal(get('task-approve').disabled,false);
+ handlers['task-approve:click']();
+ assert.equal(submissions,1);
+ assert.equal(lastBody.mode,'read_only_plan');assert.equal(lastBody.ownerApproved,true);
+ ctx.window.athaGatewayResult('taskCreate',{_http:201,id:'lab_12345678-1234-1234-1234-123456789012'});
+ handlers['task-refresh:click']();assert.equal(statusQueries,1);
+ get('latest').value='İptal et';handlers['latest:input']();handlers['task-prepare:click']();
+ assert.equal(get('task-approve').disabled,true);
+ assert.equal(submissions,1);
 });
