@@ -36,19 +36,23 @@ function mockUI(){
  vm.runInContext(scripts[0],ctx,{timeout:3000});
  return {nodes,handlers,node,appended,native,ctx};
 }
-test('chat sends one normal message, gets three separate model bubbles, keeps context for next turn',()=>{
+test('independent chat responses: fast Qwen renders before slower Llama; identity context carried',()=>{
  const {node,handlers,native,appended,ctx}=mockUI();
  node('message').value='Ana Konsey uygulamasına dokunma.';
  handlers['compose:submit']({preventDefault(){}});
  assert.equal(native.lastCompare.body.latest,'Ana Konsey uygulamasına dokunma.');
  assert.equal(node('send').disabled,true);
  const req=native.lastCompare.id;
- ctx.window.athaGatewayResult(req,{_http:200,results:{gemini:{status:'not_configured'},qwen:{status:'ok',answer:'Ana korunsun'},llama:{status:'ok',answer:'TEST ayrı'}}});
+ ctx.window.athaGatewayResult(req+'_qwen',{_http:200,results:{qwen:{status:'ok',answer:'Qwen: Ana korunsun'}}});
+ assert.equal(node('send').disabled,true,'slow model still pending; fast response already visible');
+ assert.ok(appended.some(el=>el.children?.some(ch=>ch.textContent==='Qwen: Ana korunsun')));
+ ctx.window.athaGatewayResult(req+'_llama',{_http:200,results:{llama:{status:'ok',answer:'Llama: TEST ayrı'}}});
  assert.equal(node('send').disabled,false);
- assert.ok(appended.some(el=>el.children?.some(ch=>ch.textContent==='Ana korunsun')));
+ assert.ok(appended.some(el=>el.children?.some(ch=>ch.textContent==='Llama: TEST ayrı')));
  node('message').value='Peki sadece TEST uygulamasını güncelle.';
  handlers['compose:submit']({preventDefault(){}});
  assert.match(native.lastCompare.body.context,/Ana Konsey uygulamasına dokunma/);
+ assert.match(native.lastCompare.body.context,/qwen: Qwen: Ana korunsun/);
 });
 test('report is opt-in and can be reviewed by reference without exposing credentials',()=>{
  const {node,handlers,native,ctx}=mockUI();
