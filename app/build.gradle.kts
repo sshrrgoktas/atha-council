@@ -8,13 +8,13 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     defaultConfig {
-        applicationId = "com.atlascouncil.taskbridgelab"
+        applicationId = "com.atlascouncil.app"
         minSdk = 26
         targetSdk = 35
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2)
-        versionName = "0.3.2-taskbridge-lab"
+        versionName = "0.3.2-council-standalone"
     }
-    buildTypes { getByName("debug") { /* Keep stable standalone LAB identity across builds. */ } }
+    buildTypes { getByName("debug") { applicationIdSuffix = ".standalone" } }
     val signingFile = System.getenv("ATLAS_SIGNING_FILE")
     if (!signingFile.isNullOrBlank()) {
         signingConfigs {
