@@ -86,3 +86,19 @@ test('directed Qwen/Llama conversation and follow-ups do not make both answer',(
  x=send('Selammm');
  assert.equal(x.body.models.join(','),'qwen,llama','new generic greeting goes to both');
 });
+
+test('long multi-model story is retained for Llama consolidation instead of an 800-char excerpt',()=>{
+ const {node,handlers,native,ctx}=mockUI();
+ function send(v){node('message').value=v;handlers['compose:submit']({preventDefault(){}});return native.lastCompare;}
+ function answer(req,model,text){ctx.window.athaGatewayResult(req.id+'_'+model,{_http:200,results:{[model]:{status:'ok',answer:text}}});}
+ let req=send('Llama, Elif hikâyesini başlat.');
+ const paragraph='Elif ormanda kayboldu, kapının ardındaki sesi dinledi. '.repeat(50);
+ answer(req,'llama',paragraph);
+ req=send('Qwen sen devam ettir.');
+ answer(req,'qwen','Qwen devamı: '+paragraph);
+ req=send('Llama geçmişe dön ve bu hikâyeyi tek metin haline getir.');
+ assert.equal(req.body.models.join(','),'llama');
+ assert.ok(req.body.context.length>3000,'full prior story must fit in test context');
+ assert.match(req.body.context,/Elif ormanda kayboldu/);
+ assert.match(req.body.context,/Qwen devamı/);
+});
