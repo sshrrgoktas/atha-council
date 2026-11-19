@@ -291,7 +291,11 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
   nativeSettingsDialog=android.app.AlertDialog.Builder(this).setTitle("Bağlantılar ve güncellemeler").setView(nativeScroll).setPositiveButton("Kapat"){d,_->d.dismiss()}.create()
   councilWeb=WebView(this).apply {
    settings.javaScriptEnabled=true
-   addJavascriptInterface(CouncilBridge(),"AtlasNative")
+   settings.blockNetworkLoads=true
+   settings.domStorageEnabled=false
+   settings.allowFileAccess=false
+   settings.allowContentAccess=false
+   // LAB APK: no native bridge; prevent production account operations from this test app.
    settings.domStorageEnabled=true
    settings.cacheMode=WebSettings.LOAD_NO_CACHE
    clearHistory()
@@ -344,21 +348,25 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
       startGoogleLogin()
       return true
      }
-     return if(u.scheme=="https"&&u.host=="atlas-council.sshrrgoktas.workers.dev")false else {
+     return if(true){true} else {
       try{startActivity(Intent(Intent.ACTION_VIEW,u))}catch(_:Exception){}
       true
      }
     }
    }
    clearCache(true)
-   loadUrl("https://atlas-council.sshrrgoktas.workers.dev/council-v2?source=android&refresh="+System.currentTimeMillis())
+   val labPage=assets.open("task-bridge-lab.html").bufferedReader().use{it.readText()}
+   val labEngine=assets.open("task-bridge-engine.js").bufferedReader().use{it.readText()}
+   val safeLabEngine=labEngine.replace("</script","<\\/script",ignoreCase=true)
+   loadDataWithBaseURL(null,labPage.replace("<!--ENGINE_HERE-->","<script>"+safeLabEngine+"</script>"),"text/html","UTF-8",null)
   }
    layout.addView(councilWeb,LinearLayout.LayoutParams(-1,-1))
   setContentView(layout)
   // Web UI updates arrive from Cloudflare; APK updates are checked only on request.
   val incoming=intent?.data;if(incoming?.scheme=="atlascouncil"&&incoming.host=="google-auth"){incoming.getQueryParameter("ticket")?.let{completeGoogleLogin(it)}}else if(incoming?.scheme=="atlascouncil"&&incoming.host=="github-auth"){incoming.getQueryParameter("ticket")?.let{completeGitHubLogin(it)}}
   // Future releases appear in-app without asking users to find or download an APK file.
-  checkForUpdates(false)
+  // LAB is offline; never request production APK updates.
+  if(!BuildConfig.APPLICATION_ID.endsWith(".taskbridgelab"))checkForUpdates(false)
  }
 
  @Deprecated("Uses the platform document picker for WebView attachments")
@@ -676,7 +684,7 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
  }
  override fun onOptionsItemSelected(item:MenuItem):Boolean {
   when(item.itemId){
-   100 -> {if(::nativeSettingsDialog.isInitialized)nativeSettingsDialog.show();return true}
+   100 -> {Toast.makeText(this,"TEST sürümünde bağlantılar kapalı.",Toast.LENGTH_SHORT).show();return true}
    101 -> {if(::councilWeb.isInitialized)councilWeb.reload();return true}
    102 -> {showTaskBridgeLab();return true}
   }
