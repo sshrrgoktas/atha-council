@@ -6,7 +6,7 @@
  * AI messages are contextual suggestions, NEVER approval or proof of completion.
  */
 const VAGUE=/^(?:(?:hadi|tamam|evet|olur|lütfen|canım|aşkım|balım|şimdi|artık|bi|bir|de|da|onu|bunu|şunu|oraya|oradan|yine|aynı|eskisi|gibi|hemen|yap|et|başla|devam|geri|dön|düzelt|aktar|kaydet|gönder|istiyorum|sen|bana|da|bari|hayır|yok|yapınca|yaptım|diye|söyle|gel|git|bekliyorum|nerde|nerede|nereye|olsun|olsunlar|bunu|onları|yapma|dokunma|sakın|sadece|önce|sonra|biraz|aynen|çalıştır|test|et|edelim|yapalım|yapın)[\s.,!?]*)+$/iu;
-const STOP=/\b(?:dur|durdur|iptal|vazgeç|silme|dokunma|yapma|bozma)\b/iu;
+const STOP=/(?:^|[\s.,!?])(?:dur|durdur|iptal|vazgeç|silme|dokunma|yapma|bozma)(?=$|[\s.,!?])/iu;
 const ACTION=/\b(?:oluştur|hazırla|yap|dönüştür|ekle|düzelt|geliştir|kur|test et|çalıştır|aktar|kaydet|yayınla|sil|kaldır|güncelle)\b/iu;
 const TASK_SIGNALS=[
  {id:'ebook',regex:/e[ -]?kitap|sayfa(?:ları)? (?:çevir|çevril)|kitab[ıa] dönüştür/iu,objective:'Kaynak hikâyeden çevrilebilir sayfalı dijital e-kitap hazırla',deliverables:['Mobil uyumlu HTML/CSS/JavaScript e-kitap','İleri/geri sayfa kontrolleri ve sayfa numarası','Kaynak metne sadık içerik'],missing:['verified_story_text','target_workspace']},
