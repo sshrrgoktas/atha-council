@@ -50,11 +50,33 @@ const taskPrefix='opencode-lab:';
 const validTaskId=id=>typeof id==='string'&&/^lab_[a-f0-9-]{36}$/.test(id);
 const safeJson=async r=>{try{return await r.json()}catch{return null}};
 const isOwner=(r,env)=>!!env.TEST_ACCESS_TOKEN&&r.headers.get('authorization')==='Bearer '+env.TEST_ACCESS_TOKEN;
-const isAgent=(r,env)=>!!env.TEST_OPENCODE_AGENT_TOKEN&&r.headers.get('authorization')==='Agent '+env.TEST_OPENCODE_AGENT_TOKEN;
+// Public-key verification avoids copying any Council or TEST owner secret to the PC agent.
+// This public key belongs only to C:/Users/seher/Documents/AthaCouncil-TaskBridge-TEST/agent-private.pem.
+const labAgentPublicX='kwPy4-ddR0lkIMgnwQ8Kd5Elal0cxfPH6E4BUOcFx6o';
+const bytes=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((s.length+3)%4)),c=>c.charCodeAt(0));
+const base64url=arr=>btoa(String.fromCharCode(...new Uint8Array(arr))).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');
+async function isAgent(r,env,path){
+ if(!env.TASKS)return false;
+ const when=r.headers.get('x-test-time')||'',nonce=r.headers.get('x-test-nonce')||'',sig=r.headers.get('x-test-signature')||'';
+ if(!/^\\d{13}$/.test(when)||Math.abs(Date.now()-Number(when))>90000||!/^[a-f0-9-]{36}$/.test(nonce)||!sig)return false;
+ const data=await r.clone().text();
+ if(data.length>3200)return false;
+ const digest=base64url(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(data)));
+ const signed='POST\\n'+path+'\\n'+when+'\\n'+nonce+'\\n'+digest;
+ try{
+   const key=await crypto.subtle.importKey('jwk',{kty:'OKP',crv:'Ed25519',x:labAgentPublicX},'Ed25519',false,['verify']);
+   const ok=await crypto.subtle.verify('Ed25519',key,bytes(sig),new TextEncoder().encode(signed));
+   if(!ok)return false;
+   const replay='test-agent-nonce:'+nonce;
+   if(await env.TASKS.get(replay))return false;
+   await env.TASKS.put(replay,'1',{expirationTtl:180});
+   return true;
+ }catch{return false}
+}
 async function taskRoutes(request,env,path){
   if(!env.TASKS)return response({error:'test_queue_not_configured'},503);
   const owner=path.startsWith('/task/');
-  if(owner?!isOwner(request,env):!isAgent(request,env))return response({error:'unauthorized_test_only'},401);
+  if(owner?!isOwner(request,env):!(await isAgent(request,env,path)))return response({error:'unauthorized_test_only'},401);
   if(Number(request.headers.get('content-length')||0)>3300)return response({error:'too_large'},413);
   const body=request.method==='POST'?await safeJson(request):null;
   if(request.method==='POST'&&!body)return response({error:'bad_json'},400);
