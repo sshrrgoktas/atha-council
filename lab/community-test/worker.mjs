@@ -72,6 +72,13 @@ async function api(req,env,url){
    const history=humanHistory(body.history);
    return response(await modelResponse(env,model,history,latest));
  }
+ if(url.pathname==='/api/report/status'){
+   const id=clean(body.id,64);
+   if(!/^report_[a-f0-9-]{36}$/.test(id))return response({error:'invalid_report_id'},400);
+   const record=await env.COMMUNITY.get('test-report:'+id,'json');
+   if(!record||record.testerId!==tester.testerId)return response({found:false,id},200);
+   return response({found:true,id,status:record.status,createdAt:record.createdAt,source:record.source});
+ }
  if(url.pathname==='/api/report'){
    if(!await dailyQuota(env,token))return response({error:'daily_test_quota_reached'},429);
    const label=clean(body.label,100),actual=clean(body.actual,600),expected=clean(body.expected,600);
@@ -82,7 +89,7 @@ async function api(req,env,url){
      label,actual,expected,messages,clientVersion:'web-beta-1',status:'needs_review',
      productionAffected:false,retentionDays:7};
    await env.COMMUNITY.put('test-report:'+id,JSON.stringify(record),{expirationTtl:604800});
-   return response({saved:true,id,status:'needs_review',retentionDays:7},201);
+   return response({saved:true,id,status:'needs_review',retentionDays:7,receipt:'TEST_KV_WRITE_ACKNOWLEDGED'},201);
  }
  return response({error:'not_found'},404);
 }
