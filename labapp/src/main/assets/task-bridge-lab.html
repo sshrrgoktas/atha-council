@@ -146,7 +146,7 @@
  get('task-prepare').addEventListener('click',()=>{
    const context=prior.value.trim(),now=latest.value.trim();
    if(!now){say('Önce son isteğini yaz.');return;}
-   if(/(?:^|[.!?\s])(?:iptal|vazgeç|durdur)(?:$|[.!?\s])/i.test(now)){say('Bu bir durdurma talimatı. Görev kuyruğa alınmaz.');invalidate();return;}
+   if(/(?:^|[.!?\s])(?:iptal|vazgeç|durdur)(?:$|[.!?\s])/i.test(now.toLocaleLowerCase('tr-TR'))){say('Bu bir durdurma talimatı. Görev kuyruğa alınmaz.');invalidate();return;}
    prepared={context,latest:now};
    preview.hidden=false;preview.textContent='Önceki bağlam: '+context+'\n\nSon karar: '+now+
      '\n\nİşçi: yalnız Atha Council TEST / OpenCode plan modu. Dosya düzenleme ve yayınlama YASAK.';
