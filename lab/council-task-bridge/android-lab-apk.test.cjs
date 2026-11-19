@@ -18,8 +18,8 @@ test('only isolated TEST connection can use network; web content stays offline',
  assert.match(manifest,/android.permission.INTERNET/);
  assert.doesNotMatch(manifest,/REQUEST_INSTALL_PACKAGES|android:scheme/);
  for(const marker of ['blockNetworkLoads','allowFileAccess','allowContentAccess','domStorageEnabled','loadDataWithBaseURL','task-bridge-engine.js'])assert.ok(activity.includes(marker),marker);
- assert.match(activity,/addJavascriptInterface\\(LabNativeBridge\\(\\), "LabNative"\\)/);
- assert.match(activity,/atha-council-taskbridge-lab\\.sshrrgoktas\\.workers\\.dev/);
+ assert.ok(activity.includes('web.addJavascriptInterface(LabNativeBridge(), "LabNative")'));
+ assert.ok(activity.includes('atha-council-taskbridge-lab.sshrrgoktas.workers.dev'));
  assert.doesNotMatch(activity,/api\\.openai|atlas-council\\.sshrrgoktas|athalai-mobile/);
 });
 test('approved Council app files stay unchanged from separation base',()=>{
