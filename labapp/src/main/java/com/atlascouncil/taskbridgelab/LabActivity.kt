@@ -37,7 +37,7 @@ class LabActivity : Activity() {
       try {
         connection = URL(gateway + path).openConnection() as HttpURLConnection
         connection.connectTimeout = 12000
-        connection.readTimeout = 45000
+        connection.readTimeout = 110000
         connection.setRequestProperty("Accept", "application/json")
         connection.setRequestProperty("Cache-Control", "no-store")
         if (body != null) {
@@ -53,7 +53,7 @@ class LabActivity : Activity() {
         }
         val status = connection.responseCode
         val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-        val reply = stream?.bufferedReader()?.use { it.readText().take(16000) } ?: "{}"
+        val reply = stream?.bufferedReader()?.use { it.readText().take(34000) } ?: "{}"
         val parsed = try { JSONObject(reply) } catch (_: Exception) { JSONObject() }
         parsed.put("_http", status)
         result(id, parsed)
@@ -127,13 +127,13 @@ class LabActivity : Activity() {
     }
 
     @JavascriptInterface fun compare(id: String, raw: String) {
-      if (!id.matches(Regex("[A-Za-z0-9_-]{1,60}")) || raw.length > 2600) return
+      if (!id.matches(Regex("[A-Za-z0-9_-]{1,60}")) || raw.length > 17000) return
       val data = try { JSONObject(raw) } catch (_: Exception) {
         result(id, JSONObject().put("error", "Geçersiz test isteği")); return
       }
       val context = data.optString("context").trim()
       val latest = data.optString("latest").trim()
-      if (context.length > 1000 || latest.isEmpty() || latest.length > 600) {
+      if (context.length > 14000 || latest.isEmpty() || latest.length > 600) {
         result(id, JSONObject().put("error", "Test metni çok uzun veya boş")); return
       }
       // Hard-coded whitelist: the device can never dispatch an arbitrary URL.
