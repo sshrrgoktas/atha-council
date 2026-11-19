@@ -64,7 +64,12 @@ if(!isAdmin){
  if(fragment){$('invite').value=fragment;window.history.replaceState(null,'',location.pathname)}
  const remembered=session();
  if(fragment)join(fragment).catch(()=>{$('joinModal').hidden=false;$('joinStatus').textContent='Davet geçersiz veya süresi dolmuş.'});
- else if(remembered)join(remembered).catch(()=>{forgetInvite();$('joinModal').hidden=false});
+ else if(remembered)join(remembered).catch(e=>{
+   // A temporary network failure must NOT erase a remembered invitation.
+   $('joinModal').hidden=false;
+   $('invite').value=remembered;
+   $('joinStatus').textContent='Önceki TEST kimliğin bulundu, ancak bağlantı doğrulanamadı. Tekrar Katıl\'a bas. '+(e.message||'');
+ });
  $('joinBtn').addEventListener('click',async()=>{try{$('joinStatus').textContent='Bağlanılıyor…';await join($('invite').value.trim())}catch(e){$('joinStatus').textContent='Davet doğrulanamadı: '+e.message}});
  $('composer').addEventListener('submit',async e=>{
   e.preventDefault();if(busy||!session())return;const latest=$('message').value.trim();if(!latest)return;
