@@ -7,6 +7,13 @@ on:
       - 'test/lab-independent-package.test.mjs'
       - 'settings.gradle.kts'
       - '.github/workflows/council-task-bridge-lab.yml'
+  push:
+    branches:
+      - lab/council-task-bridge-isolated-20261119
+    paths:
+      - 'labapp/**'
+      - 'lab/council-task-bridge/**'
+      - '.github/workflows/council-task-bridge-lab.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,7 +28,7 @@ jobs:
           node-version: '22'
       - name: Confirm original Council app source is unchanged
         run: node --test test/unified-mobile.test.mjs test/lab-independent-package.test.mjs
-      - name: Verify offline bridge interpretation and mocked queue
+      - name: Verify offline Bridge and mock queue
         run: node --test lab/council-task-bridge/*.test.cjs
       - name: Run Turkish context benchmark
         run: node lab/council-task-bridge/turkish-shadow-benchmark.cjs
@@ -32,24 +39,65 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-      - name: Ensure Android SDK platform
+      - name: Ensure Android SDK
         run: |
           test -d "$ANDROID_HOME"
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
-      - name: Build ONLY standalone TEST APK module
-        run: gradle :labapp:assembleDebug --no-daemon
-      - name: Verify compiled APK identity and zero permissions
+      # Secrets are ONLY touched on the owned LAB branch, never on pull_request builds.
+      - name: Restore private stable LAB key when configured
+        if: github.event_name == 'push' && github.ref == 'refs/heads/lab/council-task-bridge-isolated-20261119'
+        env:
+          LAB_B64: ${{ secrets.ATHA_LAB_KEYSTORE_BASE64 }}
+          LAB_STORE: ${{ secrets.ATHA_LAB_STORE_PASSWORD }}
+          LAB_KEY: ${{ secrets.ATHA_LAB_KEY_PASSWORD }}
+          LAB_ALIAS: ${{ secrets.ATHA_LAB_KEY_ALIAS }}
         run: |
-          APK="labapp/build/outputs/apk/debug/labapp-debug.apk"
-          test -s "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee /tmp/taskbridge-apk-info.txt
-          grep -q "package: name='com.atlascouncil.taskbridgelab'" /tmp/taskbridge-apk-info.txt
-          grep -q "application-label:'Atha Council TEST'" /tmp/taskbridge-apk-info.txt
-          ! "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK" | grep -E 'android.permission.INTERNET|REQUEST_INSTALL_PACKAGES'
-      - name: Upload standalone TEST APK
+          if [[ -z "$LAB_B64" || -z "$LAB_STORE" || -z "$LAB_KEY" || -z "$LAB_ALIAS" ]]; then
+            echo "::warning::Dedicated LAB signing secrets absent: signed update APK will NOT be created."
+            exit 0
+          fi
+          umask 077
+          printf '%s' "$LAB_B64" | base64 --decode > "$RUNNER_TEMP/atha-council-test-only.p12"
+          echo "ATHA_LAB_SIGNING_FILE=$RUNNER_TEMP/atha-council-test-only.p12" >> "$GITHUB_ENV"
+          echo "ATHA_LAB_STORE_PASSWORD=$LAB_STORE" >> "$GITHUB_ENV"
+          echo "ATHA_LAB_KEY_PASSWORD=$LAB_KEY" >> "$GITHUB_ENV"
+          echo "ATHA_LAB_KEY_ALIAS=$LAB_ALIAS" >> "$GITHUB_ENV"
+      - name: Build only the TEST package
+        run: |
+          if [[ -n "${ATHA_LAB_SIGNING_FILE:-}" ]]; then
+            gradle :labapp:assembleRelease --no-daemon
+            echo "TEST_APK=labapp/build/outputs/apk/release/labapp-release.apk" >> "$GITHUB_ENV"
+          else
+            gradle :labapp:assembleDebug --no-daemon
+            echo "TEST_APK=labapp/build/outputs/apk/debug/labapp-debug.apk" >> "$GITHUB_ENV"
+          fi
+      - name: Validate package, permissions and stable certificate
+        run: |
+          test -s "$TEST_APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$TEST_APK" | tee /tmp/taskbridge-app-info.txt
+          grep -q "package: name='com.atlascouncil.taskbridgelab'" /tmp/taskbridge-app-info.txt
+          grep -q "application-label:'Atha Council TEST'" /tmp/taskbridge-app-info.txt
+          ! "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$TEST_APK" | grep -E 'android.permission.INTERNET|REQUEST_INSTALL_PACKAGES'
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$TEST_APK" > /tmp/taskbridge-cert-info.txt
+          if [[ -n "${ATHA_LAB_SIGNING_FILE:-}" ]]; then
+            EXPECTED="$(tr -d '\r\n' < labapp/signing-certificate-sha256.txt)"
+            grep -i "Signer #1 certificate SHA-256 digest: $EXPECTED" /tmp/taskbridge-cert-info.txt
+          fi
+      - name: Upload stable signed TEST update APK
+        if: env.ATHA_LAB_SIGNING_FILE != ''
         uses: actions/upload-artifact@v4
         with:
-          name: atha-council-taskbridge-LAB-APK
-          path: labapp/build/outputs/apk/debug/*.apk
+          name: atha-council-TEST-stable-signed-APK
+          path: labapp/build/outputs/apk/release/labapp-release.apk
           retention-days: 7
+      - name: Upload temporary DEBUG lab APK (not updateable)
+        if: env.ATHA_LAB_SIGNING_FILE == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: atha-council-TEST-TEMP-DEBUG-NOT-UPDATEABLE
+          path: labapp/build/outputs/apk/debug/labapp-debug.apk
+          retention-days: 7
+      - name: Destroy temporary local signing copy
+        if: always()
+        run: rm -f "$RUNNER_TEMP/atha-council-test-only.p12"
