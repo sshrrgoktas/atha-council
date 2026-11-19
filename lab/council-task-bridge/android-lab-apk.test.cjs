@@ -40,3 +40,11 @@ test('HTML uses bundled analyzer and never sends work to real OpenCode',()=>{
  assert.match(html,/OpenCode'a gönderildi mi/);
  assert.doesNotMatch(html,/\bfetch\s*\(|XMLHttpRequest|navigator\.sendBeacon|<script\s+src/);
 });
+
+test('one-time test menu can be hidden locally without a second APK',()=>{
+ assert.match(kotlin,/setNeutralButton\("Testi bitir, gizle"\)/);
+ assert.match(kotlin,/getSharedPreferences\("atha-council-task-bridge-lab",MODE_PRIVATE\)/);
+ assert.match(kotlin,/putBoolean\("hidden",true\)/);
+ assert.match(kotlin,/getBoolean\("hidden",false\)/);
+ assert.match(kotlin,/invalidateOptionsMenu\(\)/);
+});
