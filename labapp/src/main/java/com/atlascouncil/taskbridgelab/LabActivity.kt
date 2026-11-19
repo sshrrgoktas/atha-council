@@ -139,7 +139,20 @@ class LabActivity : Activity() {
       // Hard-coded whitelist: the device can never dispatch an arbitrary URL.
       // Independent requests: Qwen and Llama deliver answers as soon as each is ready.
       // Neither waits for Gemini (disabled) or the slower other model.
-      for (model in listOf("qwen", "llama")) {
+      val requested = data.optJSONArray("models")
+      val modelsToAsk = mutableListOf<String>()
+      if (requested != null && requested.length() in 1..2) {
+        for (i in 0 until requested.length()) {
+          val model = requested.optString(i)
+          if (model !in listOf("qwen", "llama") || modelsToAsk.contains(model)) {
+            result(id, JSONObject().put("error", "Geçersiz TEST model seçimi")); return
+          }
+          modelsToAsk.add(model)
+        }
+      } else {
+        modelsToAsk.addAll(listOf("qwen", "llama"))
+      }
+      for (model in modelsToAsk) {
         val models = org.json.JSONArray().put(model)
         request(id + "_" + model, "/compare", JSONObject()
           .put("context", context)
