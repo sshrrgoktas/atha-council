@@ -28,7 +28,7 @@ function interpretCouncilTask(turns,options={}){
  const records=turns.filter(t=>t&&typeof t==='object').slice(-80);
  const {latest,anchor}=findIntent(records);
  if(!latest)return {schemaVersion:1,status:'needs_context',reason:'NO_HUMAN_REQUEST',readyForApproval:false};
- const lastStop=STOP.test(latest)&&!/(?:yapma (?:demiyorum|dediğim)|yapma,? (?:bunu|şunu) değil)/iu.test(latest);
+ const lastStop=STOP.test(latest.toLocaleLowerCase('tr-TR'))&&!/(?:yapma (?:demiyorum|dediğim)|yapma,? (?:bunu|şunu) değil)/iu.test(latest);
  if(lastStop)return {schemaVersion:1,status:'blocked',reason:'USER_STOP_OR_PROTECTION',latestUserMessage:latest,readyForApproval:false,workerDispatchAllowed:false};
  const source=anchor||latest;
  const profile=TASK_SIGNALS.find(p=>p.id!=='generic'&&p.regex.test(source))||TASK_SIGNALS.find(p=>p.id==='generic'&&p.regex.test(source));
