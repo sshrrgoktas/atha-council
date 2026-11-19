@@ -4,7 +4,7 @@
 *{box-sizing:border-box}body{background:#091521;color:#ecf7fa;font:15px system-ui,sans-serif;margin:0;padding:17px;line-height:1.48}h1{font-size:21px;margin:0;color:#66e4d1}h2{font-size:16px;color:#a9f2e5}p{margin:8px 0 14px}.muted{color:#a6bbc5;font-size:13px}.box{background:#142637;border:1px solid #305162;border-radius:13px;padding:12px;margin:12px 0}.safe{color:#9df1cf}label{display:block;margin:10px 0 5px}textarea{width:100%;min-height:78px;background:#091c29;border:1px solid #567080;color:#fff;border-radius:9px;padding:11px;font:15px system-ui}button{background:#2b8c83;color:white;padding:12px;border:0;border-radius:10px;font:600 14px system-ui;margin:7px 7px 2px 0}button.secondary{background:#294453}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;border-left:3px solid #56a9a4;padding:10px;background:#091c29;border-radius:6px}strong{color:#fff}.red{color:#ffb5a8}ul{padding-left:20px}.model-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}.model-card{border:1px solid #305162;border-radius:9px;padding:10px;background:#0b2030}.model-card p{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0}.model-card strong{color:#66e4d1}#bridge-status{font-weight:600}
 </style></head><body>
 <h1>🧠 Atha Task Bridge · LAB</h1>
-<p class="muted">Bağımsız Konsey'in içinde çevrimdışı anlama testi. Gerçek ajan çalıştırmaz, sohbetlerini değiştirmez, hiçbir yere veri göndermez.</p>
+<p class="muted">Task Bridge ilk yorumu cihaz içinde üretir. Gerçek model karşılaştırmasını veya OpenCode görevini yalnızca sen başlatırsan ayrı TEST sunucusuna gönderir. ANA Konsey'e dokunulmaz.</p>
 <div class="box"><strong class="safe">✓ Yalnız test</strong><p class="muted">Konsey ve AthalAI'ye dokunmadan istediğin kadar karışık komut yaz. Kasıtlı olarak hata bulabiliriz.</p></div>
 <label for="history">Önceki isteğin (bağlam)</label>
 <textarea id="history" placeholder="Örnek: Hikâyeyi sayfaları çevrilebilir e-kitaba dönüştür">Hikâyeyi sayfaları çevrilebilir e-kitaba dönüştür</textarea>
@@ -31,7 +31,7 @@
 </section>
 <details class="box" id="opencode-lab-panel">
 <summary><strong>OpenCode · TEST görev işçisi</strong> <span class="muted">(yalnız onaylı plan)</span></summary>
-<p class="muted">Görev önizlemesi oluştur; onaylamadan hiçbir yere gönderilmez. OpenCode eski Konsey odasında görünmez, sadece ayrı TEST klasöründe plan yapar. Dosya değiştiremez.</p>
+<p class="muted">Görev önizlemesi oluştur; onaylamadan hiçbir yere gönderilmez. OpenCode eski Konsey odasında görünmez, sadece ayrı TEST klasöründe plan yapar. Dosya değiştiremez. Onayladığın görev kayıtları ayrı TEST sunucusunda en fazla 24 saat saklanır.</p>
 <button id="task-prepare" type="button" class="secondary">İş emrini önizle</button>
 <div id="task-preview" class="box" hidden></div>
 <button id="task-approve" type="button" disabled>Onayla ve TEST OpenCode kuyruğuna gönder</button>
