@@ -77,7 +77,7 @@ if(isAdmin){
    const root=$('adminReports');root.replaceChildren();
    for(const r of out.reports){
     const el=document.createElement('div');el.className='report';
-    const h=document.createElement('h3');h.textContent=r.label+' · '+r.testerId;el.appendChild(h);
+    const h=document.createElement('h3');h.textContent=r.label+' · '+(r.testerId||'Android TEST');el.appendChild(h);
     for(const [key,value] of [['Rapor kodu',r.id],['Beklenen',r.expected],['Gerçek',r.actual],['Zaman',r.createdAt],['Durum',r.status]]){
       const p=document.createElement('p');p.textContent=key+': '+(value||'—');el.appendChild(p)}
     if(r.messages?.length){const pre=document.createElement('pre');pre.textContent=JSON.stringify(r.messages,null,2);el.appendChild(pre)}
