@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-  <!-- Offline-only TEST app with no added permissions or OAuth callbacks. -->
+  <!-- TEST-only network permission: native client targets only its isolated LAB gateway. -->
+  <uses-permission android:name="android.permission.INTERNET"/>
   <application android:label="Atha Council TEST" android:icon="@drawable/lab_icon" android:roundIcon="@drawable/lab_icon"
     android:theme="@android:style/Theme.Material.Light.NoActionBar" android:usesCleartextTraffic="false">
     <activity android:name=".LabActivity" android:exported="true">
