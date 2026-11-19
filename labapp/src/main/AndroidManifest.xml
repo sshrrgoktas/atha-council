@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Intentionally NO INTERNET, storage, install or production OAuth permissions. -->
+  <application android:label="Atha Council TEST" android:icon="@drawable/lab_icon" android:roundIcon="@drawable/lab_icon"
+    android:theme="@android:style/Theme.Material.Light.NoActionBar" android:usesCleartextTraffic="false">
+    <activity android:name=".LabActivity" android:exported="true">
+      <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+    </activity>
+  </application>
+</manifest>
