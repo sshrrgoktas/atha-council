@@ -99,9 +99,23 @@ if(!isAdmin){
    const out=await call('/api/report',{invite:session(),label:$('label').value.trim(),actual:$('actual').value.trim(),
      expected:$('expected').value.trim(),consent:true,includeTranscript:$('shareMessages').checked,
      messages:$('shareMessages').checked?history.slice(-8):[]});
-   $('reportStatus').textContent='Rapor gönderildi ✅';
+   if(!out.saved||!/^report_[a-f0-9-]{36}$/.test(out.id||''))throw new Error('Sunucu geçerli bir rapor makbuzu vermedi.');
+   $('reportStatus').textContent='Rapor alındı, kayıt doğrulanıyor… '+out.id;
+   let receipt=null;
+   for(let attempt=0;attempt<4;attempt++){
+     try{receipt=await call('/api/report/status',{invite:session(),id:out.id});}
+     catch(e){receipt=null;}
+     if(receipt?.found===true)break;
+     await new Promise(resolve=>setTimeout(resolve,800*(attempt+1)));
+   }
+   if(!receipt?.found){
+     $('reportStatus').textContent='Rapor makbuzu oluşturuldu ancak kaydı henüz doğrulayamadık: '+out.id+
+       '\\nBu kodu sakla. Pencereyi kapatmıyorum, daha sonra tekrar kontrol edilebilir.';
+     return;
+   }
+   $('reportStatus').textContent='Rapor gönderildi ✅ · '+out.id;
    $('status').textContent='Rapor gönderildi ✅ · '+out.id;
-   // Close only after the server confirms persistence; on errors keep the form visible.
+   // Auto-close only after report can be read back from TEST storage.
    setTimeout(()=>{
      $('reportModal').hidden=true;
      $('reportStatus').textContent='';
@@ -112,12 +126,15 @@ if(!isAdmin){
  });
 }
 if(isAdmin){
- let reportCursor=null;
+ let reportCursor=null,adminBusy=false;
  const mark=document.createElement('style');mark.textContent='#adminApp[hidden]{display:none}';document.head.appendChild(mark);
  $('loadReports').addEventListener('click',async()=>{
+  if(adminBusy)return;
+  adminBusy=true;
+  $('adminStatus').textContent='TEST rapor havuzu güncelleniyor…';
   try{const resp=await fetch('/api/admin/list'+(reportCursor?'?cursor='+encodeURIComponent(reportCursor):''),{headers:{authorization:'Bearer '+$('adminKey').value.trim()},cache:'no-store'});
    const out=await resp.json();if(!resp.ok)throw new Error(out.error||'Yetki hatası');
-   $('adminStatus').textContent=out.reports.length+' rapor · '+out.pagination;
+   $('adminStatus').textContent=out.reports.length+' rapor · '+out.pagination+' · Son kontrol: '+new Date().toLocaleTimeString('tr-TR');
    const root=$('adminReports');if(!reportCursor)root.replaceChildren();
    for(const r of out.reports){
     const el=document.createElement('div');el.className='report';
@@ -135,7 +152,15 @@ if(isAdmin){
    reportCursor=out.nextCursor||null;
    $('loadReports').textContent=reportCursor?'Sonraki raporları getir':'Raporları yenile';
   }catch(e){$('adminStatus').textContent='Raporlar alınamadı: '+e.message}
+  finally{adminBusy=false}
  });
+ // Refresh from the first page regularly, except while the owner is editing a report.
+ setInterval(()=>{
+   const target=document.activeElement;
+   if(!document.hidden&&$('adminKey').value.trim()&&!adminBusy&&!($('adminReports').contains(target))) {
+     reportCursor=null;$('loadReports').click();
+   }
+ },30000);
 }
 })();
 </script></body></html>
