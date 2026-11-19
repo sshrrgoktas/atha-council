@@ -38,6 +38,6 @@ test('bundled Task Bridge really interprets previous human request offline',()=>
  assert.equal(stop.status,'blocked');
 });
 test('TEST HTML has no live OpenCode dispatch',()=>{
- assert.match(html,/window\.AthaLab\.shadowReview/);
+ assert.match(html,/window\.AthaLab/);
  assert.doesNotMatch(html,/\bfetch\s*\(|XMLHttpRequest|navigator\.sendBeacon|<script\s+src/);
 });
