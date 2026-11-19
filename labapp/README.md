@@ -5,8 +5,12 @@ This is a **separate Android module** from the standalone Council production app
 - TEST package: `com.atlascouncil.taskbridgelab`
 - Launcher: `Atha Council TEST`
 - Production Council package is unchanged
-- No INTERNET permission, live Cloudflare calls, OAuth, PC tunnel or OpenCode dispatch
-- Test is purely local. A future background Council bridge requires a separate reviewed server feature.
+- TEST has INTERNET permission **only** for its independent, fixed Cloudflare LAB gateway (native request layer); HTML cannot fetch arbitrary internet resources.
+- TEST gateway: `atha-council-taskbridge-lab.sshrrgoktas.workers.dev`. Not the existing `atlas-council` Worker.
+- Real Qwen and Llama use isolated Cloudflare Workers AI. Gemini requires a newly created TEST-only Google AI Studio API key; absent key is displayed as `not_configured`.
+- Distinct TEST access token is stored only in the TEST app preferences; never commit that token or production keys. The user's prompts go to the TEST providers only when the user taps compare.
+- No OAuth, PC tunnel, real OpenCode dispatch, or production Council rooms/database.
+- Offline Task Bridge review remains local. A future background production integration requires separate approval and verification.
 
 ## Permanent TEST signing
 
