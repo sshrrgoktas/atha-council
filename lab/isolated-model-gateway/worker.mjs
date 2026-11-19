@@ -7,11 +7,12 @@ const string=s=>typeof s==='string'?s.trim():'';
 const allowed=new Set(['gemini','qwen','llama']);
 function status(env){return {system:'Atha Council TEST',mode:'isolated_three_model_lab',dataStored:!!env.TASKS,storageScope:'separate_TEST_KV_24h',productionConnected:false,models:{gemini:{configured:!!env.GEMINI_API_KEY,provider:'Google AI Studio - new TEST key only'},qwen:{configured:!!env.AI,provider:'Cloudflare Workers AI'},llama:{configured:!!env.AI,provider:'Cloudflare Workers AI'}}};}
 function messages(body,kind){
-  const context=string(body.context).slice(0,1000);
+  const context=string(body.context).slice(0,14000);
   const latest=string(body.latest).slice(0,600);
   // Task Bridge stays backstage. The models are conversational Council members,
   // NOT prompt evaluators, intent classifiers or OpenCode task runners.
   const identity=kind==='qwen'?'Qwen':kind==='llama'?'Llama':'Gemini';
+  const isStoryJoin=/(?:hikaye|hikâye|öykü|metin).*(?:tek metin|birleştir|baştan sona|tamamını|bütün)|(?:tek metin|birleştir).*(?:hikaye|hikâye|öykü|metin)/iu.test(latest);
   const system=[
     'Your name is '+identity+'. You are NOT any of the other models. The human interlocutor is the user, other model messages are authored by their own named speakers.',
     'Never refer to yourself as a different model, thank yourself as a third person, or attribute another model\'s words to yourself.',
@@ -25,7 +26,8 @@ function messages(body,kind){
     'Follow the user\'s latest corrections, and preserve explicit instructions such as not changing the main Council or AthalAI.',
     'Do not claim to have performed tool calls, code changes, or OpenCode work.',
     'For an ambiguous consequential task, ask one brief clarifying question rather than assuming approval.',
-    'Keep casual replies short (usually one to three sentences), without stock disclaimers.'
+    'Keep CASUAL replies short (usually one to three sentences), but for creative writing follow the requested length; never shorten a requested story to a chat summary.',
+    ...(isStoryJoin?['The user requests a unified continuous story from the supplied chat. Write ONLY the story itself, from beginning to end, merging earlier Qwen and Llama contributions in chronological order. Do not summarize the conversation, comment on the merging, or invent missing chapters. If part of the story was not provided, explicitly say that the earlier part is missing rather than pretending it was remembered.'] : [])
   ].join(' ');
   const user=context?
     'Önceki konuşma (yalnızca bağlam; yeni bir görev değil):\n'+context+
@@ -44,6 +46,7 @@ function modelText(raw){
 }
 async function ask(kind,body,env){
   const msg=messages(body,kind);
+  const storyJoin=/(?:hikaye|hikâye|öykü|metin).*(?:tek metin|birleştir|baştan sona|tamamını|bütün)|(?:tek metin|birleştir).*(?:hikaye|hikâye|öykü|metin)/iu.test(string(body.latest));
   if(kind==='gemini'){
     if(!env.GEMINI_API_KEY)return {status:'not_configured',note:'Yeni, TEST için ayrılmış Gemini API anahtarı gerekli.'};
     const c=new AbortController();const timeout=setTimeout(()=>c.abort(),16000);
@@ -57,8 +60,8 @@ async function ask(kind,body,env){
   if(!env.AI)return {status:'not_configured',note:'Workers AI bağlantısı yok.'};
   try{
     const model=kind==='qwen'?QWEN:LLAMA;
-    const raw=await env.AI.run(model,kind==='qwen'?{messages:msg,max_completion_tokens:650,reasoning_effort:'low',temperature:0.1}:{messages:msg,max_tokens:220,temperature:0.1});
-    const text=modelText(raw).slice(0,2500);
+    const raw=await env.AI.run(model,kind==='qwen'?{messages:msg,max_completion_tokens:storyJoin?2600:650,reasoning_effort:'low',temperature:0.1}:{messages:msg,max_tokens:storyJoin?1900:450,temperature:0.1});
+    const text=modelText(raw).slice(0,12500);
     return text?{status:'ok',answer:text}:{status:'empty',fields:Object.keys(raw||{}),finish:raw?.choices?.[0]?.finish_reason||null};
   }catch(e){return {status:'provider_error',note:String(e?.message||'model çağrısı başarısız').slice(0,180)};}
 }
@@ -247,10 +250,10 @@ export default {
   const valid=string(env.TEST_ACCESS_TOKEN);
   // Exact bearer match; unavailable credentials always fail closed.
   if(!valid||auth!==('Bearer '+valid))return response({error:'unauthorized_test_only'},401);
-  if(Number(request.headers.get('content-length')||0)>4500)return response({error:'too_large'},413);
+  if(Number(request.headers.get('content-length')||0)>18500)return response({error:'too_large'},413);
   let body;try{body=await request.json()}catch{return response({error:'bad_json'},400)}
   const context=string(body?.context), latest=string(body?.latest);
-  if(!latest||latest.length>600||context.length>1000)return response({error:'invalid_context'},400);
+  if(!latest||latest.length>600||context.length>14000)return response({error:'invalid_context'},400);
   const requested=Array.isArray(body?.models)?body.models:['qwen','llama'];
   if(!requested.length||requested.length>3||new Set(requested).size!==requested.length||requested.some(x=>!allowed.has(x)))return response({error:'invalid_models'},400);
   // No automatic retries, task execution, database, production workers, or Council credentials.
