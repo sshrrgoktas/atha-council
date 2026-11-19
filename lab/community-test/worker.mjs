@@ -60,8 +60,8 @@ async function modelResponse(env,model,history,latest){
 async function api(req,env,url){
  if(!env.COMMUNITY||!env.AI)return response({error:'test_not_ready'},503);
  if(req.method!=='POST')return response({error:'method_not_allowed'},405);
- const size=Number(req.headers.get('content-length')||0);if(size>20000)return response({error:'too_large'},413);
- let body;try{body=await req.json()}catch{return response({error:'bad_json'},400)}
+ const size=Number(req.headers.get('content-length')||0);if(size>225000)return response({error:'too_large'},413);
+ let body;try{const raw=await req.text();if(new TextEncoder().encode(raw).length>225000)return response({error:'too_large'},413);body=JSON.parse(raw)}catch{return response({error:'bad_json'},400)}
  const token=clean(body?.invite,120);
  const tester=await invite(env,token);if(!tester)return response({error:'invalid_or_expired_invite'},401);
  if(url.pathname==='/api/hello')return response({testerId:tester.testerId,expiresAt:tester.expiresAt,models:['qwen','llama'],testOnly:true});
@@ -81,16 +81,24 @@ async function api(req,env,url){
  }
  if(url.pathname==='/api/report'){
    if(!await dailyQuota(env,token))return response({error:'daily_test_quota_reached'},429);
-   const label=clean(body.label,100),actual=clean(body.actual,600),expected=clean(body.expected,600);
-   if(!label||!actual||body.consent!==true)return response({error:'report_title_actual_and_consent_required'},400);
-   const messages=body.includeTranscript===true?humanHistory(body.messages).slice(-8):[];
+   const description=clean(body.description||body.actual,1800);
+   const label=clean(body.label,100)||'TEST sorun bildirimi';
+   const expected=clean(body.expected,600);
+   if(!description||body.consent!==true)return response({error:'report_description_and_consent_required'},400);
+   if(body.includeTranscript===true&&body.transcriptConsent!==true)return response({error:'transcript_consent_required'},400);
+   if(body.includeTranscript===true&&!Array.isArray(body.messages))return response({error:'invalid_transcript'},400);
+   // No silent slicing of opted-in history. Reject oversized data explicitly.
+   const messages=body.includeTranscript===true?body.messages.map(x=>({
+     role:x?.role==='user'?'user':'model',speaker:clean(x?.speaker,20),content:clean(x?.content,8000)
+   })).filter(x=>x.content):[];
+   if(messages.length>300||new TextEncoder().encode(JSON.stringify(messages)).length>200000)return response({error:'transcript_too_large_send_report_without_history'},413);
    const id='report_'+crypto.randomUUID();
    const record={id,source:'Atha Council WEB TEST',testerId:tester.testerId,createdAt:new Date().toISOString(),
-     label,actual,expected,messages,clientVersion:'web-beta-1',status:'needs_review',
+     label,actual:description,expected,messages,transcriptConsent:body.includeTranscript===true&&body.transcriptConsent===true,clientVersion:'web-beta-2',status:'needs_review',
      productionAffected:false,retentionDays:7};
    // Keep only report metadata for long-term Atha development; chat excerpts expire.
    const {messages:transcript,...summary}=record;
-   await env.COMMUNITY.put('report-archive:'+id,JSON.stringify({...summary,archiveVersion:1,chatTranscriptStored:false}));
+   await env.COMMUNITY.put('report-archive:'+id,JSON.stringify({...summary,archiveVersion:2,chatTranscriptStored:false,transcriptAvailableForDays:messages.length?7:0}));
    await env.COMMUNITY.put('test-report:'+id,JSON.stringify(record),{expirationTtl:604800});
    return response({saved:true,id,status:'needs_review',retentionDays:7,receipt:'TEST_KV_WRITE_ACKNOWLEDGED'},201);
  }
@@ -104,6 +112,16 @@ async function admin(req,env,url){
  const hex=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
  const expected=await env.COMMUNITY.get('admin:sha256');
  if(!expected||hex!==expected)return response({error:'admin_unauthorized'},401);
+ if(url.pathname==='/api/admin/transcript'&&req.method==='POST'){
+   let body;try{body=await req.json()}catch{return response({error:'bad_json'},400)}
+   const id=clean(body.id,64);
+   if(!/^report_[a-f0-9-]{36}$/.test(id))return response({error:'invalid_report_id'},400);
+   const record=await env.COMMUNITY.get('test-report:'+id,'json');
+   if(!record)return response({found:false,id,messages:[]});
+   // Older report payloads might lack explicit transcript consent: do not expose them.
+   if(record.transcriptConsent!==true)return response({found:true,id,consent:false,messages:[]});
+   return response({found:true,id,consent:true,messages:record.messages||[],expiresAfterDays:7});
+ }
  if(url.pathname==='/api/admin/list'){
    const cursor=clean(url.searchParams.get('cursor'),300);
    const keys=await env.COMMUNITY.list({prefix:'report-archive:',limit:30,...(cursor?{cursor}:{})});
