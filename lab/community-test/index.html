@@ -69,12 +69,13 @@ if(!isAdmin){
  });
 }
 if(isAdmin){
+ let reportCursor=null;
  const mark=document.createElement('style');mark.textContent='#adminApp[hidden]{display:none}';document.head.appendChild(mark);
  $('loadReports').addEventListener('click',async()=>{
-  try{const resp=await fetch('/api/admin/list',{headers:{authorization:'Bearer '+$('adminKey').value.trim()},cache:'no-store'});
+  try{const resp=await fetch('/api/admin/list'+(reportCursor?'?cursor='+encodeURIComponent(reportCursor):''),{headers:{authorization:'Bearer '+$('adminKey').value.trim()},cache:'no-store'});
    const out=await resp.json();if(!resp.ok)throw new Error(out.error||'Yetki hatası');
    $('adminStatus').textContent=out.reports.length+' rapor · '+out.pagination;
-   const root=$('adminReports');root.replaceChildren();
+   const root=$('adminReports');if(!reportCursor)root.replaceChildren();
    for(const r of out.reports){
     const el=document.createElement('div');el.className='report';
     const h=document.createElement('h3');h.textContent=r.label+' · '+(r.testerId||'Android TEST');el.appendChild(h);
@@ -88,6 +89,8 @@ if(isAdmin){
     save.addEventListener('click',async()=>{try{await call('/api/admin/status',{id:r.id,status:sel.value,note:note.value},true);save.textContent='Kaydedildi'}catch(e){save.textContent='Hata: '+e.message}});
     root.appendChild(el);
    }
+   reportCursor=out.nextCursor||null;
+   $('loadReports').textContent=reportCursor?'Sonraki raporları getir':'Raporları yenile';
   }catch(e){$('adminStatus').textContent='Raporlar alınamadı: '+e.message}
  });
 }
