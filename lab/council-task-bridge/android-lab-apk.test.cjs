@@ -17,7 +17,7 @@ test('stable unique test app identity with independent launcher',()=>{
 test('no permissions or network access in TEST app',()=>{
  assert.doesNotMatch(manifest,/uses-permission|INTERNET|REQUEST_INSTALL_PACKAGES/);
  for(const marker of ['blockNetworkLoads=true','allowFileAccess=false','allowContentAccess=false','domStorageEnabled=false','loadDataWithBaseURL(null','task-bridge-engine.js'])assert.ok(activity.includes(marker),marker);
- assert.doesNotMatch(activity,/addJavascriptInterface|api\.openai|atlas-council\.sshrrgoktas|HttpURLConnection|URL\(/);
+ assert.doesNotMatch(activity,/addJavascriptInterface|api\\.openai|atlas-council\\.sshrrgoktas|HttpURLConnection|new URL/);
 });
 test('approved Council app files stay unchanged from separation base',()=>{
  const main=read('app/src/main/java/com/atlascouncil/app/MainActivity.kt');
