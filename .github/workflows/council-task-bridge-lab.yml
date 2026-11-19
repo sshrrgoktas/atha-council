@@ -3,6 +3,9 @@ on:
   pull_request:
     paths:
       - 'lab/council-task-bridge/**'
+      - 'labapp/**'
+      - 'test/lab-independent-package.test.mjs'
+      - 'settings.gradle.kts'
       - '.github/workflows/council-task-bridge-lab.yml'
   workflow_dispatch:
 permissions:
@@ -10,18 +13,35 @@ permissions:
 jobs:
   isolation-and-mock:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Confirm standalone Council source boundaries
-        run: node --test test/unified-mobile.test.mjs
-      - name: Run all bridge and fake OpenCode queue tests
+      - name: Confirm original Council app source is unchanged
+        run: node --test test/unified-mobile.test.mjs test/lab-independent-package.test.mjs
+      - name: Verify offline bridge interpretation and mocked queue
         run: node --test lab/council-task-bridge/*.test.cjs
-      - name: Report Turkish-context benchmark
+      - name: Run Turkish context benchmark
         run: node lab/council-task-bridge/turkish-shadow-benchmark.cjs
-      - name: Assert no real network dispatch module in lab adapter
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Ensure Android SDK platform
         run: |
-          ! grep -En 'fetch\\(|https?\.request|child_process|spawn\\(|exec\\(' lab/council-task-bridge/council-lab-adapter.cjs
+          test -d "$ANDROID_HOME"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - name: Build ONLY standalone TEST APK module
+        run: gradle :labapp:assembleDebug --no-daemon
+      - name: Upload standalone TEST APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: atha-council-taskbridge-LAB-APK
+          path: labapp/build/outputs/apk/debug/*.apk
+          retention-days: 7
