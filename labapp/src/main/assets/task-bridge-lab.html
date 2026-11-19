@@ -22,7 +22,7 @@
 'use strict';
 const $=id=>document.getElementById(id), native=window.LabNative;
 const chat=$('chat'),welcome=$('welcome'),state=$('state'),msg=$('message'),send=$('send');
-let history=[],busy=false,connected=false,requestIndex=0,lastError='',pending={};
+let history=[],busy=false,connected=false,requestIndex=0,lastError='',pending={},activeTarget=null;
 function showSheet(id){$(id).hidden=false}
 function hideSheet(id){$(id).hidden=true}
 function bubble(who,content,kind='model',isPending=false){
@@ -56,7 +56,7 @@ window.athaGatewayResult=function(id,data){
     batch[model].el.classList.remove('pending');
     history.push({role:'model',speaker:model,content:String(value).slice(0,800)});
     if(data.error)lastError=String(data.error);
-    if(batch.done.qwen&&batch.done.llama){delete pending[parent];closePending();setState('İki model yanıtladı · TEST');}
+    if(batch.models.every(m=>batch.done[m])){delete pending[parent];closePending();setState(batch.models.length===1?model.toUpperCase()+' yanıtladı · TEST':'İki model yanıtladı · TEST');}
     else setState(model.toUpperCase()+' yanıtladı · Diğer model bekleniyor…');
     return;
   }
@@ -71,6 +71,23 @@ function chatContext(){
  const prior=history.slice(-12).map(x=>(x.role==='user'?'Kullanıcı':x.speaker)+': '+x.content).join('\n');
  return prior.slice(-1000);
 }
+function chooseRecipients(latest){
+ const s=latest.toLocaleLowerCase('tr-TR');
+ const mentions=[...s.matchAll(/\\b(qwen|llama)\\b/g)];
+ if(mentions.length){
+   const marked=mentions.filter(m=>{
+      const tail=s.slice(m.index+m[0].length,m.index+m[0].length+26);
+      return /^\\s*[,!:]?\\s*(?:sen|sana|seni|senden|canım|balım|sence|ne|neden|nasıl|hangi)\\b/u.test(tail);
+   });
+   const hit=(marked.length?marked:mentions).at(-1);
+   activeTarget=hit[1];
+   return [activeTarget];
+ }
+ // Consecutive follow-up addressed to the same model, not a new collective greeting.
+ if(activeTarget && /^(?:hangi|peki|neden|nasıl|ne\\b|neler|kim|kaç|nerede|hani|bunu|onu|o zaman|ya sen|sen|hangi bilgileri)/iu.test(s))return [activeTarget];
+ activeTarget=null;
+ return ['qwen','llama'];
+}
 function interpret(latest){
  try{
    const turns=history.filter(x=>x.role==='user').slice(-7).map(x=>({role:'user',content:x.content}));
@@ -83,13 +100,13 @@ $('compose').addEventListener('submit',event=>{
  event.preventDefault();if(busy)return;
  const latest=msg.value.trim();if(!latest)return;
  if(!native||!native.tokenConfigured()){showSheet('settingsSheet');setState('TEST anahtarını kaydetmeden model cevabı istenemez.');return;}
- const context=chatContext();const safety=interpret(latest);
+ const context=chatContext();const safety=interpret(latest);const recipients=chooseRecipients(latest);
  bubble('Sen',latest,'user');history.push({role:'user',speaker:'human',content:latest});msg.value='';
  const id='chat_'+(++requestIndex);
- pending[id]={done:{qwen:false,llama:false}};for(const model of ['qwen','llama'])pending[id][model]=bubble(model.toUpperCase(),'Yanıt bekleniyor…','model',true);
- busy=true;send.disabled=true;setState('Modeller bağlamı değerlendiriyor…');
+ pending[id]={models:recipients,done:{qwen:false,llama:false}};for(const model of recipients)pending[id][model]=bubble(model.toUpperCase(),'Yanıt bekleniyor…','model',true);
+ busy=true;send.disabled=true;setState(recipients.length===1?recipients[0].toUpperCase()+' yanıtlıyor…':'Modeller yanıtlıyor…');
  try{native.compare(id,JSON.stringify({context:(context+'\n'+safety).slice(-1000),latest}));}
- catch(e){lastError=String(e);for(const model of ['qwen','llama']){pending[id][model].part.textContent='TEST bağlantısı başarısız.';pending[id][model].el.classList.remove('pending')}delete pending[id];closePending();setState('Bağlantı hatası. Sorun bildir bölümünü kullan.')}
+ catch(e){lastError=String(e);for(const model of recipients){pending[id][model].part.textContent='TEST bağlantısı başarısız.';pending[id][model].el.classList.remove('pending')}delete pending[id];closePending();setState('Bağlantı hatası. Sorun bildir bölümünü kullan.')}
 });
 msg.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();$('compose').requestSubmit()}});
 $('settingsOpen').addEventListener('click',()=>showSheet('settingsSheet'));
@@ -101,7 +118,7 @@ $('saveKey').addEventListener('click',()=>{
  if(!native.saveToken($('key').value.trim())){$('connection').textContent='Anahtar biçimi hatalı.';return;}
  $('key').value='';hideSheet('settingsSheet');setState('Anahtar kaydedildi · Test bağlantısı kontrol ediliyor…');native.health('health');
 });
-$('clearChat').addEventListener('click',()=>{history=[];chat.replaceChildren();if(welcome){welcome.hidden=false;chat.appendChild(welcome)}hideSheet('settingsSheet');note('Yeni TEST sohbeti başladı.')});
+$('clearChat').addEventListener('click',()=>{history=[];activeTarget=null;chat.replaceChildren();if(welcome){welcome.hidden=false;chat.appendChild(welcome)}hideSheet('settingsSheet');note('Yeni TEST sohbeti başladı.')});
 $('sendReport').addEventListener('click',()=>{
  const label=$('reportLabel').value.trim(),actual=$('actual').value.trim(),expected=$('expected').value.trim();
  if(!label||!actual){$('reportResult').textContent='Başlık ve ne olduğu alanlarını doldur.';return}
