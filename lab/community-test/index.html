@@ -1,8 +1,8 @@
 <!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Atha Council TEST • Katılımcılar</title>
 <style>:root{color-scheme:dark;--bg:#071821;--pane:#112b37;--ink:#f1fafc;--muted:#a4bdc7;--accent:#55e0d0;--border:#375561}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px system-ui,sans-serif}button,textarea,input,select{font:inherit}button{cursor:pointer;border:0;border-radius:11px;padding:11px 14px;background:#177e74;color:#fff;font-weight:650}button:disabled{opacity:.55;cursor:default}.ghost{background:#294350}.app{height:100dvh;display:flex;flex-direction:column;max-width:980px;margin:auto;background:#0b202b}header{display:flex;align-items:center;justify-content:space-between;padding:13px 14px;border-bottom:1px solid var(--border)}header b{color:var(--accent)}.tag{font-size:11px;border-radius:5px;background:#355767;padding:3px 6px;margin-left:5px}.messages{flex:1;min-height:0;overflow:auto;padding:17px;display:flex;flex-direction:column;gap:12px}.welcome{align-self:center;text-align:center;color:var(--muted);margin:auto 0;max-width:540px}.welcome h2{color:var(--accent)}.bubble{background:var(--pane);border:1px solid var(--border);max-width:88%;align-self:flex-start;border-radius:13px;padding:12px 14px;white-space:pre-wrap;overflow-wrap:anywhere}.bubble.mine{align-self:flex-end;background:#14554e}.bubble strong{display:block;color:var(--accent);font-size:12px;margin-bottom:5px}.muted{color:var(--muted);font-size:12px}.compose{display:flex;gap:8px;padding:10px;background:#112b37;border-top:1px solid var(--border)}textarea{width:100%;min-height:45px;max-height:130px;resize:vertical;border-radius:11px;border:1px solid #557582;padding:10px;background:#061823;color:var(--ink)}input{padding:10px;border:1px solid #557582;border-radius:10px;background:#061823;color:#fff;width:100%}.status{font-size:12px;color:var(--muted);padding:4px 14px}.modal{position:fixed;inset:0;background:rgba(0,8,13,.87);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}.modal[hidden]{display:none}.panel{background:#152d3a;border:1px solid var(--border);padding:20px;border-radius:15px;width:min(100%,570px);max-height:92vh;overflow:auto}.panel label{display:block;margin:12px 0 4px}.panel h2{margin-top:0;color:var(--accent);font-size:19px}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}.check{display:flex;align-items:flex-start;gap:8px;margin-top:12px;font-size:13px}.check input{width:auto;margin-top:4px}.info{white-space:pre-wrap;font-size:13px;color:#d0dedf}.admin{padding:16px;max-width:980px;margin:auto}.report{border:1px solid var(--border);border-radius:12px;padding:12px;margin:12px 0;background:var(--pane);overflow-wrap:anywhere}.report pre{white-space:pre-wrap}.report select{background:var(--pane);color:var(--ink);padding:8px}.report textarea{min-height:50px}a{color:var(--accent)}[hidden]{display:none!important}</style></head><body>
-<div class="app" id="chatApp"><header><span><b>Atha Council</b><span class="tag">TEST · Topluluk</span></span><span><button class="ghost" id="reportBtn">⚑ Sorun</button> <button class="ghost" id="resetBtn">Temizle</button> <button class="ghost" id="logoutBtn">Çıkış</button></span></header><div class="messages" id="messages"><div class="welcome" id="welcome"><h2>Hoş geldin! 💙</h2><p>Qwen ve Llama ile konuş. İstersen ikisine birden, istersen isimleriyle doğrudan birine seslen.</p><p>Bu test ortamı ANA Konsey'den tamamen ayrıdır. Sohbetler yalnız bu tarayıcıda saklanır; sunucuya sohbet arşivi yüklenmez.</p></div></div><div class="status" id="status">TEST bağlantısı kontrol ediliyor…</div><form class="compose" id="composer"><textarea id="message" placeholder="Konsey'e yaz…" maxlength="600" aria-label="Konsey mesajı"></textarea><button id="send" type="submit">Gönder</button></form></div>
+<div class="app" id="chatApp"><header><span><b>Atha Council</b><span class="tag">TEST · Topluluk</span></span><span><button class="ghost" id="reportBtn">⚑ Sorun</button> <button class="ghost" id="resetBtn">Temizle</button> <button class="ghost" id="logoutBtn">Çıkış</button></span></header><div class="messages" id="messages"><div class="welcome" id="welcome"><h2>Hoş geldin! 💙</h2><p>Qwen ve Llama ile konuş. İstersen ikisine birden, istersen isimleriyle doğrudan birine seslen.</p><p>Bu test ortamı ANA Konsey'den tamamen ayrıdır. Sohbetler bu tarayıcıda tutulur. Yalnız sen hata bildirirken ayrıca izin verirsen mevcut sohbet geçmişin TEST sunucusuna 7 günlüğüne gönderilir.</p></div></div><div class="status" id="status">TEST bağlantısı kontrol ediliyor…</div><form class="compose" id="composer"><textarea id="message" placeholder="Konsey'e yaz…" maxlength="600" aria-label="Konsey mesajı"></textarea><button id="send" type="submit">Gönder</button></form></div>
 <section class="modal" id="joinModal"><div class="panel"><h2>TEST Konseyi'ne katıl</h2><p>Yalnızca davet edilen kişiler test yapabilir. Adını veya kişisel bilgilerini vermen gerekmiyor.</p><label for="invite">Davet kodun</label><input id="invite" placeholder="Davet kodunu yapıştır" autocomplete="off"><label class="check"><input id="rememberDevice" type="checkbox" checked><span>Bu cihazda TEST kimliğimi hatırla (ortak cihazlarda kapat).</span></label><div id="joinStatus" class="info"></div><div class="actions"><button id="joinBtn">Katıl</button></div><p class="muted">Test için yazdığın mesajlar, cevap üretmeleri amacıyla AI model sağlayıcılarına iletilir. Yalnız hata raporunu göndermeyi seçersen rapor TEST kayıtlarında 7 gün tutulur.</p></div></section>
-<section class="modal" id="reportModal" hidden><div class="panel"><h2>Hata bildir</h2><p class="muted">Sorunu tarif et. Sohbet mesajlarını paylaşmak tamamen isteğe bağlıdır.</p><label for="label">Sorun</label><input id="label" maxlength="100" placeholder="Örneğin: Qwen konu dışına çıktı"><label for="expected">Ne bekliyordun?</label><textarea id="expected" maxlength="600"></textarea><label for="actual">Ne oldu?</label><textarea id="actual" maxlength="600"></textarea><label class="check"><input id="shareMessages" type="checkbox"><span>Son 8 sohbet mesajımı hata raporuna ekle (özel bilgileri önce kontrol et).</span></label><label class="check"><input id="consent" type="checkbox"><span>Bu raporun yalnız TEST incelemesi için 7 gün saklanmasına izin veriyorum.</span></label><div id="reportStatus" class="info"></div><div class="actions"><button id="submitReport">Raporu gönder</button><button class="ghost" id="closeReport">Kapat</button></div></div></section>
+<section class="modal" id="reportModal" hidden><div class="panel"><h2>Hata bildir</h2><p class="muted">Ne olduğunu kısaca anlatman yeterli. Teknik terimleri bilmene gerek yok.</p><label for="description">Yaşadığın sorun</label><textarea id="description" maxlength="1800" placeholder="Örneğin: Llama beni yanlış anladı, Qwen çok geç cevap verdi…"></textarea><label class="check"><input id="shareMessages" type="checkbox"><span>Bu cihazdaki mevcut TEST sohbet geçmişimin tamamını rapora ekle (isteğe bağlı).</span></label><p class="muted">Paylaşmadan önce sohbetindeki özel bilgileri kontrol et. Geçmiş yalnızca bu cihazda kayıtlı konuşmaları kapsar; 7 gün sonunda TEST kaydından silinir. Çok büyük sohbetler için dosya gönderimi desteklenmez.</p><label class="check"><input id="transcriptConsent" type="checkbox" disabled><span>TEST sohbet geçmişimi yetkili incelemecinin görmesine ayrıca izin veriyorum.</span></label><label class="check"><input id="consent" type="checkbox"><span>Bu raporun yalnız TEST incelemesi için 7 gün saklanmasına izin veriyorum.</span></label><div id="reportStatus" class="info"></div><div class="actions"><button id="submitReport">Raporu gönder</button><button class="ghost" id="closeReport">Kapat</button></div></div></section>
 <div class="admin" id="adminApp" hidden><h2>TEST · Yönetici Rapor Paneli</h2><p class="muted">Yalnız yetkili kişi görebilir. ANA Konsey raporları burada değildir.</p><label>Yönetici erişim anahtarı</label><input id="adminKey" type="password" autocomplete="off"><label class="check"><input type="checkbox" id="rememberAdmin"><span>Bu cihazda yönetici girişimi hatırla (yalnız kendi telefonumda)</span></label><div class="actions"><button id="adminLogin" type="button">Giriş yap</button><button id="forgetAdmin" type="button" class="ghost">Bu cihazı unut / Çıkış</button></div><div class="actions"><button id="showActive">Açık Raporlar</button><button id="showClosed" class="ghost">Kapalı Raporlar</button><button id="loadReports">Yenile</button></div><div id="adminStatus" class="info"></div><div id="adminReports"></div></div>
 <script>
 (function(){
@@ -104,13 +104,16 @@ if(!isAdmin){
   $('joinStatus').textContent='Cihazdaki giriş unutuldu. Sohbet geçmişi bu tarayıcıda kalır.';
  });
  $('reportBtn').addEventListener('click',()=>{$('reportModal').hidden=false});
+ $('shareMessages').addEventListener('change',()=>{$('transcriptConsent').disabled=!$('shareMessages').checked;if(!$('shareMessages').checked)$('transcriptConsent').checked=false});
  $('closeReport').addEventListener('click',()=>{$('reportModal').hidden=true});
  $('submitReport').addEventListener('click',async()=>{
   if(!$('consent').checked){$('reportStatus').textContent='Önce rapor kaydına izin ver.';return}
+  if(!$('description').value.trim()){$('reportStatus').textContent='Yaşadığın sorunu kısaca yaz.';return}
+  if($('shareMessages').checked&&!$('transcriptConsent').checked){$('reportStatus').textContent='Geçmiş paylaşmak için ayrı onayı işaretle veya geçmişi ekleme.';return}
   $('submitReport').disabled=true;try{
-   const out=await call('/api/report',{invite:session(),label:$('label').value.trim(),actual:$('actual').value.trim(),
-     expected:$('expected').value.trim(),consent:true,includeTranscript:$('shareMessages').checked,
-     messages:$('shareMessages').checked?history.slice(-8):[]});
+   const out=await call('/api/report',{invite:session(),label:'TEST sorun bildirimi',description:$('description').value.trim(),
+     consent:true,includeTranscript:$('shareMessages').checked,transcriptConsent:$('shareMessages').checked&&$('transcriptConsent').checked,
+     messages:$('shareMessages').checked?history:[]});
    if(!out.saved||!/^report_[a-f0-9-]{36}$/.test(out.id||''))throw new Error('Sunucu geçerli bir rapor makbuzu vermedi.');
    $('reportStatus').textContent='Rapor alındı, kayıt doğrulanıyor… '+out.id;
    let receipt=null;
@@ -131,8 +134,8 @@ if(!isAdmin){
    setTimeout(()=>{
      $('reportModal').hidden=true;
      $('reportStatus').textContent='';
-     $('label').value='';$('actual').value='';$('expected').value='';
-     $('consent').checked=false;$('shareMessages').checked=false;
+     $('description').value='';
+     $('consent').checked=false;$('shareMessages').checked=false;$('transcriptConsent').checked=false;$('transcriptConsent').disabled=true;
    },1200);
   }catch(e){$('reportStatus').textContent='Rapor gönderilemedi: '+e.message}finally{$('submitReport').disabled=false}
  });
@@ -193,9 +196,19 @@ if(isAdmin){
    for(const [key,value] of [['Rapor kodu',r.id],['Beklenen',r.expected],['Gerçek',r.actual],['Zaman',r.createdAt],['Durum',r.status]]){
      const p=document.createElement('p');p.textContent=key+': '+(value||'—');el.appendChild(p);
    }
-   if(r.messages?.length){
-     const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Sohbeti görüntüle';
-     const pre=document.createElement('pre');pre.textContent=JSON.stringify(r.messages,null,2);details.appendChild(summary);details.appendChild(pre);el.appendChild(details);
+   if(r.transcriptConsent===true&&r.transcriptAvailableForDays){
+     const details=document.createElement('details'),summary=document.createElement('summary');
+     summary.textContent='İzinli TEST sohbet geçmişini görüntüle (7 gün)';
+     details.appendChild(summary);
+     const output=document.createElement('pre');output.textContent='Açıldığında yetkili TEST kaydından alınacak.';details.appendChild(output);
+     details.addEventListener('toggle',async()=>{
+       if(!details.open)return;
+       output.textContent='İzinli sohbet yükleniyor…';
+       try{const data=await call('/api/admin/transcript',{id:r.id},true);
+         output.textContent=data.consent===true?JSON.stringify(data.messages,null,2):'Paylaşım izni bulunamadı veya kayıt süresi doldu.';
+       }catch(e){output.textContent='Sohbet yüklenemedi: '+e.message}
+     });
+     el.appendChild(details);
    }
    const select=document.createElement('select');
    for(const status of ['needs_review','investigating','fixed_pending_retest','closed']){
