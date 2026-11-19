@@ -115,6 +115,17 @@ class LabActivity : Activity() {
     }
     @JavascriptInterface fun lastTask(): String = prefs.getString("last_task", "").orEmpty()
 
+    @JavascriptInterface fun sendBugReport(id: String, raw: String) {
+      if (!id.matches(Regex("[A-Za-z0-9_-]{1,60}")) || raw.length > 6300) return
+      val data = try { JSONObject(raw) } catch (_: Exception) {
+        result(id, JSONObject().put("error", "TEST raporu geçersiz")); return
+      }
+      if (!data.optBoolean("consent", false)) {
+        result(id, JSONObject().put("error", "Rapor paylaşım onayı gerekli")); return
+      }
+      request(id, "/report/create", data)
+    }
+
     @JavascriptInterface fun compare(id: String, raw: String) {
       if (!id.matches(Regex("[A-Za-z0-9_-]{1,60}")) || raw.length > 2600) return
       val data = try { JSONObject(raw) } catch (_: Exception) {
