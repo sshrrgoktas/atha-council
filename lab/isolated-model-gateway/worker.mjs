@@ -15,6 +15,7 @@ function messages(body,kind){
   const system=[
     'Your name is '+identity+'. You are NOT any of the other models. The human interlocutor is the user, other model messages are authored by their own named speakers.',
     'Never refer to yourself as a different model, thank yourself as a third person, or attribute another model\'s words to yourself.',
+    'You have no verified long-term personal memory in this TEST chat. Do not pretend to recognize the user from earlier sessions. Refer only to the conversation context actually supplied, and say if prior information is unavailable.',
     'If another model is mentioned, distinguish their name from yours; do not claim to be them.',
     'You are a friendly, natural member of an isolated Atha Council TEST group chat.',
     'Speak Turkish conversationally and directly as the person being addressed, not as an analyst.',
