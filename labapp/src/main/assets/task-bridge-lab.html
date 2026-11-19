@@ -73,18 +73,18 @@ function chatContext(){
 }
 function chooseRecipients(latest){
  const s=latest.toLocaleLowerCase('tr-TR');
- const mentions=[...s.matchAll(/\\b(qwen|llama)\\b/g)];
+ const mentions=[...s.matchAll(/\b(qwen|llama)\b/g)];
  if(mentions.length){
    const marked=mentions.filter(m=>{
       const tail=s.slice(m.index+m[0].length,m.index+m[0].length+26);
-      return /^\\s*[,!:]?\\s*(?:sen|sana|seni|senden|canım|balım|sence|ne|neden|nasıl|hangi)\\b/u.test(tail);
+      return /^\s*[,!:]?\s*(?:sen|sana|seni|senden|canım|balım|sence|ne|neden|nasıl|hangi)\b/u.test(tail);
    });
    const hit=(marked.length?marked:mentions).at(-1);
    activeTarget=hit[1];
    return [activeTarget];
  }
  // Consecutive follow-up addressed to the same model, not a new collective greeting.
- if(activeTarget && /^(?:hangi|peki|neden|nasıl|ne\\b|neler|kim|kaç|nerede|hani|bunu|onu|o zaman|ya sen|sen|hangi bilgileri)/iu.test(s))return [activeTarget];
+ if(activeTarget && /^(?:hangi|peki|neden|nasıl|ne\b|neler|kim|kaç|nerede|hani|bunu|onu|o zaman|ya sen|sen|hangi bilgileri)/iu.test(s))return [activeTarget];
  activeTarget=null;
  return ['qwen','llama'];
 }
@@ -105,7 +105,7 @@ $('compose').addEventListener('submit',event=>{
  const id='chat_'+(++requestIndex);
  pending[id]={models:recipients,done:{qwen:false,llama:false}};for(const model of recipients)pending[id][model]=bubble(model.toUpperCase(),'Yanıt bekleniyor…','model',true);
  busy=true;send.disabled=true;setState(recipients.length===1?recipients[0].toUpperCase()+' yanıtlıyor…':'Modeller yanıtlıyor…');
- try{native.compare(id,JSON.stringify({context:(context+'\n'+safety).slice(-1000),latest}));}
+ try{native.compare(id,JSON.stringify({context:(context+'\n'+safety).slice(-1000),latest,models:recipients}));}
  catch(e){lastError=String(e);for(const model of recipients){pending[id][model].part.textContent='TEST bağlantısı başarısız.';pending[id][model].el.classList.remove('pending')}delete pending[id];closePending();setState('Bağlantı hatası. Sorun bildir bölümünü kullan.')}
 });
 msg.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();$('compose').requestSubmit()}});
