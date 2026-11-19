@@ -39,6 +39,14 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
       - name: Build ONLY standalone TEST APK module
         run: gradle :labapp:assembleDebug --no-daemon
+      - name: Verify compiled APK identity and zero permissions
+        run: |
+          APK="labapp/build/outputs/apk/debug/labapp-debug.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee /tmp/taskbridge-apk-info.txt
+          grep -q "package: name='com.atlascouncil.taskbridgelab'" /tmp/taskbridge-apk-info.txt
+          grep -q "application-label:'Atha Council TEST'" /tmp/taskbridge-apk-info.txt
+          ! "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK" | grep -E 'android.permission.INTERNET|REQUEST_INSTALL_PACKAGES'
       - name: Upload standalone TEST APK
         uses: actions/upload-artifact@v4
         with:
