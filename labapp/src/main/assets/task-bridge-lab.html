@@ -29,6 +29,15 @@
     <div class="model-card"><strong>Llama</strong><p id="llama-answer" class="muted">Henüz test edilmedi.</p></div>
   </div>
 </section>
+<details class="box" id="opencode-lab-panel">
+<summary><strong>OpenCode · TEST görev işçisi</strong> <span class="muted">(yalnız onaylı plan)</span></summary>
+<p class="muted">Görev önizlemesi oluştur; onaylamadan hiçbir yere gönderilmez. OpenCode eski Konsey odasında görünmez, sadece ayrı TEST klasöründe plan yapar. Dosya değiştiremez.</p>
+<button id="task-prepare" type="button" class="secondary">İş emrini önizle</button>
+<div id="task-preview" class="box" hidden></div>
+<button id="task-approve" type="button" disabled>Onayla ve TEST OpenCode kuyruğuna gönder</button>
+<button id="task-refresh" type="button" class="secondary">Görev durumunu kontrol et</button>
+<p id="task-state" class="muted" role="status">Henüz görev oluşturulmadı.</p>
+</details>
 <h2>Ne denemeli?</h2><p class="muted">“İptal et”, “Hayır eski sürüme dön”, “Bunu yap ama çalışan tünele dokunma”, “Öncekini değil şunu istiyorum”. Yanlış anlayınca ekranın sonucunu paylaş.</p>
 <!--ENGINE_HERE-->
 <script>
@@ -122,6 +131,61 @@
     native.compare('compare',JSON.stringify({context,latest}));
   });
   update();
+})();
+</script>
+
+<script>
+(function(){
+ const get=id=>document.getElementById(id),n=window.LabNative;
+ const preview=get('task-preview'),approve=get('task-approve'),state=get('task-state');
+ const prior=get('history'),latest=get('latest');
+ let prepared=null, taskId='';
+ function say(text){state.textContent=text;}
+ function invalidate(){prepared=null;approve.disabled=true;preview.hidden=true;}
+ prior.addEventListener('input',invalidate);latest.addEventListener('input',invalidate);
+ get('task-prepare').addEventListener('click',()=>{
+   const context=prior.value.trim(),now=latest.value.trim();
+   if(!now){say('Önce son isteğini yaz.');return;}
+   if(/(?:^|[.!?\s])(?:iptal|vazgeç|durdur)(?:$|[.!?\s])/i.test(now)){say('Bu bir durdurma talimatı. Görev kuyruğa alınmaz.');invalidate();return;}
+   prepared={context,latest:now};
+   preview.hidden=false;preview.textContent='Önceki bağlam: '+context+'\n\nSon karar: '+now+
+     '\n\nİşçi: yalnız Atha Council TEST / OpenCode plan modu. Dosya düzenleme ve yayınlama YASAK.';
+   preview.style.whiteSpace='pre-wrap';
+   approve.disabled=false;
+   say('İş emri yalnızca önizlendi. Henüz gönderilmedi.');
+ });
+ approve.addEventListener('click',()=>{
+   if(!n||!n.createTask){say('TEST OpenCode bağlantısı APK sürümünde yok.');return;}
+   if(!n.tokenConfigured()){say('Önce TEST bağlantı anahtarını kaydet.');return;}
+   if(!prepared||prior.value.trim()!==prepared.context||latest.value.trim()!==prepared.latest){invalidate();say('Metin değişti. İş emrini yeniden önizle.');return;}
+   approve.disabled=true;say('Onay alındı; yalnız ayrı TEST kuyruğuna gönderiliyor…');
+   n.createTask('taskCreate',JSON.stringify({...prepared,mode:'read_only_plan',ownerApproved:true,confirm:'SEND_TO_TEST_OPENCODE'}));
+ });
+ get('task-refresh').addEventListener('click',()=>{
+   if(!n||!n.taskStatus){say('TEST görev durumu bağlantısı yok.');return;}
+   const id=taskId||(n.lastTask?n.lastTask():'');
+   if(!id){say('Henüz takip edilecek TEST görevi yok.');return;}
+   n.taskStatus('taskStatus',id);
+ });
+ const previous=window.athaGatewayResult;
+ window.athaGatewayResult=function(id,data){
+   if(id==='taskCreate'){
+     if(data._http!==201||!data.id){say('TEST kuyruğu görevi kabul etmedi: '+(data.error||data._http||'bağlantı hatası'));approve.disabled=false;return;}
+     taskId=data.id;if(n?.rememberTask)n.rememberTask(taskId);
+     say('TEST görevi alındı: '+taskId+'. OpenCode işçisi çalıştırıldığında durumunu buradan kontrol et.');
+     return;
+   }
+   if(id==='taskStatus'){
+     if(data.error){say('Görev kontrolü: '+data.error);return;}
+     const status=data.status||'bilinmiyor';
+     const meaning={queued:'Kuyrukta; işçi henüz almadı',claimed:'Ayrı OpenCode işçisi üzerinde çalışıyor',reported_unverified:'OpenCode sonuç bildirdi; bağımsız kanıt doğrulaması bekleniyor',agent_error:'OpenCode hata bildirdi'};
+     say('TEST görevi: '+(meaning[status]||status)+ (data.result?.summary?'\n\nSonuç: '+data.result.summary:'')+
+       (data.result?.verification?'\nKanıt: '+data.result.verification:''));
+     state.style.whiteSpace='pre-wrap';return;
+   }
+   if(typeof previous==='function')previous(id,data);
+ };
+ if(n&&n.lastTask&&n.lastTask())say('Önceki TEST görevi var. Durumunu kontrol edebilirsin.');
 })();
 </script>
 </body></html>
