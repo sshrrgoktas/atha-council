@@ -98,7 +98,7 @@ async function admin(req,env,url){
    const keys=await env.COMMUNITY.list({prefix:'test-report:',limit:100});
    const records=await Promise.all(keys.keys.map(k=>env.COMMUNITY.get(k.name,'json')));
    const reports=records.filter(Boolean).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
-   return response({reports,pagination:keys.list_complete?'complete':'partial',source:'WEB TEST only'});
+   return response({reports,pagination:keys.list_complete?'complete':'partial',source:'WEB and Android TEST'});
  }
  if(url.pathname==='/api/admin/status'&&req.method==='POST'){
    let body;try{body=await req.json()}catch{return response({error:'bad_json'},400)}
