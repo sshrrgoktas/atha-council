@@ -291,11 +291,7 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
   nativeSettingsDialog=android.app.AlertDialog.Builder(this).setTitle("Bağlantılar ve güncellemeler").setView(nativeScroll).setPositiveButton("Kapat"){d,_->d.dismiss()}.create()
   councilWeb=WebView(this).apply {
    settings.javaScriptEnabled=true
-   settings.blockNetworkLoads=true
-   settings.domStorageEnabled=false
-   settings.allowFileAccess=false
-   settings.allowContentAccess=false
-   // LAB APK: no native bridge; prevent production account operations from this test app.
+   addJavascriptInterface(CouncilBridge(),"AtlasNative")
    settings.domStorageEnabled=true
    settings.cacheMode=WebSettings.LOAD_NO_CACHE
    clearHistory()
@@ -348,25 +344,21 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
       startGoogleLogin()
       return true
      }
-     return if(packageName=="com.atlascouncil.taskbridgelab"){true} else {
+     return if(u.scheme=="https"&&u.host=="atlas-council.sshrrgoktas.workers.dev")false else {
       try{startActivity(Intent(Intent.ACTION_VIEW,u))}catch(_:Exception){}
       true
      }
     }
    }
    clearCache(true)
-   val labPage=assets.open("task-bridge-lab.html").bufferedReader().use{it.readText()}
-   val labEngine=assets.open("task-bridge-engine.js").bufferedReader().use{it.readText()}
-   val safeLabEngine=labEngine.replace("</script","<\\/script",ignoreCase=true)
-   loadDataWithBaseURL(null,labPage.replace("<!--ENGINE_HERE-->","<script>"+safeLabEngine+"</script>"),"text/html","UTF-8",null)
+   loadUrl("https://atlas-council.sshrrgoktas.workers.dev/council-v2?source=android&refresh="+System.currentTimeMillis())
   }
    layout.addView(councilWeb,LinearLayout.LayoutParams(-1,-1))
   setContentView(layout)
   // Web UI updates arrive from Cloudflare; APK updates are checked only on request.
   val incoming=intent?.data;if(incoming?.scheme=="atlascouncil"&&incoming.host=="google-auth"){incoming.getQueryParameter("ticket")?.let{completeGoogleLogin(it)}}else if(incoming?.scheme=="atlascouncil"&&incoming.host=="github-auth"){incoming.getQueryParameter("ticket")?.let{completeGitHubLogin(it)}}
   // Future releases appear in-app without asking users to find or download an APK file.
-  // LAB is offline; never request production APK updates.
-  if(packageName!="com.atlascouncil.taskbridgelab")checkForUpdates(false)
+  checkForUpdates(false)
  }
 
  @Deprecated("Uses the platform document picker for WebView attachments")
@@ -648,45 +640,15 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
    sendUpdateResult("error",version,"İndirme başlatılamadı: "+(e.message?:"Android indirme hizmeti yanıt vermedi")+". APK’yı tarayıcıyla indir seçeneğini kullanabilirsin.")
   }
  }
- private fun showTaskBridgeLab(){
-  // Independent, offline test pane. No JavascriptInterface, cookies, network, or task dispatch.
-  val localWeb=WebView(this)
-  localWeb.settings.javaScriptEnabled=true
-  localWeb.settings.domStorageEnabled=false
-  localWeb.settings.allowFileAccess=false
-  localWeb.settings.allowContentAccess=false
-  localWeb.settings.blockNetworkLoads=true
-  localWeb.webViewClient=object:WebViewClient(){
-   override fun shouldOverrideUrlLoading(view:WebView?,request:WebResourceRequest?):Boolean=true
-  }
-  val source=assets.open("task-bridge-lab.html").bufferedReader().use{it.readText()}
-  val engine=assets.open("task-bridge-engine.js").bufferedReader().use{it.readText()}
-  val safeEngine=engine.replace("</script","<\\/script",ignoreCase=true)
-  val html=source.replace("<!--ENGINE_HERE-->","<script>"+safeEngine+"</script>")
-  localWeb.loadDataWithBaseURL(null,html,"text/html","UTF-8",null)
-  val dialog=android.app.AlertDialog.Builder(this)
-   .setTitle("Task Bridge • LAB (çevrimdışı)")
-   .setView(localWeb)
-   .setPositiveButton("Kapat"){d,_->d.dismiss()}
-   .setNeutralButton("Testi bitir, gizle"){_,_->
-    getSharedPreferences("atha-council-task-bridge-lab",MODE_PRIVATE).edit().putBoolean("hidden",true).apply()
-    invalidateOptionsMenu()
-   }
-   .create()
-  dialog.setOnDismissListener{localWeb.destroy()}
-  dialog.show()
- }
  override fun onCreateOptionsMenu(menu:Menu):Boolean {
   menu.add(0,100,1,"Bağlantılar ve güncellemeler")
   menu.add(0,101,2,"Konseyi yenile")
-  if(!getSharedPreferences("atha-council-task-bridge-lab",MODE_PRIVATE).getBoolean("hidden",false))menu.add(0,102,3,"Task Bridge • LAB")
   return true
  }
  override fun onOptionsItemSelected(item:MenuItem):Boolean {
   when(item.itemId){
-   100 -> {Toast.makeText(this,"TEST sürümünde bağlantılar kapalı.",Toast.LENGTH_SHORT).show();return true}
+   100 -> {if(::nativeSettingsDialog.isInitialized)nativeSettingsDialog.show();return true}
    101 -> {if(::councilWeb.isInitialized)councilWeb.reload();return true}
-   102 -> {showTaskBridgeLab();return true}
   }
   return super.onOptionsItemSelected(item)
  }
