@@ -103,10 +103,76 @@ async function taskRoutes(request,env,path){
   return response({error:'not_found'},404);
 }
 
+
+const OPEN_CODE_PROBE='Atha Council TEST connection probe. Do not open, create, edit, or delete files. Do not use tools. Reply with exactly ATHA_LAB_OPENCODE_OK.';
+const authAgent=(request,env)=>!!env.LAB_AGENT_TOKEN&&request.headers.get('x-lab-agent-token')===env.LAB_AGENT_TOKEN;
+async function agentEndpoint(request,env,url) {
+ if(!authAgent(request,env))return response({error:'agent_unauthorized'},401);
+ if(!env.LAB_DB)return response({error:'lab_db_missing'},503);
+ const path=url.pathname;
+ if(path==='/opencode/heartbeat') {
+  await env.LAB_DB.prepare('INSERT INTO agent_status(name,state,last_seen,detail) VALUES(?,?,?,?) ON CONFLICT(name) DO UPDATE SET state=excluded.state,last_seen=excluded.last_seen,detail=excluded.detail').bind('opencode','online',Date.now(),'LAB-only safe agent').run();
+  return response({ok:true});
+ }
+ if(path==='/opencode/poll') {
+  const task=await env.LAB_DB.prepare("SELECT id,prompt FROM lab_tasks WHERE state='pending' AND approved=1 ORDER BY created_at LIMIT 1").first();
+  if(!task)return response({task:null});
+  const updated=await env.LAB_DB.prepare("UPDATE lab_tasks SET state='claimed',claimed_at=? WHERE id=? AND state='pending' AND approved=1").bind(Date.now(),task.id).run();
+  if((updated.meta?.changes||0)!==1)return response({task:null});
+  return response({task:{id:task.id,kind:'probe',prompt:OPEN_CODE_PROBE}});
+ }
+ if(path==='/opencode/result') {
+  let body;try{body=await request.json()}catch{return response({error:'bad_json'},400);}
+  if(typeof body.id!=='string'||!/^lab_[a-f0-9-]{36}$/.test(body.id))return response({error:'bad_id'},400);
+  const state=body.success===true?'succeeded':'failed';
+  const output=string(body.output).slice(0,1200);
+  const updated=await env.LAB_DB.prepare("UPDATE lab_tasks SET state=?,finished_at=?,result=?,error=? WHERE id=? AND state='claimed'").bind(state,Date.now(),output,state==='failed'?string(body.error).slice(0,300):null,body.id).run();
+  return response({accepted:(updated.meta?.changes||0)===1});
+ }
+ return response({error:'not_found'},404);
+}
+async function ownerTaskEndpoint(request,env,url) {
+ if(!env.LAB_DB)return response({error:'lab_db_missing'},503);
+ const path=url.pathname;
+ if(path==='/opencode/status'){
+  const state=await env.LAB_DB.prepare("SELECT state,last_seen FROM agent_status WHERE name='opencode'").first();
+  const online=!!state&&Date.now()-state.last_seen<60000;
+  return response({connected:online,agent:online?'online':'offline',lastSeen:state?.last_seen||null,prodCouncilConnected:false,mode:'test_only'});
+ }
+ if(path==='/opencode/probe'){
+  const pending=await env.LAB_DB.prepare("SELECT count(1) n FROM lab_tasks WHERE state IN ('pending','claimed')").first();
+  if(Number(pending?.n||0)>=1)return response({error:'one_task_at_a_time'},409);
+  const id='lab_'+crypto.randomUUID();
+  await env.LAB_DB.prepare('INSERT INTO lab_tasks(id,state,prompt,created_at,approved) VALUES(?,?,?,?,1)').bind(id,'pending',OPEN_CODE_PROBE,Date.now()).run();
+  return response({id,state:'pending',approvedFor:'read_only_connection_probe',taskExecuted:false});
+ }
+ if(path==='/opencode/job'){
+  const id=url.searchParams.get('id')||'';
+  if(!/^lab_[a-f0-9-]{36}$/.test(id))return response({error:'bad_id'},400);
+  const task=await env.LAB_DB.prepare('SELECT id,state,created_at,claimed_at,finished_at,result,error FROM lab_tasks WHERE id=?').bind(id).first();
+  return task?response({task}):response({error:'not_found'},404);
+ }
+ return response({error:'not_found'},404);
+}
+
 export default {
  async fetch(request,env){
   const url=new URL(request.url);
   if(url.pathname==='/health'&&request.method==='GET')return response(status(env));
+  if(url.pathname.startsWith('/opencode/')){
+    if(!['POST','GET'].includes(request.method))return response({error:'method'},405);
+    if(['/opencode/heartbeat','/opencode/poll','/opencode/result'].includes(url.pathname)){
+      if(request.method!=='POST')return response({error:'method'},405);
+      return agentEndpoint(request,env,url);
+    }
+    const bearer='Bearer '+string(env.TEST_ACCESS_TOKEN);
+    if(!string(env.TEST_ACCESS_TOKEN)||request.headers.get('authorization')!==bearer)return response({error:'owner_unauthorized'},401);
+    if(url.pathname==='/opencode/status'&&request.method!=='GET')return response({error:'method'},405);
+    if(url.pathname==='/opencode/job'&&request.method!=='GET')return response({error:'method'},405);
+    if(url.pathname==='/opencode/probe'&&request.method!=='POST')return response({error:'method'},405);
+    return ownerTaskEndpoint(request,env,url);
+  }
+
   if(url.pathname.startsWith('/task/')||url.pathname.startsWith('/agent/'))return taskRoutes(request,env,url.pathname);
   if(url.pathname!=='/compare'||request.method!=='POST')return response({error:'not_found'},404);
   const auth=request.headers.get('authorization')||'';
