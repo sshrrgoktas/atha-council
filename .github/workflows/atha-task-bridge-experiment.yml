@@ -1,0 +1,18 @@
+name: Atha Task Bridge isolated tests
+on:
+  pull_request:
+    paths:
+      - 'experiment/atha-task-bridge/**'
+      - '.github/workflows/atha-task-bridge-experiment.yml'
+  workflow_dispatch:
+jobs:
+  bridge-unit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test experiment/atha-task-bridge/atha-task-bridge.test.cjs
