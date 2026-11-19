@@ -147,7 +147,16 @@
    const context=prior.value.trim(),now=latest.value.trim();
    if(!now){say('Önce son isteğini yaz.');return;}
    if(/(?:^|[.!?\s])(?:iptal|vazgeç|durdur)(?:$|[.!?\s])/i.test(now.toLocaleLowerCase('tr-TR'))){say('Bu bir durdurma talimatı. Görev kuyruğa alınmaz.');invalidate();return;}
-   prepared={context,latest:now};
+   const turns=[{role:'user',content:context},{role:'user',content:now}];
+   let review={};
+   try{
+     const shadow=window.AthaLab.shadowReview(turns);
+     const ledger=window.AthaLab.makeLedger(turns);
+     review={inferredTask:String(shadow.inferred?.task||'').slice(0,230),
+       sourceReference:String(shadow.inferred?.reference||'').slice(0,230),
+       humanDecisions:Object.values(ledger.latestBySubject||{}).slice(0,2).map(d=>String(d.text||'').slice(0,150))};
+   }catch(_){review={warning:'Local interpreter unavailable; original human messages authoritative'}}
+   prepared={context,latest:now,review};
    preview.hidden=false;preview.textContent='Önceki bağlam: '+context+'\n\nSon karar: '+now+
      '\n\nİşçi: yalnız Atha Council TEST / OpenCode plan modu. Dosya düzenleme ve yayınlama YASAK.';
    preview.style.whiteSpace='pre-wrap';
