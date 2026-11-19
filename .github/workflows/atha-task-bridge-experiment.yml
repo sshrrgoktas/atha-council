@@ -16,3 +16,4 @@ jobs:
         with:
           node-version: '22'
       - run: node --test experiment/atha-task-bridge/*.test.cjs
+      - run: node experiment/atha-task-bridge/turkish-shadow-benchmark.cjs
