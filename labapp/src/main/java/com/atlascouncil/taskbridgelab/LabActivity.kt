@@ -137,11 +137,15 @@ class LabActivity : Activity() {
         result(id, JSONObject().put("error", "Test metni çok uzun veya boş")); return
       }
       // Hard-coded whitelist: the device can never dispatch an arbitrary URL.
-      val models = org.json.JSONArray().put("gemini").put("qwen").put("llama")
-      request(id, "/compare", JSONObject()
-        .put("context", context)
-        .put("latest", latest)
-        .put("models", models))
+      // Independent requests: Qwen and Llama deliver answers as soon as each is ready.
+      // Neither waits for Gemini (disabled) or the slower other model.
+      for (model in listOf("qwen", "llama")) {
+        val models = org.json.JSONArray().put(model)
+        request(id + "_" + model, "/compare", JSONObject()
+          .put("context", context)
+          .put("latest", latest)
+          .put("models", models))
+      }
     }
   }
 
