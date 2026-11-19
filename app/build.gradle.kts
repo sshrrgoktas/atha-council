@@ -11,9 +11,10 @@ android {
         applicationId = "com.atlascouncil.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
-        versionName = "0.3-council-context"
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2)
+        versionName = "0.3.2-council-standalone"
     }
+    buildTypes { getByName("debug") { applicationIdSuffix = ".standalone" } }
     val signingFile = System.getenv("ATLAS_SIGNING_FILE")
     if (!signingFile.isNullOrBlank()) {
         signingConfigs {

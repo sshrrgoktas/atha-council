@@ -32,16 +32,21 @@ test("New native update bridge reports actual installed version and all result s
   assert.match(kotlin,/sendUpdateResult\("error"/);
   assert.match(kotlin,/@JavascriptInterface fun openUpdates\(\)/);
   assert.doesNotMatch(kotlin,/val toolbar=/);
-  assert.match(kotlin,/layout\.addView\(councilWeb,LinearLayout\.LayoutParams\(-1,0,1f\)\)/);
+  assert.match(kotlin,/layout\.addView\(councilWeb,LinearLayout\.LayoutParams\(-1,-1\)\)/);
 });
 
 test("Every Android APK offers a visible recovery download link",()=>{
   assert.match(html,/id="legacyUpdateRow" style=/);
-  assert.doesNotMatch(html,/id="legacyUpdateRow" hidden/);
+  assert.match(html,/independentReleaseNotice/);
+  assert.match(html,/document\.getElementById\('appUpdate'\)\.disabled=true/);
+  assert.match(html,/document\.getElementById\('legacyUpdateLink'\)\.removeAttribute\('href'\)/);
+  assert.match(kotlin,/packageName=="com\.atlascouncil\.app\.standalone"/);
+  assert.match(kotlin,/Eski Konsey APK'sı bu bağımsız uygulamaya yüklenemez/);
+  assert.match(html,/document\.getElementById\('legacyUpdateRow'\)\.hidden=true/);
   assert.match(html,/id="legacyUpdateLink"/);
   assert.match(html,/href="https:\/\/github\.com\/sshrrgoktas\/atha-council\/releases\/download\/latest-debug\/atha-council\.apk"/);
   assert.match(html,/window\.AtlasNative&&typeof window\.AtlasNative\.openUpdates!=='function'/);
-  assert.match(html,/document\.getElementById\('legacyUpdateRow'\)\.hidden=false/);
+  assert.doesNotMatch(html,/document\.getElementById\('legacyUpdateRow'\)\.hidden=false/);
   assert.doesNotMatch(html,/if\(confirm\('İmzalı Atlas Council APK güncellemesini Android yükleyicisinde açmak ister misin\?'\)\)/);
 });
 
@@ -54,17 +59,17 @@ test("Backups restore both conversations and profile before any APK migration",(
   assert.match(html,/Profil bilgileri geri yüklendi/);
 });
 
-test("AthalAI branding appears in page, menus, APK and model labels without old visible display names",()=>{
+test("Independent Atha Council branding appears without AthalAI UI text",()=>{
   const manifest=readFileSync(new URL("../app/src/main/AndroidManifest.xml",import.meta.url),"utf8");
-  assert.match(html,/<title>AthalAI · Atha Council<\/title>/);
-  assert.match(html,/<strong>Athal<span style="color:#28e3e9">AI<\/span><\/strong>/);
-  assert.match(html,/Atha Council · Konsey çalışma alanı/);
+  assert.match(html,/<title>Atha Council<\/title>/);
+  assert.match(html,/<strong>Atha Council<\/strong>/);
+  assert.match(html,/Bağımsız Konsey/);
   assert.match(html,/Atha Council APK güncellemesi/);
   assert.match(html,/Atha \/ ChatGPT/);
   assert.match(worker,/name:'Atha \/ ChatGPT'/);
   assert.match(manifest,/android:label="Atha Council"/);
-  assert.match(manifest,/<package android:name="com\.athalai\.companion"\/>/);
-  assert.match(kotlin,/text="AthalAI"/);
+  assert.doesNotMatch(manifest,/com\.athalai\.companion/);
+  assert.doesNotMatch(html,/<title>AthalAI|Athal<span|AthalAI amblemi/);
   assert.doesNotMatch(html,/<(?:strong|h1|h2|h3|title)[^>]*>[^<]*Atlas/i);
   assert.doesNotMatch(html,/Atlas Council uygulamanın adıdır/);
 });
@@ -73,8 +78,9 @@ test("Android launcher, existing package identity and new GitHub update location
   const manifest=readFileSync(new URL("../app/src/main/AndroidManifest.xml",import.meta.url),"utf8");
   const gradle=readFileSync(new URL("../app/build.gradle.kts",import.meta.url),"utf8");
   assert.match(manifest,/android:label="Atha Council"/);
-  assert.match(manifest,/<package android:name="com\.athalai\.companion"\/>/);
+  assert.doesNotMatch(manifest,/com\.athalai\.companion/);
   assert.match(manifest,/@drawable\/atha_launcher/);
+  assert.doesNotMatch(kotlin,/AthalAI Mobile|openMainAthalAI/);
   assert.match(gradle,/applicationId = "com\.atlascouncil\.app"/);
   assert.match(kotlin,/api\.github\.com\/repos\/sshrrgoktas\/atha-council\/releases\/tags\/latest-debug/);
   assert.match(kotlin,/assetName=="atha-council\.apk"/);

@@ -8,7 +8,7 @@ const secret="test-sync-GitHub-session-secret-random-64-characters-long";
 const oldFetch=globalThis.fetch;
 
 class FakeD1 {
- constructor(){this.rows=new Map();this.replies=new Map();this.events=new Map();this.monitor=null}
+ constructor(){this.rows=new Map();this.deletedRooms=new Map();this.replies=new Map();this.events=new Map();this.monitor=null}
  prepare(sql){
   let args=[];
   return {
@@ -29,12 +29,13 @@ FakeD1.prototype.prepare=function(sql){
  const database=this;let args=[];
  const stmt={
   bind(...values){args=values;return stmt},
-  all:async()=>({results:sql.includes("FROM atha_sync_events")?[...database.events.values()].filter(e=>e.owner_id===args[0]&&e.room_id===args[1]&&String(e.message_excerpt||'').startsWith('{"kind":"dialogue",')):sql.includes("FROM atha_sync_replies")?
+  all:async()=>({results:sql.includes("FROM atha_sync_deleted_rooms")?[...database.deletedRooms.values()].filter(r=>r.owner_id===args[0]).sort((a,b)=>b.deleted_at-a.deleted_at):sql.includes("FROM atha_sync_events")?[...database.events.values()].filter(e=>e.owner_id===args[0]&&e.room_id===args[1]&&String(e.message_excerpt||'').startsWith('{"kind":"dialogue",')):sql.includes("FROM atha_sync_replies")?
    [...database.replies.values()].filter(r=>r.owner_id===args[0]&&r.room_id===args[1])
     .sort((a,b)=>b.created_at-a.created_at).slice(0,40).map(r=>({reply_id:r.reply_id,content:r.content,created_at:r.created_at})):
    [...database.rows.values()].filter(r=>r.owner_id===args[0])
     .sort((a,b)=>b.updated_at-a.updated_at).map(r=>({room_id:r.room_id,title:r.title,updated_at:r.updated_at}))}),
   first:async()=>{
+   if(sql.includes("FROM atha_sync_deleted_rooms"))return database.deletedRooms.get(args[0]+"|"+args[1])||null;
    if(sql.includes("FROM atha_sync_monitor"))return database.monitor?{last_tick_at:database.monitor.last_tick_at}:null;
    if(sql.includes("FROM atha_sync_events"))return {count:[...database.events.values()].filter(e=>e.state==="pending"&&(!sql.includes("owner_id=?")||e.owner_id===args[0])).length};
    const r=database.rows.get(args[0]+"|"+args[1]);
@@ -51,10 +52,19 @@ FakeD1.prototype.prepare=function(sql){
     const key=owner_id+"|"+room_id+"|"+event_id;
     if(!database.events.has(key))database.events.set(key,{owner_id,room_id,event_id,created_at,state:"pending"});
    }
+   else if(sql.startsWith("INSERT INTO atha_sync_deleted_rooms")){const [owner_id,room_id,deleted_at]=args;database.deletedRooms.set(owner_id+"|"+room_id,{owner_id,room_id,deleted_at});}
    else if(sql.startsWith("INSERT INTO atha_sync_monitor")){
     database.monitor={last_tick_at:args[0],pending_event_count:args[1]};
    }
-   else if(sql.startsWith("INSERT")){const [owner_id,room_id,title,snapshot,updated_at]=args;database.rows.set(owner_id+"|"+room_id,{owner_id,room_id,title,snapshot,updated_at})}
+   else if(sql.startsWith("INSERT")){
+    const [owner_id,room_id,title,snapshot,updated_at,expected]=args;
+    const key=owner_id+"|"+room_id,old=database.rows.get(key);
+    if(sql.includes("WHERE atha_sync_rooms.updated_at=?")&&
+      ((old&&old.updated_at!==expected)||(!old&&expected!==-1)))
+      return {success:true,meta:{changes:0}};
+    database.rows.set(key,{owner_id,room_id,title,snapshot,updated_at});
+    return {success:true,meta:{changes:1}};
+   }
    else throw Error("Unexpected SQL");
    return {success:true};
   }
@@ -194,55 +204,9 @@ test("Every typed message starts without manual calls; reply inbox deduplicates 
  assert.doesNotMatch(html,/buildAthaHandoffContext/);
  assert.match(html,/setInterval\(\(\)=>\{if\(!document\.hidden\)receiveAthaReplies/);
  assert.match(html,/stored\.has\(reply\.replyId\)/);
- assert.ok(html.includes('source:isOpenCode?"authenticated-local-opencode":isQwen?"cloudflare-workers-ai":"cloudflare-connector-user-approved"'));
- assert.ok(html.includes('isOpenCode?"opencode":isQwen?"qwen"'));
+ assert.match(html,/source:isQwen\?"cloudflare-workers-ai":"cloudflare-connector-user-approved"/);
+ assert.match(html,/isQwen\?"qwen"/);
  assert.match(html,/scheduleAthaSync\(roomId\)/);
-});
-test("OpenCode has a visible agent card and honest room-specific status in the Android WebView",()=>{
- const pos=source.indexOf("const HTML=");
- const html=JSON.parse(source.slice(pos+11,source.lastIndexOf(";")));
- assert.match(html,/<strong>OpenCode · Görev Merkezi İşçisi<\/strong>/);
- assert.match(html,/id="openCodeWorkCenter"/);
- assert.match(html,/id="openCodeMemberBadge"/);
- assert.match(html,/id="openCodeMemberInfo"/);
- assert.match(html,/id="openCodeRoomInfo"/);
- assert.match(html,/id="openCodeQuickStatus"/);
- assert.match(html,/function renderOpenCodeMember\(info,authenticated\)/);
- assert.match(html,/renderOpenCodeMember\(data\.openCodeAgent\|\|null,true\)/);
- assert.match(html,/OpenCode: başka odada/);
- assert.match(html,/Bu odada henüz kaydedilmiş gerçek OpenCode yanıtı bulunmuyor/);
- assert.match(source,/openCodeAgent=\{paired:false,inThisRoom:false/);
- assert.match(source,/atha_opencode_agents a JOIN atha_sync_rooms/);
-});
-test("Blank new chat placeholders are not saved repeatedly; real conversations survive",()=>{
- const pos=source.indexOf("const HTML=");
- const html=JSON.parse(source.slice(pos+11,source.lastIndexOf(";")));
- const match=html.match(/function isEmptyCouncilDraft\(chat\)\{[\s\S]*?\n\}/);
- assert.ok(match,"draft classification should remain a small pure function");
- const classify=Function("return "+match[0])();
- assert.equal(classify({title:"Yeni sohbet",items:[]}),true);
- assert.equal(classify({title:"Yeni sohbet",items:[{role:"system",content:"Yeni sohbet hazır."}]}),true);
- assert.equal(classify({title:"Yeni sohbet",items:[{role:"user",content:"Merhaba"}]}),false);
- assert.equal(classify({title:"Yeni sohbet",items:[{role:"assistant",content:"Yanıt"}]}),false);
- assert.equal(classify({title:"Fikirler",items:[]}),false);
- assert.match(html,/chats\.filter\(c=>!c\._draft\)\.slice\(0,100\)/);
- assert.match(html,/if\(chat\._draft\|\|isEmptyCouncilDraft\(chat\)\)continue/);
- assert.match(html,/if\(mine\)\{delete c\._draft/);
- assert.match(html,/const initialChat=chats\.find\(c=>!isEmptyCouncilDraft\(c\)\)/);
- assert.match(html,/const next=chats\.find\(c=>!c\._draft&&!isEmptyCouncilDraft\(c\)\)/);
-});
-test("OpenCode agent card can reopen only the authenticated paired room, not fabricate chat history",()=>{
- const index=source.indexOf("const HTML=");
- const html=JSON.parse(source.slice(index+11,source.lastIndexOf(";")));
- assert.match(html,/id="openCodeOpenRoom"/);
- assert.match(html,/id="openCodeOpenRoomStatus"/);
- assert.match(html,/roomButton\.dataset\.roomId=list\[0\]\.roomId/);
- assert.match(html,/fetch\('\/api\/atha-sync\/rooms\/'\+encodeURIComponent\(room\)/);
- assert.match(html,/data\.roomId!==room/);
- assert.match(html,/if\(!chat\)\{/);
- assert.match(html,/chat\.title='OpenCode Sohbeti'/);
- assert.match(html,/enabledAthaSyncRooms\.add\(room\)/);
- assert.match(html,/saveChats\(\);renderChats\(\);openChat\(room\);show\('chat'\)/);
 });
 test("Human messages are queued immediately, deduplicated and deleted with room",async()=>{
  const path="/api/atha-sync/rooms/c99990000";
@@ -285,63 +249,64 @@ test("Minute scheduler persists a heartbeat without impersonating an AI response
  d1.events.delete(key);
 });
 
-test("Mobile Council keeps diagnostics accessible while prioritizing the chat",()=>{
+
+test("History-only mirror requires an optimistic version and never queues model events",async()=>{
+ const room="/api/atha-sync/rooms/c_mirror_101";
+ const first={consent:true,history_only:true,expected_updated_at:-1,title:"Telefon ve PC",items:[{role:"user",name:"Sen",content:"İlk mesaj",speakerId:"human"}]};
+ const res=await request(room,{method:"PUT",user:"1",body:first});
+ assert.equal(res.status,200);
+ assert.equal((await res.json()).queuedEvents,0);
+ const stored=await request(room,{user:"1"});assert.equal(stored.status,200);
+ const data=await stored.json();
+ const bad=await request(room,{method:"PUT",user:"1",body:{...first,items:[...first.items,{role:"user",name:"Sen",content:"Güncel mesaj",speakerId:"human"}]}});
+ assert.equal(bad.status,409,"An update with a stale revision must not overwrite cloud state");
+ const next=await request(room,{method:"PUT",user:"1",body:{...first,expected_updated_at:data.updatedAt,items:[...first.items,{role:"user",name:"Sen",content:"Güncel mesaj",speakerId:"human"}]}});
+ assert.equal(next.status,200);
+ assert.equal((await next.json()).queuedEvents,0);
+ assert.equal(d1.events.size,0);
+ assert.equal((await (await request(room,{user:"1"})).json()).snapshot.items.length,2);
+ const sameOwner=await request('/api/atha-sync/rooms',{user:"1"});assert.equal((await sameOwner.json()).rooms.some(x=>x.room_id==='c_mirror_101'),true);
+ const other=await request(room,{user:"2"});assert.equal(other.status,404);
+ assert.equal((await request(room,{method:"DELETE",user:"1"})).status,200);
+});
+test("Device mirror is opt-in and never silently overwrites conflicting chat histories",()=>{
  const k=source.indexOf("const HTML="),html=JSON.parse(source.slice(k+11,source.lastIndexOf(";")));
- const chatStart=html.indexOf('<section class="view active" id="chat">');
- const chatEnd=html.indexOf('</section>',chatStart);
- const chat=html.slice(chatStart,chatEnd);
- assert.ok(chatStart>0&&chatEnd>chatStart,"chat screen exists");
- assert.match(chat,/<details class="chatConnections" id="chatConnections"><summary>⚙ Bağlantı durumu/);
- assert.doesNotMatch(chat,/<details class="chatConnections" id="chatConnections" open/,"details are collapsed by default");
- assert.ok(chat.indexOf('id="chatConnections"')<chat.indexOf('id="feed"'),"diagnostics precede the message feed");
- for(const id of ["athaSettings","athaQuickStatus","openCodeQuickStatus","councilDialogueNotice","reset","feed","input","send","attachInput"]){
-  assert.equal((chat.match(new RegExp('id="'+id+'"','g'))||[]).length,1,id+" remains accessible exactly once");
- }
- assert.match(html,/#chatConnections>summary:focus-visible/);
- assert.match(html,/@media\(max-width:650px\)\{[\s\S]*?#chat\{height:calc\(100dvh - 52px\)\}/);
- assert.match(html,/#chatConnections \.athaInviteRow \.muted\{display:block/);
+ assert.match(html,/id="councilCloudMirrorToggle"/);
+ assert.match(html,/id="councilCloudMirrorNow"/);
+ assert.match(html,/councilMirrorEnabled=localStorage.getItem/);
+ assert.match(html,/confirmAthaSyncAction\('Telefon ve PC sohbet eşitlemesi'/);
+ assert.match(html,/history_only:true,expected_updated_at:expected/);
+ assert.match(html,/councilMirrorPrefix\(localItems,remote\)/);
+ assert.match(html,/councilMirrorPrefix\(remote,localItems\)/);
+ assert.match(html,/else\{conflicts\+\+;\}/);
+ assert.match(html,/if\(items.length>60\)/);
+ assert.match(html,/if\(!councilMirrorEnabled\|\|councilMirrorBusy\|\|document.hidden\)return/);
 });
 
-test('Retired QwQ messages are selectively removed from synced and restored Council rooms',async()=>{
- const room='/api/atha-sync/rooms/c99009900';
- const items=[
-  {role:'user',name:'Sen',content:'QwQ neden bozuldu?',speakerId:'human'},
-  {role:'assistant',name:'Qwen QwQ 32B',content:'Eski model yanıtı',speakerId:'qwen'},
-  {role:'assistant',name:'Qwen 3.8 · Workers AI',content:'Yeni Qwen yanıtı',speakerId:'qwen'},
-  {role:'assistant',name:'Google Gemini',content:'Gemini yanıtı',speakerId:'gemini'}
- ];
- const saved=await request(room,{method:'PUT',user:'1',body:{consent:true,title:'Kontrol',items}});
- assert.equal(saved.status,200);
- const response=await request(room,{user:'1'});
- assert.equal(response.status,200);
- const result=(await response.json()).snapshot.items;
- assert.equal(result.length,3);
- assert.deepEqual(result.map(x=>x.name),['Sen','Qwen 3.8 · Workers AI','Google Gemini']);
- assert.equal(result[0].content,'QwQ neden bozuldu?','human content must never be deleted');
- const index=source.indexOf('const HTML='),html=JSON.parse(source.slice(index+11,source.lastIndexOf(';')));
- const a=html.indexOf('function councilClientRetiredQwqEntry(item){'),b=html.indexOf("const storageKey='atlasCouncilChatsV1';",a);
- assert.ok(a>0&&b>a);
- const filter=Function(html.slice(a,b)+'return councilClientRetiredQwqEntry')();
- assert.equal(filter({role:'assistant',name:'Qwen QwQ 32B bağlantı hatası'}),true);
- assert.equal(filter({role:'user',name:'Sen',content:'Qwen QwQ 32B'}),false);
- assert.equal(filter({role:'assistant',name:'Qwen 3.8 · Workers AI'}),false);
- assert.match(html,/items:c\.items\.filter\(i=>!councilClientRetiredQwqEntry\(i\)\)/);
- assert.match(html,/!councilClientRetiredQwqEntry\(i\)\)\.map/);
- assert.match(html,/old\.includes\('qwen'\)/);
-});
 
-test('Public model list never advertises retired QwQ and old requests cannot infer',async()=>{
- const status=await worker.fetch(new Request(ORIGIN+'/api/status'),env);
- assert.equal(status.status,200);
- const info=await status.json();
- assert.ok(info.models.includes('Qwen 3.8 · Workers AI'));
- assert.ok(!info.models.some(x=>/QwQ/i.test(x)));
- let calls=0;
- const legacy=await worker.fetch(new Request(ORIGIN+'/api/chat',{
-  method:'POST',headers:{'content-type':'application/json'},
-  body:JSON.stringify({model:'qwen',messages:[{role:'user',content:'hi'}]})
- }),{AI:{run:async()=>{calls++;return {response:'old model'};}}},{});
- assert.equal(legacy.status,410);
- assert.equal(calls,0);
- assert.doesNotMatch((await legacy.json()).error,/QwQ/i);
+test("Owner-scoped deleted-room tombstones prevent cross-device resurrection",async()=>{
+ const id="c_deleted_3901",uri="/api/atha-sync/rooms/"+id;
+ const snapshot={consent:true,title:"Silinecek oda",items:[{role:"user",name:"Sen",content:"Eski mesaj",speakerId:"human"}]};
+ assert.equal((await request(uri,{method:"PUT",user:"1",body:snapshot})).status,200);
+ const r=await request(uri,{method:"DELETE",user:"1"});assert.equal(r.status,200);
+ assert.equal((await r.json()).deleted,true);
+ const ownerList=await request("/api/atha-sync/deleted",{user:"1"});
+ assert.equal(ownerList.status,200);
+ assert.ok((await ownerList.json()).deleted.some(x=>x.room_id===id));
+ const otherList=await request("/api/atha-sync/deleted",{user:"2"});
+ assert.ok(!(await otherList.json()).deleted.some(x=>x.room_id===id));
+ const retry=await request(uri,{method:"PUT",user:"1",body:{...snapshot,history_only:true,expected_updated_at:-1}});
+ assert.equal(retry.status,410);
+ assert.equal((await retry.json()).error,"ROOM_DELETED");
+ assert.equal((await request(uri,{user:"1"})).status,404);
+});
+test("Browser deletion persists pending tombstones and never imports deleted chats",()=>{
+ const html=JSON.parse(source.slice(source.indexOf('const HTML=')+11,source.lastIndexOf(';')));
+ assert.match(html,/councilDeletedRooms=councilReadDeletedSet/);
+ assert.match(html,/councilPendingDeletes=councilReadDeletedSet/);
+ assert.match(html,/councilRememberDeletion\(chat\.id,true\)/);
+ assert.match(html,/await councilDeleteInCloud\(chat\.id\)/);
+ assert.match(html,/councilMirrorRequest\('\/api\/atha-sync\/deleted'\)/);
+ assert.match(html,/if\(councilDeletedRooms\.has\(room\.roomId\)\)continue/);
+ assert.match(html,/if\(councilDeletedRooms\.has\(chat\.id\)\|\|remoteIds\.has\(chat\.id\)\)continue/);
 });

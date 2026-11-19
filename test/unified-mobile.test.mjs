@@ -1,102 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import {readFileSync,existsSync} from 'node:fs';
 import vm from 'node:vm';
-const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
+const source = path => new URL('../'+path,import.meta.url);
+const read = path => readFileSync(source(path),'utf8');
 const main=read('app/src/main/java/com/atlascouncil/app/MainActivity.kt');
-const pc=read('app/src/main/java/com/atlascouncil/app/PcWorkspaceActivity.java');
-const policy=read('app/src/main/java/com/atlascouncil/app/ConnectionPolicy.java');
 const menu=read('app/src/main/assets/unified-council-menu.js');
-const shell=read('app/src/main/assets/workspace-shell.js');
-const css=read('app/src/main/assets/workspace-theme.css');
 const manifest=read('app/src/main/AndroidManifest.xml');
-test('one launcher retains Council OAuth, speech, sharing, updates and attachments',()=>{
+
+test('Council alone provides a native launcher, authentication, speech, sharing and backups',()=>{
  assert.equal((manifest.match(/android.intent.category.LAUNCHER/g)||[]).length,1);
  for(const marker of ['startGoogleLogin','startGitHubLogin','startSpeech','stopSpeech','shareText','openUpdates','ACTION_OPEN_DOCUMENT','EXTRA_ALLOW_MULTIPLE','parseResult(resultCode,data)'])assert.ok(main.includes(marker),marker);
- assert.match(main,/layout\.addView\(councilWeb,LinearLayout\.LayoutParams\(-1,0,1f\)\)/);
- assert.match(main,/layout\.addView\(topBar,LinearLayout\.LayoutParams\(-1,barHeight\)\)/);
- assert.ok(main.includes('".txt" to "text/plain"'));assert.ok(main.includes('".json" to "application/json"'));
- assert.match(main,/attachmentCallback\?\.onReceiveValue\(null\)/);
- assert.match(main,/page.host!="atlas-council.sshrrgoktas.workers.dev"/);
- assert.match(manifest,/android:name=".PcWorkspaceActivity" android:exported="false"/);
+ assert.match(menu,/exportCurrent/);
+ assert.match(menu,/drawerBackup/);
 });
-test('PC runs in a separate bridge-free WebView and keeps the existing pairing transport',()=>{
- assert.doesNotMatch(pc,/addJavascriptInterface|AtlasNative/);
- assert.match(pc,/setAcceptThirdPartyCookies\(web,false\)/);
- assert.match(pc,/setAllowFileAccess\(false\)/);
- assert.match(pc,/setAllowContentAccess\(false\)/);
- assert.match(pc,/ConnectionPolicy.sameOrigin\(server/);
- assert.match(pc,/ConnectionPolicy.REMOTE_ORIGIN/);
- assert.match(policy,/https:\/\/athalai-mobile.sshrrgoktas.workers.dev/);
- assert.match(policy,/isPrivateIpv4/);
- assert.match(policy,/target.getUserInfo\(\) == null/);
- assert.match(pc,/"athalai:\/\/council".equals\(url\)/);
- assert.match(pc,/CookieManager.getInstance\(\).flush\(\)/);
- assert.doesNotMatch(pc,/setCookie|accessToken|refreshToken|DESKTOP_KEY/);
+test('Council contains no PC workspace, tunnel or main AthalAI application references',()=>{
+ for(const path of ['app/src/main/java/com/atlascouncil/app/PcWorkspaceActivity.java','app/src/main/java/com/atlascouncil/app/ConnectionPolicy.java','app/src/main/assets/workspace-shell.js','app/src/main/assets/workspace-theme.css'])assert.equal(existsSync(source(path)),false,path);
+ assert.doesNotMatch(main+manifest+menu,/PcWorkspace|openWorkspace|AthalAI|com\.athalai|athalai-mobile\.sshrrgoktas|DESKTOP_KEY/);
 });
-test('unified menu adds a PC route without replacing Council controls',()=>{
- new vm.Script(menu);new vm.Script(shell);
- assert.match(menu,/profile.before\(workSection\)/);
- assert.match(menu,/getElementById\('atha-pc-workspace'\)/);
- assert.doesNotMatch(menu,/innerHTML|replaceChildren|remove\(/);
- assert.match(css,/outline:0!important/);
- assert.match(css,/font:15px system-ui/);
- assert.match(shell,/document.createElement\('link'\)/);
- assert.match(pc,/getAssets\(\).open\("workspace-theme.css"\)/);
- assert.match(shell,/summary.textContent=/);
- assert.doesNotMatch(shell,/summary.innerHTML/);
+test('Council menu is valid JavaScript and preserves theme and backup controls',()=>{
+ new vm.Script(menu);
+ for(const id of ['exportCurrent','exportCurrentJson','drawerBackup','importChats'])assert.ok(menu.includes(id));
+ assert.match(menu,/atha-council-theme/);
+ assert.match(menu,/actions\.hidden=true/);
+ assert.doesNotMatch(menu,/atha-pc-workspace|AthalAI Çalışmaları|openWork\(/);
 });
-test('tool receipts become short factual labels instead of raw commands',()=>{
- const start=shell.indexOf('function summarizeTool(raw)');
- const end=shell.indexOf('window.athaWorkspaceToolSummary',start);
- const summarize=vm.runInNewContext('('+shell.slice(start,end).trim()+')');
- assert.equal(summarize('bridge_read_file\nSECRET CONTENT'),'Dosya okundu');
- assert.equal(summarize('bridge_write_file\n{"changed":true}'),'Dosya düzenlendi');
- assert.equal(summarize('bridge_read_job\n{"state":"running"}'),'Bilgisayar işlemi sürüyor');
- assert.equal(summarize('bridge_read_job\n{"state":"succeeded","output":"30 tests passed"}'),'Test tamamlandı');
- assert.equal(summarize('bridge_start_job\n{"state":"queued"}'),'Bilgisayar işlemi sırada');
- assert.equal(summarize('<script>secret</script>'),'Bilgisayardaki işlem kontrol edildi');
-});
-
-test('PC view uses Council-sized text and the actual text send button, not the old welcome and arrow composer',()=>{
- assert.match(shell,/send.textContent='Gönder'/);
- assert.match(shell,/form.className='compose workspace-compose'/);
- assert.match(shell,/title.textContent==='Yeni sohbet'\?'Yeni çalışma'/);
- assert.match(shell,/empty.replaceChildren\(heading,note\)/);
- assert.match(shell,/document.body.append\(oldActions\)/);
- assert.match(css,/font:15px system-ui;line-height:normal/);
- assert.match(css,/\.chat-message.bubble.mine/);
-});
-test('light and dark themes persist across both native sections, with existing profile menus retained',()=>{
+test('Native theme preferences are isolated from AthalAI',()=>{
  assert.match(main,/@JavascriptInterface fun theme\(\):String/);
  assert.match(main,/@JavascriptInterface fun setTheme\(value:String\)/);
- assert.match(main,/athalai-appearance/);
- assert.match(pc,/athalai:\/\/theme\/light/);
- assert.match(css,/data-atha-theme=light/);
- assert.match(menu,/atha-council-theme/);
- assert.match(shell,/atha-workspace-theme/);
-});
-
-test('work conversations have separate new/list entry points and reuse the real thread list',()=>{
- assert.ok(menu.includes('AthalAI Çalışmaları'));
- assert.ok(menu.includes("openWork('new')"));
- assert.ok(menu.includes("openWork('chats')"));
- assert.ok(main.includes('@JavascriptInterface fun openWorkspaceView(view:String)'));
- assert.ok(main.includes('putExtra("workspace_view",view)'));
- assert.ok(pc.includes('getStringExtra("workspace_view")'));
- assert.ok(shell.includes('window.athaOpenWorkspaceView'));
- assert.ok(shell.includes('#bottom-nav button[data-view="chats"]'));
-});
-test('export, backup and import stay under one collapsed button without changing archive actions',()=>{
- for(const id of ['exportCurrent','exportCurrentJson','drawerBackup','importChats'])assert.ok(menu.includes(id));
- assert.ok(menu.includes('actions.hidden=true'));
- assert.ok(menu.includes("toggle.setAttribute('aria-expanded','false')"));
- assert.ok(menu.includes('actions.append(action)'));
- assert.ok(menu.includes('first.before(group)'));
-});
-
-test('native workspace preserves upstream chat composer controls used by live app.js',()=>{
- assert.doesNotMatch(shell,/form\.replaceChildren\(/);
- assert.match(shell,/actions\.append\(send\);form\.append\(actions\)/);
- assert.match(shell,/if\(draft\)draft\.className='sr-only'/);
+ assert.match(main,/atha-council-appearance/);
+ assert.doesNotMatch(main,/athalai-appearance/);
 });

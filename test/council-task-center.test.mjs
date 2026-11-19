@@ -7,7 +7,7 @@ import {generateKeyPairSync,createHash,sign} from 'node:crypto';
 
 const source=readFileSync(new URL('../worker/production.js',import.meta.url),'utf8');
 const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+
- '\nexport {handleCouncilTasks,handleOpenCodeAgent,COUNCIL_HUMAN_TURNS_ONLY};').toString('base64'));
+ '\nexport {handleCouncilTasks,handleOpenCodeAgent};').toString('base64'));
 const origin='https://atlas-council.sshrrgoktas.workers.dev';
 const owner='github:101',room='room_task_one';
 const cfg={GITHUB_SESSION_SECRET:'test-secret-which-is-more-than-thirty-two-chars-long'};
@@ -66,7 +66,7 @@ test('no Council OpenCode chat poll runs inference or gets an event',async()=>{
  const r=await agent('POST','poll',{room_id:room,since_ms:0});
  assert.equal(r.status,200);
  assert.deepEqual((await r.json()).events,[]);
- assert.equal(runtime.COUNCIL_HUMAN_TURNS_ONLY,true);
+ // OpenCode's old chat poll is inert: no model invocation.
 });
 test('task is dispatched exactly once, only after explicit approval',async()=>{
  let r=await agent('POST','work-poll',{room_id:room});
@@ -94,9 +94,9 @@ test('signed agent can save bounded evidence for review, but cannot self-approve
 });
 test('mobile UI exposes Council to task draft and explicit approval',()=>{
  const i=source.indexOf('const HTML='),html=JSON.parse(source.slice(i+11,source.lastIndexOf(';')));
- for(const needle of ['id="councilTaskCreate"','id="councilTaskFromChat"','id="councilTasksList"','AthalAI Görev Merkezi','function refreshCouncilTaskCentre','İş emrini onayla']){
+ for(const needle of ['id="councilTaskCreate"','id="councilTaskFromChat"','id="councilTasksList"','Atha Council · Görevler','function refreshCouncilTaskCentre','İş emrini onayla']){
   assert.ok(html.includes(needle),needle);
  }
- assert.match(html,/if\(addressed==='opencode'\)\{councilTaskInput\.value=t;show\('tasks'\)/);
+ assert.doesNotMatch(html,/if\(addressed==='opencode'\)/);
  assert.doesNotMatch(html,/if\(addressed==='opencode'\)\{[^}]+sendAthaSyncRoom/);
 });

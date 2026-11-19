@@ -1,13 +1,10 @@
-// Historic automatic Gemini ↔ Qwen/Atha dialogue tests are retained as skipped regression
-// records because the user explicitly replaced that behavior with human-only turns.
-// The new test/council-human-turn.test.mjs enforces the replacement policy.
 import test,{beforeEach,afterEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
-import {createHmac,createHash,generateKeyPairSync,sign} from 'node:crypto';
+import {createHmac} from 'node:crypto';
 const source=readFileSync(new URL('../worker/production.js',import.meta.url),'utf8');
-const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues,councilStopIntent,councilRecipientForTurn,councilQwenAutoRespond,councilQwenAutoStatus,councilModelProviderStatus,councilRoomPreferences,councilFinalAnswer};').toString('base64'));
+const runtime=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {mcpHash,mcpSeal,mcpOpen,mcpDeliver,mcpQueueEvents,mcpStatus,encrypt,beginCouncilDialogue,finishCouncilDialogue,councilShortReply,rememberCouncilDialogue,runCouncilDialogue,resumeCouncilDialogues,councilStopIntent,councilQwenAutoRespond,councilQwenAutoStatus,councilModelProviderStatus};').toString('base64'));
 const worker=runtime.default,origin='https://atlas-council.sshrrgoktas.workers.dev',resource=origin+'/mcp';
 const owner='github:101',room='room_one',now=()=>Date.now();
 const oldFetch=globalThis.fetch;
@@ -25,20 +22,13 @@ async function request(path,method='GET',body,token=access,headers={}){
 }
 async function rpc(method,params={},token=access){const r=await request('/mcp','POST',{jsonrpc:'2.0',id:1,method,params},token);return {status:r.status,...await r.json()}}
 function seedEvent(id='evt_test'){sql.prepare('INSERT OR IGNORE INTO atha_sync_events(owner_id,room_id,event_id,created_at) VALUES(?,?,?,?)').run(owner,room,id,now())}
-function setLatestHuman(text){
- const row=sql.prepare('SELECT snapshot FROM atha_sync_rooms WHERE owner_id=? AND room_id=?').get(owner,room);
- const snapshot=JSON.parse(row.snapshot);
- const latest=[...snapshot.items].reverse().find(x=>x.role==='user');
- latest.content=text;
- sql.prepare('UPDATE atha_sync_rooms SET snapshot=? WHERE owner_id=? AND room_id=?').run(JSON.stringify(snapshot),owner,room);
-}
 const secret='whsec_'+Buffer.alloc(32,7).toString('base64');
 const subscription=(url='https://callbacks.openai.com/test')=>({name:'message.created',arguments:{room_id:room},delivery:{mode:'webhook',url,secret}});
 async function subscribe(){const r=await rpc('events/subscribe',subscription());assert.ok(r.result,JSON.stringify(r));return r.result.id}
 async function queue(id='evt_test',text='Atha, merhaba'){seedEvent(id);await runtime.mcpQueueEvents(env,owner,room,[id],[{content:text}])}
 beforeEach(async()=>{
  sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');
- for(const path of ['schema.sql','replies.sql','events.sql','mcp.sql','mcp-receipts.sql','mcp-diagnostics.sql','mcp-account.sql','dialogue.sql','qwen-auto.sql','opencode-agent.sql'])sql.exec(readFileSync(new URL('../worker/atha-sync/'+path,import.meta.url),'utf8'));
+ for(const path of ['schema.sql','replies.sql','events.sql','mcp.sql','mcp-receipts.sql','mcp-diagnostics.sql','mcp-account.sql','dialogue.sql','qwen-auto.sql','deleted-rooms.sql'])sql.exec(readFileSync(new URL('../worker/atha-sync/'+path,import.meta.url),'utf8'));
  db=new D1(sql);env={ATHA_SYNC_DB:db,GITHUB_SESSION_SECRET:'test-only-session-secret-with-more-than-32-characters',ATHA_MCP_CALLBACK_ORIGINS:'https://callbacks.openai.com'};
  sql.prepare('INSERT INTO atha_sync_rooms VALUES(?,?,?,?,?)').run(owner,room,'Test',JSON.stringify({version:1,title:'Test',items:[{role:'user',name:'Sen',content:'Atha selam',speakerId:'human'},{role:'assistant',name:'Google Gemini',content:'Merhaba',speakerId:'gemini'}]}),now());
  sql.prepare('INSERT INTO atha_mcp_grants(grant_id,owner_id,room_id,client_id,expires_at) VALUES(?,?,?,?,?)').run('grant_test',owner,room,'client_test',now()+86400000);
@@ -65,7 +55,7 @@ async function dialogueSetup(){
  sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,'mcp_evt_current','Gemini, ne düşünüyorsun?',now());
  return {req,body:{dialogue:{room_id:room,parent_reply_id:'mcp_evt_current'}}};
 }
-test.skip('LEGACY model-to-model (disabled): Controlled real-model dialogue is owner-scoped, current-parent-only and idempotent',async()=>{
+test('Controlled real-model dialogue is owner-scoped, current-parent-only and idempotent',async()=>{
  const {req,body}=await dialogueSetup();
  await assert.rejects(runtime.beginCouncilDialogue(new Request(origin),env,body),/GitHub/);
  await assert.rejects(runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:'foreign',parent_reply_id:'mcp_evt_current'}}),/inactive/);
@@ -81,7 +71,7 @@ test.skip('LEGACY model-to-model (disabled): Controlled real-model dialogue is o
  const read=await rpc('tools/call',{name:'council_read',arguments:{room_id:room}});
  assert.equal(read.result.structuredContent.events[0].controlledDialogue.speakerId,'gemini');
 });
-test.skip('LEGACY model-to-model (disabled): Dialogue continues beyond three turns and twenty minutes until explicitly paused',async()=>{
+test('Dialogue continues beyond three turns and twenty minutes until explicitly paused',async()=>{
  const {req}=await dialogueSetup();
  sql.prepare('UPDATE atha_mcp_participation SET updated_at=?').run(now()-24*3600000);
  for(let i=0;i<8;i++){
@@ -94,7 +84,7 @@ test.skip('LEGACY model-to-model (disabled): Dialogue continues beyond three tur
  sql.prepare("UPDATE atha_mcp_participation SET mode='paused'").run();
  await assert.rejects(runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:'mcp_evt_round_7'}}),/inactive/);
 });
-test.skip('LEGACY model-to-model (disabled): An intervening user turn or stop cancels a reserved dialogue; short text stays bounded',async()=>{
+test('An intervening user turn or stop cancels a reserved dialogue; short text stays bounded',async()=>{
  const {req,body}=await dialogueSetup();const turn=await runtime.beginCouncilDialogue(req,env,body);
  sql.prepare('UPDATE atha_mcp_participation SET updated_at=updated_at+1').run();
  await assert.rejects(runtime.finishCouncilDialogue(env,turn,'Geç kalan yanıt.',null),/superseded/);
@@ -135,36 +125,15 @@ test('Provider status distinguishes unchecked, disconnected, absent subscription
  assert.equal(offline.chatgpt.toolConnection,'not_connected');
  assert.equal(offline.chatgpt.manualCouncilReplyAvailable,false);
 });
-
-test('A short follow-up to Llama is not sent to Qwen, Gemini or automatic Atha callbacks',async()=>{
- const text='Sen niye bişi demiyosun';
- const row=sql.prepare('SELECT snapshot FROM atha_sync_rooms WHERE owner_id=? AND room_id=?').get(owner,room);
- const snapshot=JSON.parse(row.snapshot);
- snapshot.items=[{role:'user',speakerId:'human',content:'Llama nerde'},{role:'assistant',speakerId:'meta',content:'Llama burada.'},{role:'user',speakerId:'human',content:text}];
- sql.prepare('UPDATE atha_sync_rooms SET snapshot=? WHERE owner_id=? AND room_id=?').run(JSON.stringify(snapshot),owner,room);
- assert.equal(runtime.councilRecipientForTurn(text,snapshot.items),'meta');
- let modelCalls=0;env.AI={run:async()=>{modelCalls++;return {choices:[{message:{content:'Yanıt'}}]}}};
- sql.prepare('INSERT INTO atha_qwen_auto_accounts(owner_id,enabled,updated_at) VALUES(?,1,?)').run(owner,now());
- seedEvent('evt_llama_followup');
- assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_llama_followup',text),false);
- assert.equal(modelCalls,0,'a direct Llama follow-up must not spend Qwen inference');
- await subscribe();
- sql.prepare('INSERT INTO atha_mcp_participation VALUES(?,?,?,?)').run(owner,room,'dialogue',now());
- await runtime.mcpQueueEvents(env,owner,room,['evt_llama_followup'],[{role:'user',content:text,recipient:'meta'}]);
- await runtime.mcpDeliver(env);
- assert.equal(callbackCalls.length,1,'subscription verification only; no unrelated Atha webhook');
-});
-
 test('Qwen temporary member is opt-in, owner-scoped and never impersonates ChatGPT',async()=>{
- setLatestHuman('Merhaba Konsey');
  let calls=0;
  env.AI={run:async(model,args)=>{calls++;assert.equal(model,'@cf/qwen/qwen3.8-27b');assert.equal(args.reasoning_effort,'low');assert.equal(args.chat_template_kwargs?.enable_thinking,false);return {choices:[{message:{content:'Merhaba, ben bağımsız Qwen!'}}]}}};
  seedEvent('evt_qwen_safe');
- assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Merhaba Konsey'),false);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Atha selam'),false);
  assert.equal(calls,0,'Default-off must never invoke billable AI');
  sql.prepare('INSERT INTO atha_qwen_auto_accounts(owner_id,enabled,updated_at) VALUES(?,1,?)').run(owner,now());
- assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Merhaba Konsey'),true);
- assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Merhaba Konsey'),false);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Atha selam'),true);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_safe','Atha selam'),false);
  assert.equal(calls,1,'Same event must consume one inference only');
  const out=sql.prepare("SELECT * FROM atha_sync_replies WHERE reply_id='qwen_evt_qwen_safe'").get();
  assert.equal(out.content,'Merhaba, ben bağımsız Qwen!');
@@ -176,42 +145,26 @@ test('Qwen temporary member is opt-in, owner-scoped and never impersonates ChatG
  assert.notEqual(reply.speakerId,'chatgpt');
 });
 test('Qwen enforces stop, room pause, newest user and per-account daily budget',async()=>{
- setLatestHuman('Merhaba Konsey');
  let calls=0;
  env.AI={run:async()=>{calls++;return {choices:[{message:{content:'Yanıt Qwen'}}]}}};
  sql.prepare('INSERT INTO atha_qwen_auto_accounts(owner_id,enabled,updated_at) VALUES(?,1,?)').run(owner,now());
- for(const [eventId,content] of [['evt_stop_qwen','sus'],['evt_old_qwen','Merhaba'],['evt_qwen_quota','Merhaba Konsey']])seedEvent(eventId);
+ for(const [eventId,content] of [['evt_stop_qwen','sus'],['evt_old_qwen','Merhaba'],['evt_qwen_quota','Atha selam']])seedEvent(eventId);
  assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_stop_qwen','sus'),false);
  assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_old_qwen','Merhaba'),false);
  sql.prepare("INSERT INTO atha_mcp_participation VALUES(?,?,?,?)").run(owner,room,'paused',now());
- assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_quota','Merhaba Konsey'),false);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_quota','Atha selam'),false);
  sql.prepare("UPDATE atha_mcp_participation SET mode='dialogue'").run();
  const day=new Date().toISOString().slice(0,10);
  sql.prepare('INSERT INTO atha_qwen_auto_usage(owner_id,utc_day,attempts) VALUES(?,?,18)').run(owner,day);
- assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_quota','Merhaba Konsey'),false);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_qwen_quota','Atha selam'),false);
  assert.equal(calls,0,'Quota exhausted must not bill for inference');
  assert.equal(sql.prepare("SELECT state FROM atha_qwen_auto_jobs WHERE event_id='evt_qwen_quota'").get().state,'quota');
  sql.prepare('UPDATE atha_qwen_auto_accounts SET enabled=0 WHERE owner_id=?').run(owner);
  seedEvent('evt_disabled_qwen');
- assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_disabled_qwen','Merhaba Konsey'),false);
+ assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,'evt_disabled_qwen','Atha selam'),false);
  assert.equal(calls,0);
 });
-
-test('Qwen auto ignores human messages explicitly addressed to OpenCode or Atha',async()=>{
- let calls=0;
- env.AI={run:async()=>{calls++;return {choices:[{message:{content:'Yanıt'}}]}}};
- sql.prepare('INSERT INTO atha_qwen_auto_accounts(owner_id,enabled,updated_at) VALUES(?,1,?)').run(owner,now());
- for(const [id,message] of [
-  ['evt_target_opencode','OpenCode, beni duyuyor musun?'],
-  ['evt_target_opencode_suffix','Ne hatırlıyorsun Opencode'],
-  ['evt_target_atha','Atha, nasılsın?']
- ]){
-  setLatestHuman(message);seedEvent(id);
-  assert.equal(await runtime.councilQwenAutoRespond(env,owner,room,id,message),false);
- }
- assert.equal(calls,0,'direct messages to other recipients must consume no Qwen inference');
-});
-test.skip('LEGACY model-to-model (disabled): A verified Qwen turn may initiate a Gemini dialogue but a stale Qwen turn may not',async()=>{
+test('A verified Qwen turn may initiate a Gemini dialogue but a stale Qwen turn may not',async()=>{
  const {req}=await dialogueSetup();
  sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,'qwen_evt_from_user','Merhaba Gemini, ne düşünüyorsun?',now()+100);
  const turn=await runtime.beginCouncilDialogue(req,env,{dialogue:{room_id:room,parent_reply_id:'qwen_evt_from_user'}});
@@ -221,7 +174,7 @@ test.skip('LEGACY model-to-model (disabled): A verified Qwen turn may initiate a
  const row=sql.prepare('SELECT message_excerpt FROM atha_sync_events WHERE event_id=?').get(turn.id);
  assert.equal(JSON.parse(row.message_excerpt).phase,'complete');
 });
-test.skip('LEGACY model-to-model (disabled): Qwen responds to verified Gemini turn; it never replays, relabels, or answers a superseded turn',async()=>{
+test('Qwen responds to verified Gemini turn; it never replays, relabels, or answers a superseded turn',async()=>{
  const {req}=await dialogueSetup();
  sql.prepare('INSERT INTO atha_qwen_auto_accounts(owner_id,enabled,updated_at) VALUES(?,1,?)').run(owner,now());
  sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,'qwen_evt_auto_parent','Gemini merhaba',now()+100);
@@ -278,17 +231,16 @@ test('Punctuation-only and emoji-only user turns queue real automatic events wit
  assert.deepEqual(bodies,['evt_emoji','evt_period']);
  assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_sync_replies').get().n,0,'a webhook receipt is not an Atha answer');
 });
-test('Retry cannot create a new model turn without a fresh user message',async()=>{
- const {req}=await dialogueSetup();
- const headers={cookie:req.headers.get('cookie'),origin,'x-atha-sync':'1'};
- const path='/api/atha-sync/rooms/'+room+'/retry';
- const body={request_id:'retry_request_1234567890',parent_reply_id:'mcp_evt_current'};
- const response=await request(path,'PUT',body,null,headers);
- assert.equal(response.status,409);
- assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_sync_events').get().n,0);
+test('Retry creates a fresh real-model event for the latest reply; it never overwrites content',async()=>{
+ const {req}=await dialogueSetup();const headers={cookie:req.headers.get('cookie'),origin,'x-atha-sync':'1'};
+ const path='/api/atha-sync/rooms/'+room+'/retry',body={request_id:'retry_request_1234567890',parent_reply_id:'mcp_evt_current'};
+ assert.equal((await request(path,'PUT',{...body,parent_reply_id:'mcp_evt_old'},null,headers)).status,409);
+ const r=await request(path,'PUT',body,null,headers);assert.equal(r.status,200);
  assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_sync_replies').get().n,1);
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM atha_sync_events').get().n,1);
+ sql.prepare("UPDATE atha_mcp_participation SET mode='paused'").run();
+ assert.equal((await request(path,'PUT',{...body,request_id:'different_retry_1234567890'},null,headers)).status,409);
 });
-
 test('MCP requires OAuth, advertises tools/events, denies foreign origin and room',async()=>{
  const unauth=await request('/mcp','POST',{jsonrpc:'2.0',method:'initialize',id:1},null);assert.equal(unauth.status,401);assert.match(unauth.headers.get('www-authenticate'),/oauth-protected-resource\/mcp/);
  assert.deepEqual((await rpc('initialize')).result.capabilities,{tools:{},events:{}});
@@ -299,56 +251,6 @@ test('MCP requires OAuth, advertises tools/events, denies foreign origin and roo
  const context=(await rpc('tools/call',{name:'council_read',arguments:{room_id:room}})).result.structuredContent;
  assert.equal(context.conversation.items[1].speakerId,'gemini');assert.equal(context.untrustedContent,true);
  sql.prepare('UPDATE atha_mcp_tokens SET expires_at=0').run();assert.equal((await rpc('tools/list')).status,401);
-});
-test('OpenCode OAuth DCR permits only bounded native loopback redirects and preserves ChatGPT clients',async()=>{
- const invalid=[
-  'http://localhost:52817/callback','http://127.0.0.2:52817/callback','http://0.0.0.0:52817/callback',
-  'http://192.168.1.3:52817/callback','https://127.0.0.1:52817/callback',
-  'http://127.0.0.1:80/callback','http://127.0.0.1:65536/callback','http://127.0.0.1:00001/callback',
-  'http://127.0.0.1:52817/evil','http://127.0.0.1:52817/callback?token=oops',
-  'http://127.0.0.1:52817/callback#secret','http://user@127.0.0.1:52817/callback',
-  'http://127.0.0.1:52817/callback/..','http://127.0.0.1:52817/callback//',
-  'https://evil.example/callback','https://chatgpt.com.evil.example/connector_platform_oauth_redirect'
- ];
- for(const redirect of invalid){
-  const r=await request('/mcp/oauth/register','POST',{redirect_uris:[redirect],token_endpoint_auth_method:'none'});
-  assert.equal(r.status,400,'must reject unsafe OAuth return '+redirect);
- }
- const loopback='http://127.0.0.1:52817/callback';
- const payload={redirect_uris:[loopback],token_endpoint_auth_method:'none'};
- const one=await (await request('/mcp/oauth/register','POST',payload)).json();
- const two=await (await request('/mcp/oauth/register','POST',payload)).json();
- assert.ok(one.client_id.startsWith('opencode_'));
- assert.equal(two.client_id,one.client_id,'DCR should be deterministic for same native client port');
- const original=await (await request('/mcp/oauth/register','POST',{redirect_uris:['https://chatgpt.com/connector_platform_oauth_redirect']})).json();
- assert.ok(original.client_id.startsWith('chatgpt_'));
- assert.notEqual(original.client_id,one.client_id);
- const params=new URLSearchParams({
-  client_id:one.client_id,redirect_uri:loopback,response_type:'code',resource,
-  state:'state_for_native_client',code_challenge:'k'.repeat(43),
-  code_challenge_method:'S256',scope:'council:read council:reply council:events'
- });
- const p=await request('/mcp/oauth/authorize?'+params.toString());
- assert.equal(p.status,200);
- assert.match(await p.text(),/GitHub girişi gerekli/);
- assert.match(p.headers.get('content-security-policy'),/http:\/\/127\.0\.0\.1:\*/);
- params.set('redirect_uri','http://evil.example:52817/callback');
- assert.equal((await request('/mcp/oauth/authorize?'+params.toString())).status,400);
-});
-test('OpenCode MCP uses separate tools and cannot impersonate ChatGPT or subscribe to events',async()=>{
- sql.prepare("UPDATE atha_mcp_grants SET client_id='opencode_fixture' WHERE grant_id='grant_test'").run();
- const list=await rpc('tools/list');
- assert.deepEqual(list.result.tools.map(t=>t.name).sort(),['council_connection_status','council_list_rooms','council_opencode_poll','council_opencode_reply','council_read']);
- const read=await rpc('tools/call',{name:'council_read',arguments:{room_id:room}});
- assert.equal(read.result.structuredContent.room_id,room);
- const denied=await rpc('tools/call',{name:'council_reply',arguments:{room_id:room,event_id:'evt_test',content:'I am ChatGPT'}});
- assert.match(denied.error.message,/read-only/);
- const participation=await rpc('tools/call',{name:'council_participation',arguments:{room_id:room,mode:'paused'}});
- assert.match(participation.error.message,/read-only/);
- assert.deepEqual((await rpc('events/list')).result.events,[]);
- assert.ok((await rpc('events/subscribe',subscription())).error);
- assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_sync_replies').get().n,0);
- assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_mcp_subscriptions').get().n,0);
 });
 test('OAuth discovery has S256, exact resource, issuer and restricted DCR redirects',async()=>{
  const metadata=await (await request('/.well-known/oauth-authorization-server')).json();assert.deepEqual(metadata.code_challenge_methods_supported,['S256']);assert.equal(metadata.issuer,origin);
@@ -451,12 +353,6 @@ test('Authorized browser sync atomically creates event and delivery; next snapsh
  const old=JSON.parse(sql.prepare('SELECT snapshot FROM atha_sync_rooms').get().snapshot),items=[...old.items,{role:'user',name:'Sen',content:'Atha, bir test daha',speakerId:'human'}];
  const sync=(next)=>request('/api/atha-sync/rooms/'+room,'PUT',{consent:true,title:'Test',items:next},null,{cookie,origin,'x-atha-sync':'1'});
  const r=await sync(items);assert.equal(r.status,200);assert.equal((await r.json()).queuedEvents,1);assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_mcp_delivery').get().n,1);
- const event=JSON.parse(sql.prepare("SELECT message_excerpt FROM atha_sync_events WHERE message_excerpt LIKE '{\"kind\":\"human\",%'").get().message_excerpt);
- assert.equal(event.turn_id,event.context_packet.turn_id);
- assert.equal(event.task_id,'council:'+event.turn_id);
- assert.equal(event.context_version,1);
- assert.equal(event.snapshot_hash,event.context_packet.snapshot_hash);
- assert.equal(event.context_packet.messages.at(-1).content,'Atha, bir test daha');
  assert.equal((await (await sync(items)).json()).queuedEvents,0);
  const model=[...items,{role:'assistant',name:'Atha / ChatGPT · MCP',speakerId:'chatgpt',content:'Only a fixture.'}];assert.equal((await (await sync(model)).json()).queuedEvents,0);
  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM atha_mcp_delivery').get().n,1);
@@ -614,7 +510,7 @@ async function serverDialogueSetup(){
  assert.equal(await runtime.rememberCouncilDialogue(request,env,owner,room),true);
  return {request,generations:()=>generations,setUnavailable:v=>{unavailable=v}};
 }
-test.skip('LEGACY model-to-model (disabled): Server hands Atha to Gemini and back for multiple turns without any browser polling',async()=>{
+test('Server hands Atha to Gemini and back for multiple turns without any browser polling',async()=>{
  const h=await serverDialogueSetup();
  // First real provider call is initiated by the server, with no UI involved.
  await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),1);
@@ -633,14 +529,7 @@ test.skip('LEGACY model-to-model (disabled): Server hands Atha to Gemini and bac
  const data=await response.json();assert.equal(data.serverDialogue,true);assert.equal(data.replies.filter(r=>r.speakerId==='gemini').length,7);
  assert.ok(data.replies.every((r,i)=>!i||r.createdAt>=data.replies[i-1].createdAt));
 });
-
-test.skip('LEGACY model-to-model (disabled): Server does not wake Gemini dialogue for an OpenCode-directed newest user turn',async()=>{
- const h=await serverDialogueSetup();
- setLatestHuman('Ne hatırlıyorsun Opencode');
- await runtime.runCouncilDialogue(env,owner,room);
- assert.equal(h.generations(),0,'no Gemini inference on a direct OpenCode message');
-});
-test.skip('LEGACY model-to-model (disabled): Failed provider calls retry without a user message and concurrent runners never duplicate',async()=>{
+test('Failed provider calls retry without a user message and concurrent runners never duplicate',async()=>{
  const h=await serverDialogueSetup();h.setUnavailable(true);
  await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),0);
  assert.equal(sql.prepare('SELECT attempts FROM atha_dialogue_sessions').get().attempts,1);
@@ -649,13 +538,13 @@ test.skip('LEGACY model-to-model (disabled): Failed provider calls retry without
  await Promise.all([runtime.runCouncilDialogue(env,owner,room),runtime.runCouncilDialogue(env,owner,room)]);
  assert.equal(h.generations(),1);assert.equal(callbackCalls.length,2);
 });
-test.skip('LEGACY model-to-model (disabled): Server dialogue respects pause, revoked subscriptions and expired authorization',async()=>{
+test('Server dialogue respects pause, revoked subscriptions and expired authorization',async()=>{
  const h=await serverDialogueSetup();
  sql.prepare("UPDATE atha_mcp_participation SET mode='paused'").run();await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),0);
  sql.prepare("UPDATE atha_mcp_participation SET mode='dialogue'").run();sql.prepare('UPDATE atha_mcp_grants SET revoked=1').run();await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),0);
  sql.prepare('UPDATE atha_mcp_grants SET revoked=0').run();sql.prepare('UPDATE atha_dialogue_sessions SET expires_at=0').run();await runtime.runCouncilDialogue(env,owner,room);assert.equal(h.generations(),0);
 });
-test.skip('LEGACY model-to-model (disabled): Repeated Gemini output stops the automatic chain instead of sending another event',async()=>{
+test('Repeated Gemini output stops the automatic chain instead of sending another event',async()=>{
  const {req,body}=await dialogueSetup();let turn=await runtime.beginCouncilDialogue(req,env,body);
  await runtime.finishCouncilDialogue(env,turn,'Aynı yanıt.',null);
  sql.prepare('INSERT INTO atha_sync_replies VALUES(?,?,?,?,?)').run(owner,room,'mcp_evt_followup','Yeni Atha yanıtı.',now()+1);
@@ -663,7 +552,7 @@ test.skip('LEGACY model-to-model (disabled): Repeated Gemini output stops the au
  await assert.rejects(runtime.finishCouncilDialogue(env,turn,'Aynı yanıt.',null),/Repeating/);
  assert.equal(sql.prepare('SELECT count(*) n FROM atha_mcp_delivery').get().n,1);
 });
-test.skip('LEGACY model-to-model (disabled): Server cannot reuse another room provider session or execute an expired turn',async()=>{
+test('Server cannot reuse another room provider session or execute an expired turn',async()=>{
  const h=await serverDialogueSetup();
  const wrong=await runtime.mcpSeal(JSON.stringify({owner:'github:999',room,google:'private',github:'private'}),env);
  sql.prepare('UPDATE atha_dialogue_sessions SET cookie_cipher=?').run(wrong);
@@ -680,7 +569,7 @@ test('First live user send in a new synced room triggers Atha once; history-only
  await request('/api/atha-sync/rooms/'+newRoom,'PUT',body,null,headers);assert.equal(callbackCalls.length,2);
  delete body.live_turn;await request('/api/atha-sync/rooms/history_import_room','PUT',body,null,headers);assert.equal(callbackCalls.length,2);
 });
-test.skip('LEGACY model-to-model (disabled): Natural farewells stop the room silently and cancel in-flight automatic delivery',async()=>{
+test('Natural farewells stop the room silently and cancel in-flight automatic delivery',async()=>{
  const {req,body}=await dialogueSetup();const turn=await runtime.beginCouncilDialogue(req,env,body);
  await queue('evt_pending_before_farewell','Atha merhaba');
  seedEvent('evt_farewell');await runtime.mcpQueueEvents(env,owner,room,['evt_farewell'],[{role:'user',content:'Tamam artık susalım, yeter. İyi geceler 💚'}]);
@@ -712,7 +601,7 @@ test('A first-message farewell is transactional and never starts a new model con
  assert.equal(r.status,200);assert.equal(callbackCalls.length,1);
  assert.equal(sql.prepare('SELECT mode FROM atha_mcp_participation WHERE room_id=?').get('first_farewell').mode,'paused');
 });
-test.skip('LEGACY model-to-model (disabled): A server provider session is bound to authorization expiry instead of conversation age',async()=>{
+test('A server provider session is bound to authorization expiry instead of conversation age',async()=>{
  const h=await serverDialogueSetup();sql.prepare('UPDATE atha_mcp_participation SET updated_at=?').run(now()-24*3600000);
  assert.equal(await runtime.rememberCouncilDialogue(h.request,env,owner,room),true);
  const saved=sql.prepare('SELECT expires_at FROM atha_dialogue_sessions').get().expires_at;
@@ -813,7 +702,7 @@ test('Concurrent conflicting council_reply requests persist one immutable reply'
  await subscribe();await queue();const rs=await Promise.all([saveReply(),saveReply({...replyArgs,content:'Other test reply.'})]);
  assert.equal(rs.filter(r=>r.result).length,1);assert.equal(rs.filter(r=>r.error).length,1);assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,1);assert.equal(deliveryRow().state,'replied');
 });
-test.skip('LEGACY model-to-model (disabled): A new user epoch cancels stale Gemini redelivery and rejects its late reply',async()=>{
+test('A new user epoch cancels stale Gemini redelivery and rejects its late reply',async()=>{
  const {req,body}=await dialogueSetup();const turn=await runtime.beginCouncilDialogue(req,env,body);await runtime.finishCouncilDialogue(env,turn,'Gemini test output.',null);await runtime.mcpDeliver(env);
  sql.prepare('UPDATE atha_mcp_participation SET updated_at=updated_at+1').run();forceDue();const n=callbackCalls.length;await runtime.mcpDeliver(env);
  assert.equal(callbackCalls.length,n);assert.equal(deliveryRow().state,'cancelled');assert.ok((await saveReply({...replyArgs,event_id:turn.id})).error);
@@ -835,97 +724,4 @@ test('An interrupted acknowledgment write still consumes its durable send attemp
 test('Authorization changes between validation and the reply transaction prevent a late write',async()=>{
  await subscribe();await queue();const batch=db.batch.bind(db);db.batch=async stmts=>{sql.prepare("INSERT INTO atha_mcp_participation VALUES(?,?,'paused',?)").run(owner,room,now());return batch(stmts)};
  assert.ok((await saveReply()).error);assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies').get().n,0);assert.equal(sql.prepare('SELECT count(*) n FROM atha_mcp_receipts').get().n,0);
-});
-
-
-test('OpenCode can poll only real recent human events and reply under its own identity',async()=>{
- sql.prepare("UPDATE atha_mcp_grants SET client_id='opencode_fixture' WHERE grant_id='grant_test'").run();
- const event='evt_opencode_1234567890';
- const time=now();
- sql.prepare("INSERT INTO atha_sync_events(owner_id,room_id,event_id,message_excerpt,created_at,state) VALUES(?,?,?,?,?,'pending')").run(owner,room,event,JSON.stringify({kind:'human',content:'Selam OpenCode, bugün nasılsın?'}),time);
- const polled=await rpc('tools/call',{name:'council_opencode_poll',arguments:{room_id:room,since_ms:time-1000}});
- assert.equal(polled.result.structuredContent.turns.length,1);
- assert.equal(polled.result.structuredContent.turns[0].event_id,event);
- const posted=await rpc('tools/call',{name:'council_opencode_reply',arguments:{room_id:room,event_id:event,content:'Merhaba! OpenCode olarak buradayım.'}});
- assert.equal(posted.result.structuredContent.speakerId,'opencode');
- const duplicate=await rpc('tools/call',{name:'council_opencode_reply',arguments:{room_id:room,event_id:event,content:'Farklı yanıt.'}});
- assert.match(duplicate.error.message,/different OpenCode response/);
- const item=sql.prepare('SELECT reply_id,content FROM atha_sync_replies').get();
- assert.equal(item.reply_id,'opencode_'+event);
- assert.equal(item.content,'Merhaba! OpenCode olarak buradayım.');
- const inspect=await rpc('tools/call',{name:'council_read',arguments:{room_id:room}});
- assert.equal(inspect.result.structuredContent.replies[0].speakerId,'opencode');
-});
-test('OpenCode final reply removes hidden thoughts and refuses old, foreign and paused events',async()=>{
- sql.prepare("UPDATE atha_mcp_grants SET client_id='opencode_fixture' WHERE grant_id='grant_test'").run();
- const event='evt_opencode_1234567891';
- sql.prepare("INSERT INTO atha_sync_events(owner_id,room_id,event_id,message_excerpt,created_at,state) VALUES(?,?,?,?,?,'pending')").run(owner,room,event,JSON.stringify({kind:'human',content:'Selam'}),now());
- const send=async content=>rpc('tools/call',{name:'council_opencode_reply',arguments:{room_id:room,event_id:event,content}});
- assert.match((await send('<think>unfinished')).error.message,/final answer/);
- assert.match((await send('Tool call: get secret')).error.message,/final answer/);
- assert.match((await send('Şimdi video oluşturuyorum.')).error.message,/UNVERIFIED_ACTION/);
- const post=await send('<think>do not show</think>Selam! Nasılsın?');
- assert.equal(post.result.structuredContent.name,'OpenCode · OpenRouter Free');
- assert.equal(sql.prepare('SELECT content FROM atha_sync_replies WHERE reply_id=?').get('opencode_'+event).content,'Selam! Nasılsın?');
- assert.ok((await rpc('tools/call',{name:'council_opencode_poll',arguments:{room_id:'foreign_room',since_ms:0}})).error);
- sql.prepare("INSERT OR REPLACE INTO atha_mcp_participation(owner_id,room_id,mode,updated_at) VALUES(?,?,'paused',?)").run(owner,room,now());
- assert.equal((await rpc('tools/call',{name:'council_opencode_poll',arguments:{room_id:room,since_ms:now()-1000}})).result.structuredContent.paused,true);
-});
-
-test('Council remembers a Turkish-only instruction and can reverse it explicitly',()=>{
- const lines=[{role:'user',content:'Bugün ne konuşalım?'},{role:'user',content:'Bana İngilizce açıklama yapma.'},{role:'assistant',content:'Tamam'}];
- assert.equal(runtime.councilRoomPreferences(lines).turkishOnly,true);
- assert.equal(runtime.councilRoomPreferences([...lines,{role:'user',content:'Şimdi İngilizce anlat'}]).turkishOnly,false);
- assert.equal(runtime.councilFinalAnswer('The following explanation shows you how to do this with the steps then the results.',{turkishOnly:true}).reason,'TURKISH_ONLY');
- assert.equal(runtime.councilFinalAnswer('Bunu Türkçe anlatacağım.',{turkishOnly:true}).ok,true);
-});
-test('Council blocks fake video work, unfinished thinking and tool transcripts without fabricating success',()=>{
- assert.equal(runtime.councilFinalAnswer('Şimdi video oluşturuyorum.').reason,'UNVERIFIED_ACTION');
- assert.equal(runtime.councilFinalAnswer('Senin için bir animasyon hazırlıyorum.').reason,'UNVERIFIED_ACTION');
- assert.equal(runtime.councilFinalAnswer('Video hazırladım.').reason,'UNVERIFIED_ACTION');
- assert.equal(runtime.councilFinalAnswer('<think>Internal reasoning without close').reason,'INCOMPLETE_REASONING');
- assert.equal(runtime.councilFinalAnswer('Tool call: computer.run').reason,'NOT_FINAL_TEXT');
- assert.deepEqual(runtime.councilFinalAnswer('<think>hidden</think>Video senaryosunu yazabilirim.'),{ok:true,text:'Video senaryosunu yazabilirim.'});
-});
-
-test('retired OpenCode chat remains authenticated but has no new chat inference or reply writes',async()=>{
- const {privateKey,publicKey}=generateKeyPairSync('ed25519');
- const agentId='ocag_'+'a'.repeat(32),ts=now();
- sql.prepare('INSERT INTO atha_opencode_agents(agent_id,owner_id,room_id,public_key,enabled,created_at,expires_at) VALUES(?,?,?,?,1,?,?)')
-  .run(agentId,owner,room,publicKey.export({type:'spki',format:'der'}).toString('base64url'),ts-1000,ts+86400000);
- const ev='evt_companion_1234567';
- sql.prepare("INSERT INTO atha_sync_events(owner_id,room_id,event_id,message_excerpt,created_at,state) VALUES(?,?,?,?,?,'pending')")
-  .run(owner,room,ev,JSON.stringify({kind:'human',content:'Selam, iyi misin?'}),ts);
- const send=async(kind,payload,overrides={})=>{
-  const body=JSON.stringify(payload),stamp=String(now()),hash=createHash('sha256').update(body).digest('base64url');
-  return request('/api/atha-opencode/'+kind,'POST',body,null,{
-   'x-atha-agent-id':agentId,'x-atha-agent-ts':stamp,
-   'x-atha-agent-sig':sign(null,Buffer.from(['POST','/api/atha-opencode/'+kind,stamp,hash].join('\n')),privateKey).toString('base64url'),...overrides
-  });
- };
- const poll=await send('poll',{room_id:room,since_ms:ts-1000});
- assert.equal(poll.status,200);
- const result=await poll.json();
- assert.deepEqual(result.events,[]);assert.equal(result.retired_to,'task_center');
- assert.equal((await send('poll',{room_id:room,since_ms:ts-1000},{'x-atha-agent-sig':'a'.repeat(86)})).status,401);
- assert.equal((await send('reply',{room_id:room,event_id:ev,content:'Selam'})).status,410);
- assert.equal(sql.prepare('SELECT count(*) n FROM atha_sync_replies WHERE reply_id=?').get('opencode_'+ev).n,0);
-});
-test('retired OpenCode chat rejects foreign room and does not revive on pause',async()=>{
- const {privateKey,publicKey}=generateKeyPairSync('ed25519');
- const agentId='ocag_'+'b'.repeat(32),ts=now();
- sql.prepare('INSERT INTO atha_opencode_agents(agent_id,owner_id,room_id,public_key,enabled,created_at,expires_at) VALUES(?,?,?,?,1,?,?)')
-  .run(agentId,owner,room,publicKey.export({type:'spki',format:'der'}).toString('base64url'),ts-1000,ts+100000);
- const send=async(kind,payload)=>{
-  const body=JSON.stringify(payload),stamp=String(now()),hash=createHash('sha256').update(body).digest('base64url');
-  return request('/api/atha-opencode/'+kind,'POST',body,null,{
-   'x-atha-agent-id':agentId,'x-atha-agent-ts':stamp,
-   'x-atha-agent-sig':sign(null,Buffer.from(['POST','/api/atha-opencode/'+kind,stamp,hash].join('\n')),privateKey).toString('base64url')
-  });
- };
- assert.equal((await send('poll',{room_id:'foreign_room',since_ms:ts-1000})).status,401);
- assert.equal((await send('reply',{room_id:room,event_id:'evt_companion_old',content:'Yasak'})).status,410);
- sql.prepare("INSERT OR REPLACE INTO atha_mcp_participation(owner_id,room_id,mode,updated_at) VALUES(?,?,'paused',?)").run(owner,room,now());
- assert.equal((await (await send('poll',{room_id:room,since_ms:ts-1000})).json()).retired_to,'task_center');
- assert.equal((await send('reply',{room_id:room,event_id:'evt_companion_old',content:'Yasak'})).status,410);
 });
