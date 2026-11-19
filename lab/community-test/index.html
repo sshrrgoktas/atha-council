@@ -1,0 +1,94 @@
+<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Atha Council TEST • Katılımcılar</title>
+<style>:root{color-scheme:dark;--bg:#071821;--pane:#112b37;--ink:#f1fafc;--muted:#a4bdc7;--accent:#55e0d0;--border:#375561}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px system-ui,sans-serif}button,textarea,input,select{font:inherit}button{cursor:pointer;border:0;border-radius:11px;padding:11px 14px;background:#177e74;color:#fff;font-weight:650}button:disabled{opacity:.55;cursor:default}.ghost{background:#294350}.app{height:100dvh;display:flex;flex-direction:column;max-width:980px;margin:auto;background:#0b202b}header{display:flex;align-items:center;justify-content:space-between;padding:13px 14px;border-bottom:1px solid var(--border)}header b{color:var(--accent)}.tag{font-size:11px;border-radius:5px;background:#355767;padding:3px 6px;margin-left:5px}.messages{flex:1;min-height:0;overflow:auto;padding:17px;display:flex;flex-direction:column;gap:12px}.welcome{align-self:center;text-align:center;color:var(--muted);margin:auto 0;max-width:540px}.welcome h2{color:var(--accent)}.bubble{background:var(--pane);border:1px solid var(--border);max-width:88%;align-self:flex-start;border-radius:13px;padding:12px 14px;white-space:pre-wrap;overflow-wrap:anywhere}.bubble.mine{align-self:flex-end;background:#14554e}.bubble strong{display:block;color:var(--accent);font-size:12px;margin-bottom:5px}.muted{color:var(--muted);font-size:12px}.compose{display:flex;gap:8px;padding:10px;background:#112b37;border-top:1px solid var(--border)}textarea{width:100%;min-height:45px;max-height:130px;resize:vertical;border-radius:11px;border:1px solid #557582;padding:10px;background:#061823;color:var(--ink)}input{padding:10px;border:1px solid #557582;border-radius:10px;background:#061823;color:#fff;width:100%}.status{font-size:12px;color:var(--muted);padding:4px 14px}.modal{position:fixed;inset:0;background:rgba(0,8,13,.87);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}.modal[hidden]{display:none}.panel{background:#152d3a;border:1px solid var(--border);padding:20px;border-radius:15px;width:min(100%,570px);max-height:92vh;overflow:auto}.panel label{display:block;margin:12px 0 4px}.panel h2{margin-top:0;color:var(--accent);font-size:19px}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}.check{display:flex;align-items:flex-start;gap:8px;margin-top:12px;font-size:13px}.check input{width:auto;margin-top:4px}.info{white-space:pre-wrap;font-size:13px;color:#d0dedf}.admin{padding:16px;max-width:980px;margin:auto}.report{border:1px solid var(--border);border-radius:12px;padding:12px;margin:12px 0;background:var(--pane);overflow-wrap:anywhere}.report pre{white-space:pre-wrap}.report select{background:var(--pane);color:var(--ink);padding:8px}.report textarea{min-height:50px}a{color:var(--accent)}</style></head><body>
+<div class="app" id="chatApp"><header><span><b>Atha Council</b><span class="tag">TEST · Topluluk</span></span><span><button class="ghost" id="reportBtn">⚑ Sorun</button></span></header><div class="messages" id="messages"><div class="welcome" id="welcome"><h2>Hoş geldin! 💙</h2><p>Qwen ve Llama ile konuş. İstersen ikisine birden, istersen isimleriyle doğrudan birine seslen.</p><p>Bu test ortamı ANA Konsey'den tamamen ayrıdır. Sohbetler otomatik olarak sunucuda saklanmaz.</p></div></div><div class="status" id="status">TEST bağlantısı kontrol ediliyor…</div><form class="compose" id="composer"><textarea id="message" placeholder="Konsey'e yaz…" maxlength="600" aria-label="Konsey mesajı"></textarea><button id="send" type="submit">Gönder</button></form></div>
+<section class="modal" id="joinModal"><div class="panel"><h2>TEST Konseyi'ne katıl</h2><p>Yalnızca davet edilen kişiler test yapabilir. Adını veya kişisel bilgilerini vermen gerekmiyor.</p><label for="invite">Davet kodun</label><input id="invite" placeholder="Davet kodunu yapıştır" autocomplete="off"><div id="joinStatus" class="info"></div><div class="actions"><button id="joinBtn">Katıl</button></div><p class="muted">Test için yazdığın mesajlar, cevap üretmeleri amacıyla AI model sağlayıcılarına iletilir. Yalnız hata raporunu göndermeyi seçersen rapor TEST kayıtlarında 7 gün tutulur.</p></div></section>
+<section class="modal" id="reportModal" hidden><div class="panel"><h2>Hata bildir</h2><p class="muted">Sorunu tarif et. Sohbet mesajlarını paylaşmak tamamen isteğe bağlıdır.</p><label for="label">Sorun</label><input id="label" maxlength="100" placeholder="Örneğin: Qwen konu dışına çıktı"><label for="expected">Ne bekliyordun?</label><textarea id="expected" maxlength="600"></textarea><label for="actual">Ne oldu?</label><textarea id="actual" maxlength="600"></textarea><label class="check"><input id="shareMessages" type="checkbox"><span>Son 8 sohbet mesajımı hata raporuna ekle (özel bilgileri önce kontrol et).</span></label><label class="check"><input id="consent" type="checkbox"><span>Bu raporun yalnız TEST incelemesi için 7 gün saklanmasına izin veriyorum.</span></label><div id="reportStatus" class="info"></div><div class="actions"><button id="submitReport">Raporu gönder</button><button class="ghost" id="closeReport">Kapat</button></div></div></section>
+<div class="admin" id="adminApp" hidden><h2>TEST · Yönetici Rapor Paneli</h2><p class="muted">Yalnız yetkili kişi görebilir. ANA Konsey raporları burada değildir.</p><label>Yönetici erişim anahtarı</label><input id="adminKey" type="password" autocomplete="off"><div class="actions"><button id="loadReports">Raporları getir</button></div><div id="adminStatus" class="info"></div><div id="adminReports"></div></div>
+<script>
+(function(){
+'use strict';const $=id=>document.getElementById(id);const isAdmin=location.pathname==='/admin';
+if(isAdmin){$('chatApp').hidden=true;$('joinModal').hidden=true;$('adminApp').hidden=false}
+const session=()=>sessionStorage.getItem('atha_community_test_invite')||'';
+const history=[];let active=null,busy=false,seq=0;
+function note(text){$('status').textContent=text}
+async function call(path,body,admin){
+ const headers={'content-type':'application/json'};
+ if(admin)headers.authorization='Bearer '+$('adminKey').value.trim();
+ const resp=await fetch(path,{method:'POST',headers,body:JSON.stringify(body||{}),cache:'no-store'});
+ const out=await resp.json();if(!resp.ok)throw new Error(out.error||('HTTP '+resp.status));return out;
+}
+function bubble(who,text,mine=false,pending=false){
+ const el=document.createElement('div');el.className='bubble'+(mine?' mine':'');if(!mine){const s=document.createElement('strong');s.textContent=who;el.appendChild(s)}
+ const p=document.createElement('span');p.textContent=text;el.appendChild(p);$('messages').appendChild(el);$('messages').scrollTop=$('messages').scrollHeight;return p;
+}
+function recipients(text){
+ const s=text.toLocaleLowerCase('tr-TR'),names=[...s.matchAll(/\b(qwen|llama)\b/g)];
+ if(names.length){active=names[names.length-1][1];return [active]}
+ if(active&&/^(hangi|peki|neden|nasıl|neler|ne\b|bunu|onu|sen|kim|kaç|hani)\b/iu.test(s))return [active];
+ active=null;return ['qwen','llama'];
+}
+async function join(code){
+ const out=await call('/api/hello',{invite:code});
+ sessionStorage.setItem('atha_community_test_invite',code);
+ $('joinModal').hidden=true;note('TEST hazır · '+out.testerId+' · Qwen ve Llama');return out;
+}
+if(!isAdmin){
+ const fragment=location.hash.startsWith('#invite=')?decodeURIComponent(location.hash.slice(8)):'';
+ if(fragment){$('invite').value=fragment;history.replaceState(null,'',location.pathname)}
+ const remembered=session();
+ if(remembered)join(remembered).catch(()=>{sessionStorage.removeItem('atha_community_test_invite');$('joinModal').hidden=false});
+ $('joinBtn').addEventListener('click',async()=>{try{$('joinStatus').textContent='Bağlanılıyor…';await join($('invite').value.trim())}catch(e){$('joinStatus').textContent='Davet doğrulanamadı: '+e.message}});
+ $('composer').addEventListener('submit',async e=>{
+  e.preventDefault();if(busy||!session())return;const latest=$('message').value.trim();if(!latest)return;
+  const targets=recipients(latest),past=history.slice(-30).map(m=>({...m,content:m.content.slice(0,2400)}));
+  history.push({role:'user',speaker:'human',content:latest});bubble('Sen',latest,true);$('message').value='';
+  busy=true;$('send').disabled=true;note('Modeller yanıtlıyor…');
+  const responses=targets.map(async model=>{
+   const place=bubble(model.toUpperCase(),'Yanıt bekleniyor…');
+   const start=Date.now();
+   try{const out=await call('/api/chat',{invite:session(),model,latest,history:past});
+    const value=out.status==='ok'?out.answer:'Model yanıt vermedi: '+(out.error||out.status);place.textContent=value;
+    history.push({role:'model',speaker:model,content:value.slice(0,9000)});
+    note(model.toUpperCase()+' yanıtladı ('+((Date.now()-start)/1000).toFixed(1)+' sn)');
+   }catch(e){place.textContent='TEST bağlantısı: '+e.message;note('Hata · Raporlayabilirsin')}
+  });
+  await Promise.all(responses);busy=false;$('send').disabled=false;
+ });
+ $('message').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('composer').requestSubmit()}});
+ $('reportBtn').addEventListener('click',()=>{$('reportModal').hidden=false});
+ $('closeReport').addEventListener('click',()=>{$('reportModal').hidden=true});
+ $('submitReport').addEventListener('click',async()=>{
+  if(!$('consent').checked){$('reportStatus').textContent='Önce rapor kaydına izin ver.';return}
+  $('submitReport').disabled=true;try{
+   const out=await call('/api/report',{invite:session(),label:$('label').value.trim(),actual:$('actual').value.trim(),
+     expected:$('expected').value.trim(),consent:true,includeTranscript:$('shareMessages').checked,
+     messages:$('shareMessages').checked?history.slice(-8):[]});
+   $('reportStatus').textContent='Rapor kaydedildi: '+out.id+'\nBu kodu saklayabilirsin; yönetici rapor panelinde de görülebilir.';
+  }catch(e){$('reportStatus').textContent='Rapor gönderilemedi: '+e.message}finally{$('submitReport').disabled=false}
+ });
+}
+if(isAdmin){
+ const mark=document.createElement('style');mark.textContent='#adminApp[hidden]{display:none}';document.head.appendChild(mark);
+ $('loadReports').addEventListener('click',async()=>{
+  try{const resp=await fetch('/api/admin/list',{headers:{authorization:'Bearer '+$('adminKey').value.trim()},cache:'no-store'});
+   const out=await resp.json();if(!resp.ok)throw new Error(out.error||'Yetki hatası');
+   $('adminStatus').textContent=out.reports.length+' rapor · '+out.pagination;
+   const root=$('adminReports');root.replaceChildren();
+   for(const r of out.reports){
+    const el=document.createElement('div');el.className='report';
+    const h=document.createElement('h3');h.textContent=r.label+' · '+r.testerId;el.appendChild(h);
+    for(const [key,value] of [['Rapor kodu',r.id],['Beklenen',r.expected],['Gerçek',r.actual],['Zaman',r.createdAt],['Durum',r.status]]){
+      const p=document.createElement('p');p.textContent=key+': '+(value||'—');el.appendChild(p)}
+    if(r.messages?.length){const pre=document.createElement('pre');pre.textContent=JSON.stringify(r.messages,null,2);el.appendChild(pre)}
+    const sel=document.createElement('select');for(const state of ['needs_review','investigating','fixed_pending_retest','closed']){
+      const opt=document.createElement('option');opt.value=state;opt.textContent=state;opt.selected=r.status===state;sel.appendChild(opt)}el.appendChild(sel);
+    const note=document.createElement('textarea');note.placeholder='İnceleme notu';note.value=r.reviewNote||'';el.appendChild(note);
+    const save=document.createElement('button');save.textContent='Durumu kaydet';el.appendChild(save);
+    save.addEventListener('click',async()=>{try{await call('/api/admin/status',{id:r.id,status:sel.value,note:note.value},true);save.textContent='Kaydedildi'}catch(e){save.textContent='Hata: '+e.message}});
+    root.appendChild(el);
+   }
+  }catch(e){$('adminStatus').textContent='Raporlar alınamadı: '+e.message}
+ });
+}
+})();
+</script></body></html>
