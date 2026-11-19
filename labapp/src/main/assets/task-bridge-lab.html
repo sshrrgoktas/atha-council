@@ -54,7 +54,7 @@ window.athaGatewayResult=function(id,data){
       result?.status==='ok'?result.answer:(errors[result?.status]||result?.note||'Model yanıtı bulunamadı.');
     batch[model].part.textContent=value;
     batch[model].el.classList.remove('pending');
-    history.push({role:'model',speaker:model,content:String(value).slice(0,800)});
+    history.push({role:'model',speaker:model,content:String(value).slice(0,12500)});
     if(data.error)lastError=String(data.error);
     if(batch.models.every(m=>batch.done[m])){delete pending[parent];closePending();setState(batch.models.length===1?model.toUpperCase()+' yanıtladı · TEST':'İki model yanıtladı · TEST');}
     else setState(model.toUpperCase()+' yanıtladı · Diğer model bekleniyor…');
@@ -68,8 +68,9 @@ window.athaGatewayResult=function(id,data){
   }
 };
 function chatContext(){
- const prior=history.slice(-12).map(x=>(x.role==='user'?'Kullanıcı':x.speaker)+': '+x.content).join('\n');
- return prior.slice(-1000);
+ const prior=history.slice(-48).map(x=>(x.role==='user'?'Kullanıcı':x.speaker)+': '+x.content).join('\n');
+ // Preserve much more of the shared fiction; bounded to the separate TEST request budget.
+ return prior.length>13500?'[Eski konuşmanın bir kısmı pencereye sığmadı. Eksik bölümleri uydurma.]\n'+prior.slice(-13000):prior;
 }
 function chooseRecipients(latest){
  const s=latest.toLocaleLowerCase('tr-TR');
@@ -105,7 +106,7 @@ $('compose').addEventListener('submit',event=>{
  const id='chat_'+(++requestIndex);
  pending[id]={models:recipients,done:{qwen:false,llama:false}};for(const model of recipients)pending[id][model]=bubble(model.toUpperCase(),'Yanıt bekleniyor…','model',true);
  busy=true;send.disabled=true;setState(recipients.length===1?recipients[0].toUpperCase()+' yanıtlıyor…':'Modeller yanıtlıyor…');
- try{native.compare(id,JSON.stringify({context:(context+'\n'+safety).slice(-1000),latest,models:recipients}));}
+ try{native.compare(id,JSON.stringify({context:(context+'\n'+safety).slice(-14000),latest,models:recipients}));}
  catch(e){lastError=String(e);for(const model of recipients){pending[id][model].part.textContent='TEST bağlantısı başarısız.';pending[id][model].el.classList.remove('pending')}delete pending[id];closePending();setState('Bağlantı hatası. Sorun bildir bölümünü kullan.')}
 });
 msg.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();$('compose').requestSubmit()}});
