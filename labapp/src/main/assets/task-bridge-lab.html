@@ -1,7 +1,8 @@
 <!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Atha Task Bridge • Güvenli Test</title>
 <style>
-*{box-sizing:border-box}body{background:#091521;color:#ecf7fa;font:15px system-ui,sans-serif;margin:0;padding:17px;line-height:1.48}h1{font-size:21px;margin:0;color:#66e4d1}h2{font-size:16px;color:#a9f2e5}p{margin:8px 0 14px}.muted{color:#a6bbc5;font-size:13px}.box{background:#142637;border:1px solid #305162;border-radius:13px;padding:12px;margin:12px 0}.safe{color:#9df1cf}label{display:block;margin:10px 0 5px}textarea{width:100%;min-height:78px;background:#091c29;border:1px solid #567080;color:#fff;border-radius:9px;padding:11px;font:15px system-ui}button{background:#2b8c83;color:white;padding:12px;border:0;border-radius:10px;font:600 14px system-ui;margin:7px 7px 2px 0}button.secondary{background:#294453}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;border-left:3px solid #56a9a4;padding:10px;background:#091c29;border-radius:6px}strong{color:#fff}.red{color:#ffb5a8}ul{padding-left:20px}</style></head><body>
+*{box-sizing:border-box}body{background:#091521;color:#ecf7fa;font:15px system-ui,sans-serif;margin:0;padding:17px;line-height:1.48}h1{font-size:21px;margin:0;color:#66e4d1}h2{font-size:16px;color:#a9f2e5}p{margin:8px 0 14px}.muted{color:#a6bbc5;font-size:13px}.box{background:#142637;border:1px solid #305162;border-radius:13px;padding:12px;margin:12px 0}.safe{color:#9df1cf}label{display:block;margin:10px 0 5px}textarea{width:100%;min-height:78px;background:#091c29;border:1px solid #567080;color:#fff;border-radius:9px;padding:11px;font:15px system-ui}button{background:#2b8c83;color:white;padding:12px;border:0;border-radius:10px;font:600 14px system-ui;margin:7px 7px 2px 0}button.secondary{background:#294453}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;border-left:3px solid #56a9a4;padding:10px;background:#091c29;border-radius:6px}strong{color:#fff}.red{color:#ffb5a8}ul{padding-left:20px}.model-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}.model-card{border:1px solid #305162;border-radius:9px;padding:10px;background:#0b2030}.model-card p{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0}.model-card strong{color:#66e4d1}#bridge-status{font-weight:600}
+</style></head><body>
 <h1>🧠 Atha Task Bridge · LAB</h1>
 <p class="muted">Bağımsız Konsey'in içinde çevrimdışı anlama testi. Gerçek ajan çalıştırmaz, sohbetlerini değiştirmez, hiçbir yere veri göndermez.</p>
 <div class="box"><strong class="safe">✓ Yalnız test</strong><p class="muted">Konsey ve AthalAI'ye dokunmadan istediğin kadar karışık komut yaz. Kasıtlı olarak hata bulabiliriz.</p></div>
@@ -11,6 +12,23 @@
 <textarea id="latest" placeholder="Örnek: Onu değil, eskisi gibi yap">Hadi yap canım</textarea>
 <button id="analyze">Köprü ne anladı?</button><button id="example" class="secondary">Beni şaşırtan örnek</button>
 <div id="out" class="box" role="status" aria-live="polite">Test sonucu burada görünecek.</div>
+<section class="box" id="model-board">
+  <h2>Gemini · Qwen · Llama</h2>
+  <p class="muted">Üç model aynı önceki isteği ve son kararını alır. Sonuçlar yalnız TEST bağlantısından gelir; ana Konsey ve AthalAI kullanılmaz.</p>
+  <p id="bridge-status" class="muted" role="status">Ayrı TEST bağlantısı kontrol ediliyor…</p>
+  <div id="bridge-key-form">
+    <label for="bridge-key">Bir defalık TEST bağlantı anahtarı</label>
+    <input id="bridge-key" type="password" autocomplete="off" placeholder="TEST bağlantı anahtarını yapıştır" style="width:100%;background:#091c29;border:1px solid #567080;color:#fff;border-radius:9px;padding:11px;font:15px system-ui">
+    <button id="bridge-save" class="secondary" type="button">Bağlantıyı kaydet</button>
+  </div>
+  <button id="compare-models" type="button">Üç model bağlamı nasıl anladı?</button>
+  <p class="muted">Bir testte her modelden en fazla bir yanıt istenir. Üç model aynı fikirde diye bir karar otomatik onaylanmaz.</p>
+  <div class="model-grid" id="model-results">
+    <div class="model-card"><strong>Gemini</strong><p id="gemini-answer" class="muted">Henüz test edilmedi.</p></div>
+    <div class="model-card"><strong>Qwen</strong><p id="qwen-answer" class="muted">Henüz test edilmedi.</p></div>
+    <div class="model-card"><strong>Llama</strong><p id="llama-answer" class="muted">Henüz test edilmedi.</p></div>
+  </div>
+</section>
 <h2>Ne denemeli?</h2><p class="muted">“İptal et”, “Hayır eski sürüme dön”, “Bunu yap ama çalışan tünele dokunma”, “Öncekini değil şunu istiyorum”. Yanlış anlayınca ekranın sonucunu paylaş.</p>
 <!--ENGINE_HERE-->
 <script>
@@ -40,6 +58,70 @@
   assess();
  });
  assess();
+})();
+</script>
+
+<script>
+(function(){
+  const get=id=>document.getElementById(id);
+  const native=window.LabNative;
+  const status=get('bridge-status');
+  const form=get('bridge-key-form');
+  const save=get('bridge-save');
+  const run=get('compare-models');
+  const results=['gemini','qwen','llama'];
+  const write=(id,text)=>{get(id+'-answer').textContent=text;};
+  const descriptions={not_configured:'Ayrı TEST model anahtarı henüz bağlı değil.',provider_error:'Model servisi yanıt vermedi.',empty:'Model boş yanıt verdi.'};
+  let connected=false,busy=false;
+  function update(){
+    if(!native){status.textContent='Bu sürümde TEST bağlantısı bulunamadı.';run.disabled=true;return;}
+    const ok=native.tokenConfigured();
+    form.hidden=ok;
+    status.textContent=ok?'Ayrı TEST bağlantı anahtarı kaydedildi.':'Önce TEST bağlantı anahtarını kaydet.';
+    native.health('health');
+  }
+  window.athaGatewayResult=function(id,data){
+    if(id==='health'){
+      if(data.error||data._http!==200){status.textContent='Ayrı TEST bağlantısı erişilemiyor.';connected=false;return;}
+      connected=true;
+      const ms=data.models||{};
+      const g=ms.gemini?.configured?'Gemini hazır':'Gemini için yeni TEST anahtarı gerekli';
+      status.textContent='Ayrı TEST sunucusu açık. Qwen: '+(ms.qwen?.configured?'hazır':'bağlı değil')+
+         ' · Llama: '+(ms.llama?.configured?'hazır':'bağlı değil')+' · '+g+'.';
+      return;
+    }
+    if(id==='compare'){
+      busy=false;run.disabled=false;
+      if(data.error||data._http!==200){
+        const msg=data._http===401?'TEST bağlantı anahtarı kabul edilmedi.':(data.error||'Sunucu hatası');
+        results.forEach(k=>write(k,msg));
+        return;
+      }
+      results.forEach(k=>{
+        const x=data.results?.[k]||{status:'not_configured'};
+        write(k,x.status==='ok'?x.answer:(descriptions[x.status]||x.note||x.status));
+      });
+    }
+  };
+  save.addEventListener('click',()=>{
+    if(!native){status.textContent='Bağlantı kullanılamıyor.';return;}
+    const raw=get('bridge-key').value.trim();
+    if(!native.saveToken(raw)){status.textContent='Bağlantı anahtarı geçersiz biçimde.';return;}
+    get('bridge-key').value='';form.hidden=true;
+    status.textContent='TEST bağlantı anahtarı kaydedildi.';
+  });
+  run.addEventListener('click',()=>{
+    if(!native){status.textContent='TEST bağlantısı uygulamada yok.';return;}
+    if(!native.tokenConfigured()){form.hidden=false;status.textContent='Önce TEST bağlantı anahtarını gir.';return;}
+    if(busy)return;
+    const context=get('history').value.trim();
+    const latest=get('latest').value.trim();
+    if(!latest){status.textContent='Önce son isteğini yaz.';return;}
+    busy=true;run.disabled=true;
+    results.forEach(k=>write(k,'Model yanıtı isteniyor…'));
+    native.compare('compare',JSON.stringify({context,latest}));
+  });
+  update();
 })();
 </script>
 </body></html>
