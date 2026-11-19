@@ -85,7 +85,7 @@ class LabActivity : Activity() {
 
     // TEST only: two-step user approval in HTML before an isolated read-only OpenCode task.
     @JavascriptInterface fun createTask(id: String, raw: String) {
-      if (!id.matches(Regex("[A-Za-z0-9_-]{1,60}")) || raw.length > 2200) return
+      if (!id.matches(Regex("[A-Za-z0-9_-]{1,60}")) || raw.length > 3500) return
       val input = try { JSONObject(raw) } catch (_: Exception) {
         result(id, JSONObject().put("error", "Geçersiz TEST görevi")); return
       }
@@ -99,6 +99,7 @@ class LabActivity : Activity() {
       request(id, "/task/create", JSONObject()
         .put("context", context).put("latest", latest)
         .put("mode", "read_only_plan").put("ownerApproved", true)
+        .put("review", input.optJSONObject("review") ?: JSONObject())
         .put("confirm", "SEND_TO_TEST_OPENCODE"))
     }
 
