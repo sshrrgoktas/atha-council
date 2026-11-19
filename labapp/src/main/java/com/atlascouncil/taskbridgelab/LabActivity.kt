@@ -83,6 +83,37 @@ class LabActivity : Activity() {
       request(id, "/health")
     }
 
+    // TEST only: two-step user approval in HTML before an isolated read-only OpenCode task.
+    @JavascriptInterface fun createTask(id: String, raw: String) {
+      if (!id.matches(Regex("[A-Za-z0-9_-]{1,60}")) || raw.length > 2200) return
+      val input = try { JSONObject(raw) } catch (_: Exception) {
+        result(id, JSONObject().put("error", "Geçersiz TEST görevi")); return
+      }
+      val context = input.optString("context").trim()
+      val latest = input.optString("latest").trim()
+      if (context.length > 1000 || latest.isBlank() || latest.length > 600 ||
+          input.optString("confirm") != "SEND_TO_TEST_OPENCODE" ||
+          !input.optBoolean("ownerApproved", false)) {
+        result(id, JSONObject().put("error", "Açık TEST onayı veya bağlam eksik")); return
+      }
+      request(id, "/task/create", JSONObject()
+        .put("context", context).put("latest", latest)
+        .put("mode", "read_only_plan").put("ownerApproved", true)
+        .put("confirm", "SEND_TO_TEST_OPENCODE"))
+    }
+
+    @JavascriptInterface fun taskStatus(id: String, taskId: String) {
+      if (!id.matches(Regex("[A-Za-z0-9_-]{1,60}")) ||
+          !taskId.matches(Regex("lab_[a-f0-9-]{36}"))) return
+      request(id, "/task/status", JSONObject().put("id", taskId))
+    }
+
+    @JavascriptInterface fun rememberTask(taskId: String) {
+      if (taskId.matches(Regex("lab_[a-f0-9-]{36}")))
+        prefs.edit().putString("last_task", taskId).apply()
+    }
+    @JavascriptInterface fun lastTask(): String = prefs.getString("last_task", "").orEmpty()
+
     @JavascriptInterface fun compare(id: String, raw: String) {
       if (!id.matches(Regex("[A-Za-z0-9_-]{1,60}")) || raw.length > 2600) return
       val data = try { JSONObject(raw) } catch (_: Exception) {
