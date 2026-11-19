@@ -6,12 +6,16 @@ const response=(obj,status=200)=>new Response(JSON.stringify(obj),{status,header
 const string=s=>typeof s==='string'?s.trim():'';
 const allowed=new Set(['gemini','qwen','llama']);
 function status(env){return {system:'Atha Council TEST',mode:'isolated_three_model_lab',dataStored:!!env.TASKS,storageScope:'separate_TEST_KV_24h',productionConnected:false,models:{gemini:{configured:!!env.GEMINI_API_KEY,provider:'Google AI Studio - new TEST key only'},qwen:{configured:!!env.AI,provider:'Cloudflare Workers AI'},llama:{configured:!!env.AI,provider:'Cloudflare Workers AI'}}};}
-function messages(body){
+function messages(body,kind){
   const context=string(body.context).slice(0,1000);
   const latest=string(body.latest).slice(0,600);
   // Task Bridge stays backstage. The models are conversational Council members,
   // NOT prompt evaluators, intent classifiers or OpenCode task runners.
+  const identity=kind==='qwen'?'Qwen':kind==='llama'?'Llama':'Gemini';
   const system=[
+    'Your name is '+identity+'. You are NOT any of the other models. The human interlocutor is the user, other model messages are authored by their own named speakers.',
+    'Never refer to yourself as a different model, thank yourself as a third person, or attribute another model\'s words to yourself.',
+    'If another model is mentioned, distinguish their name from yours; do not claim to be them.',
     'You are a friendly, natural member of an isolated Atha Council TEST group chat.',
     'Speak Turkish conversationally and directly as the person being addressed, not as an analyst.',
     'If the user says hello, greet them naturally. If they joke or complain, respond naturally with empathy or gentle humour.',
@@ -38,7 +42,7 @@ function modelText(raw){
  return '';
 }
 async function ask(kind,body,env){
-  const msg=messages(body);
+  const msg=messages(body,kind);
   if(kind==='gemini'){
     if(!env.GEMINI_API_KEY)return {status:'not_configured',note:'Yeni, TEST için ayrılmış Gemini API anahtarı gerekli.'};
     const c=new AbortController();const timeout=setTimeout(()=>c.abort(),16000);
@@ -246,10 +250,11 @@ export default {
   let body;try{body=await request.json()}catch{return response({error:'bad_json'},400)}
   const context=string(body?.context), latest=string(body?.latest);
   if(!latest||latest.length>600||context.length>1000)return response({error:'invalid_context'},400);
-  const requested=Array.isArray(body?.models)?body.models:['gemini','qwen','llama'];
+  const requested=Array.isArray(body?.models)?body.models:['qwen','llama'];
   if(!requested.length||requested.length>3||new Set(requested).size!==requested.length||requested.some(x=>!allowed.has(x)))return response({error:'invalid_models'},400);
   // No automatic retries, task execution, database, production workers, or Council credentials.
+  const start=Date.now();
   const settled=await Promise.all(requested.map(async key=>[key,await ask(key,body,env)]));
-  return response({mode:'isolated_test',liveProduction:false,realModelCalls:true,taskExecuted:false,results:Object.fromEntries(settled)});
+  return response({mode:'isolated_test',liveProduction:false,realModelCalls:true,taskExecuted:false,durationMs:Date.now()-start,results:Object.fromEntries(settled)});
  }
 };
