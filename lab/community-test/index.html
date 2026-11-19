@@ -3,7 +3,7 @@
 <div class="app" id="chatApp"><header><span><b>Atha Council</b><span class="tag">TEST · Topluluk</span></span><span><button class="ghost" id="reportBtn">⚑ Sorun</button> <button class="ghost" id="resetBtn">Temizle</button> <button class="ghost" id="logoutBtn">Çıkış</button></span></header><div class="messages" id="messages"><div class="welcome" id="welcome"><h2>Hoş geldin! 💙</h2><p>Qwen ve Llama ile konuş. İstersen ikisine birden, istersen isimleriyle doğrudan birine seslen.</p><p>Bu test ortamı ANA Konsey'den tamamen ayrıdır. Sohbetler yalnız bu tarayıcıda saklanır; sunucuya sohbet arşivi yüklenmez.</p></div></div><div class="status" id="status">TEST bağlantısı kontrol ediliyor…</div><form class="compose" id="composer"><textarea id="message" placeholder="Konsey'e yaz…" maxlength="600" aria-label="Konsey mesajı"></textarea><button id="send" type="submit">Gönder</button></form></div>
 <section class="modal" id="joinModal"><div class="panel"><h2>TEST Konseyi'ne katıl</h2><p>Yalnızca davet edilen kişiler test yapabilir. Adını veya kişisel bilgilerini vermen gerekmiyor.</p><label for="invite">Davet kodun</label><input id="invite" placeholder="Davet kodunu yapıştır" autocomplete="off"><label class="check"><input id="rememberDevice" type="checkbox" checked><span>Bu cihazda TEST kimliğimi hatırla (ortak cihazlarda kapat).</span></label><div id="joinStatus" class="info"></div><div class="actions"><button id="joinBtn">Katıl</button></div><p class="muted">Test için yazdığın mesajlar, cevap üretmeleri amacıyla AI model sağlayıcılarına iletilir. Yalnız hata raporunu göndermeyi seçersen rapor TEST kayıtlarında 7 gün tutulur.</p></div></section>
 <section class="modal" id="reportModal" hidden><div class="panel"><h2>Hata bildir</h2><p class="muted">Sorunu tarif et. Sohbet mesajlarını paylaşmak tamamen isteğe bağlıdır.</p><label for="label">Sorun</label><input id="label" maxlength="100" placeholder="Örneğin: Qwen konu dışına çıktı"><label for="expected">Ne bekliyordun?</label><textarea id="expected" maxlength="600"></textarea><label for="actual">Ne oldu?</label><textarea id="actual" maxlength="600"></textarea><label class="check"><input id="shareMessages" type="checkbox"><span>Son 8 sohbet mesajımı hata raporuna ekle (özel bilgileri önce kontrol et).</span></label><label class="check"><input id="consent" type="checkbox"><span>Bu raporun yalnız TEST incelemesi için 7 gün saklanmasına izin veriyorum.</span></label><div id="reportStatus" class="info"></div><div class="actions"><button id="submitReport">Raporu gönder</button><button class="ghost" id="closeReport">Kapat</button></div></div></section>
-<div class="admin" id="adminApp" hidden><h2>TEST · Yönetici Rapor Paneli</h2><p class="muted">Yalnız yetkili kişi görebilir. ANA Konsey raporları burada değildir.</p><label>Yönetici erişim anahtarı</label><input id="adminKey" type="password" autocomplete="off"><div class="actions"><button id="showActive">Açık Raporlar</button><button id="showClosed" class="ghost">Kapalı Raporlar</button><button id="loadReports">Yenile</button></div><div id="adminStatus" class="info"></div><div id="adminReports"></div></div>
+<div class="admin" id="adminApp" hidden><h2>TEST · Yönetici Rapor Paneli</h2><p class="muted">Yalnız yetkili kişi görebilir. ANA Konsey raporları burada değildir.</p><label>Yönetici erişim anahtarı</label><input id="adminKey" type="password" autocomplete="off"><label class="check"><input type="checkbox" id="rememberAdmin"><span>Bu cihazda yönetici girişimi hatırla (yalnız kendi telefonumda)</span></label><div class="actions"><button id="adminLogin" type="button">Giriş yap</button><button id="forgetAdmin" type="button" class="ghost">Bu cihazı unut / Çıkış</button></div><div class="actions"><button id="showActive">Açık Raporlar</button><button id="showClosed" class="ghost">Kapalı Raporlar</button><button id="loadReports">Yenile</button></div><div id="adminStatus" class="info"></div><div id="adminReports"></div></div>
 <script>
 (function(){
 'use strict';const $=id=>document.getElementById(id);const isAdmin=location.pathname==='/admin';
@@ -131,7 +131,37 @@ if(!isAdmin){
  });
 }
 if(isAdmin){
- let adminBusy=false,currentView='active';
+ let adminBusy=false,currentView='active',adminAuthenticated=false;
+ const adminStorageKey='atha_community_test_admin_remember_v1';
+ // Persistent access is strictly opt-in and only for private devices.
+ // This is browser-local storage, NOT a verified hardware/device binding.
+ function loadSavedAdmin(){
+  try {return localStorage.getItem(adminStorageKey)||''}catch(e){return ''}
+ }
+ function storeAdmin(){
+  try{
+    if($('rememberAdmin').checked)localStorage.setItem(adminStorageKey,$('adminKey').value.trim());
+    else localStorage.removeItem(adminStorageKey);
+  }catch(e){$('adminStatus').textContent='Tarayıcı girişi hatırlayamadı; gizli sekme veya depolama izni olabilir.'}
+ }
+ function clearAdmin(){
+  try{localStorage.removeItem(adminStorageKey)}catch(e){}
+  $('adminKey').value='';$('rememberAdmin').checked=false;adminAuthenticated=false;
+  $('adminReports').replaceChildren();
+  $('adminStatus').textContent='Bu cihazdaki TEST yönetici oturumu unutuldu.';
+ }
+ $('forgetAdmin').addEventListener('click',clearAdmin);
+ $('adminLogin').addEventListener('click',async()=>{
+   const key=$('adminKey').value.trim();
+   if(!/^[A-Za-z0-9_-]{30,100}$/.test(key)){$('adminStatus').textContent='Önce yönetici anahtarını gir.';return}
+   const ok=await reloadReports();
+   if(ok){adminAuthenticated=true;storeAdmin();}
+ });
+ const stored=loadSavedAdmin();
+ if(stored){$('adminKey').value=stored;$('rememberAdmin').checked=true;
+  reloadReports().then(ok=>{if(ok){adminAuthenticated=true;$('adminStatus').textContent+=' · Bu cihazda yönetici hatırlandı.'}
+   else{clearAdmin();$('adminStatus').textContent='Kaydedilen giriş artık geçerli değil. Yeniden giriş yap.'}});
+ }
  const isClosed=r=>r.status==='closed';
  function setTab(){
    $('showActive').className=currentView==='active'?'':'ghost';
@@ -194,7 +224,8 @@ if(isAdmin){
        ' · Görüntülenen: '+selected.length+(result.complete?'':' · Liste kısmi')+
        ' · Son kontrol: '+new Date().toLocaleTimeString('tr-TR');
      setTab();
-   }catch(e){$('adminStatus').textContent='Raporlar alınamadı: '+e.message}
+     return true;
+   }catch(e){$('adminStatus').textContent='Raporlar alınamadı: '+e.message;return false}
    finally{adminBusy=false}
  }
  $('loadReports').addEventListener('click',()=>{reloadReports()});
@@ -202,7 +233,7 @@ if(isAdmin){
  $('showClosed').addEventListener('click',()=>{currentView='closed';reloadReports()});
  setInterval(()=>{
    const focus=document.activeElement;
-   if(!document.hidden&&$('adminKey').value.trim()&&!adminBusy&&!$('adminReports').contains(focus))reloadReports();
+   if(!document.hidden&&adminAuthenticated&&$('adminKey').value.trim()&&!adminBusy&&!$('adminReports').contains(focus))reloadReports();
  },30000);
 }
 })();
