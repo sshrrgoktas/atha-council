@@ -21,5 +21,5 @@ test('TEST app has no live network, OAuth or production backend',()=>{
  assert.doesNotMatch(labManifest,/uses-permission|android:scheme/);
  assert.match(labActivity,/blockNetworkLoads=true/);
  assert.match(labActivity,/loadDataWithBaseURL\(null,page/);
- assert.doesNotMatch(labActivity,/HttpURLConnection|URL\(|addJavascriptInterface/);
+ assert.doesNotMatch(labActivity, /HttpURLConnection|new URL|addJavascriptInterface/);
 });
