@@ -1,27 +1,39 @@
-# Atha Task Bridge v1 — isolated experiment (2026-11-19)
+# Atha Task Bridge v2 — isolated prototype (2026-11-19)
 
-**NO live integration.** This branch adds a **pure, offline, draft-only** shared understanding layer for Atha Council. It is not a live worker, does not connect to Council D1, does not read tokens and cannot dispatch OpenCode. Existing AthalAI, tunnel, Android/iOS applications, and live Council routes are untouched.
+**EXPERIMENT ONLY — NO LIVE INTEGRATION.** This branch contains a pure, offline draft interpreter and an in-memory user-decision ledger. It is NOT the Council worker and does not contact D1/Cloudflare, read OAuth credentials, launch agents, or modify the user's PC. AthalAI, Council live environment, Android/iOS applications and tunnel remain untouched.
 
-## Motivation
-Current task drafting can copy final shorthand ("bunu yap", "yaptım diye dön") and model assertions as if they were precise instructions. Task Bridge resolves the latest human utterance against earlier **human** instructions and keeps other agents' statements as unverified contextual claims. It never treats Gemini's "done" as evidence or approval.
+## Added in v2
+- `decision-memory.cjs` reconciles explicit user statements by topic, with message index/ID provenance; earlier user decisions remain in the event history.
+- Assistant claims are never converted into user decisions. Human corrections override earlier human instructions **only when explicit and resolvable**.
+- Short pronoun-based commands and references such as `Eskisi gibi` are flagged `ambiguous_reference` rather than silently executed.
+- Stop/protection commands are retained as holds; no generated packet can dispatch work.
+- `sharedHandoff` emits a common non-executable task-understanding packet usable in future by Gemini/Qwen/OpenCode (NOT currently integrated).
+- `shadow-review.cjs` displays original human message alongside inferred intent, source, missing evidence, latest human decisions and uncertainty, without sending anything to the Council.
+- No changes outside `experiment/atha-task-bridge` and the scoped CI workflow.
 
-## Pipeline (future integration proposal, NOT enabled)
-Human request → scoped Council conversation → **Intent Interpretation** → evidence and missing-fields check → shared task brief for Gemini/Qwen/OpenCode → human review and explicit approval → existing owner-scoped signed work queue → isolated worker → verified diff/test/evidence → human acceptance.
+## Example
+Human: `Dijital çevrilebilir e-kitap oluştur` → `Hadi yap`
+Bridge: ebook draft; missing verified story text and approved workspace; **no dispatch**.
 
-## Safety and limitations
-- No automatic execution, no silent reinterpretation of "don't", no mutation of model responses, and no new permission grants.
-- Human intent outranks all assistant suggestions. Unknown sources stay unverified.
-- "Needs context" blocks any execution; explicit approval is still necessary even when draft is ready.
-- Confidence is indicative, **not** permission. Full production integration requires account-/room-scoped data boundaries, provenance IDs and a dedicated threat-model review.
-- Current worker only targets `sshrrgoktas/atha-council`; producing an independent ebook artifact needs a separately approved workspace or repository policy.
-- Deterministic matching alone is not full natural-language understanding. Next stage may compare structured LLM interpretations, but only after audit logging and grounding are added.
+Human: `Konseyi test ortamında kur` → `Eskisi gibi`
+Bridge: ambiguity flagged; existing prior decision preserved; **no dispatch**.
 
-## Local test
-`node --test experiment/atha-task-bridge/atha-task-bridge.test.cjs`
+Human: `OpenCode sohbet katılımcısı olmasın, görev işçisi olsun`
+Bridge: latest explicit human correction overrides previous chat-participant request.
 
-## Release gates
-1. PR remains draft; never merge automatically.
-2. Run tests and adversarial Turkish prompts (pronouns, negations, changed decisions, model hallucinations).
-3. Verify Council/AthalAI separation PR #78 independently.
-4. Integrate behind a default-OFF feature flag in Council only, with staged preview and rollback.
-5. Run on real Council prompt samples in *read-only shadow mode*. Show what Bridge inferred side-by-side with the original message; collect user corrections before dispatch integration.
+## Test
+`node --test experiment/atha-task-bridge/*.test.cjs`
+
+## Known limitations / required work before release
+1. Heuristic Turkish text analysis is a prototype, not deep semantic understanding; referent and negation errors remain possible. For example, `önceki sürüm` needs an explicit version identifier, even when the subject is clear.
+2. The ledger is only calculated from supplied turns; it is not persistent memory and cannot verify which prior decisions were deployed.
+3. Room scope is caller-provided metadata; production must validate the authenticated owner, room, messages and evidence server-side.
+4. Real integration should begin as **default-OFF read-only shadow mode** after Council/AthalAI separation PR #78 is validated.
+5. Human review and explicit approval remain mandatory before any signed OpenCode work order, independent of interpretation confidence.
+6. Preserve task logs, implement user corrections with IDs and audit receipts, test real Turkish conversations and adversarial inputs, and block any cross-room leakage.
+7. No automatic PR merge, deploy, paid API, file write to PC, or modification of existing workers in this experiment.
+
+## Workflow
+Human request → user-scoped evidence → interpret → latest decision ledger → uncertainty/contradiction review → shared handoff preview → human correction → explicit task approval → (future) isolated worker → verification evidence.
+
+**GitHub PR #79 must stay draft until reviewed and verified.**
