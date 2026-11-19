@@ -9,10 +9,24 @@ function status(env){return {system:'Atha Council TEST',mode:'isolated_three_mod
 function messages(body){
   const context=string(body.context).slice(0,1000);
   const latest=string(body.latest).slice(0,600);
-  return [
-    {role:'system',content:'You are an independent TEST context reviewer. Use ONLY the human-written prior request and correction. Reply in Turkish in up to 80 words. Explain (1) what user actually wants, (2) what must not be changed, (3) ambiguities. Do NOT claim to execute any task or access real Council data. Do not output code.'},
-    {role:'user',content:'ÖNCEKİ İSTEK:\n'+context+'\n\nSON DÜZELTME/İSTEK:\n'+latest+'\n\nSon karar önceliklidir. İptal ve koruma talimatlarına uy.'}
-  ];
+  // Task Bridge stays backstage. The models are conversational Council members,
+  // NOT prompt evaluators, intent classifiers or OpenCode task runners.
+  const system=[
+    'You are a friendly, natural member of an isolated Atha Council TEST group chat.',
+    'Speak Turkish conversationally and directly as the person being addressed, not as an analyst.',
+    'If the user says hello, greet them naturally. If they joke or complain, respond naturally with empathy or gentle humour.',
+    'Do NOT output numbered analysis, intent reports, checklists, sections like "Kullanıcı ne istiyor?" or "Belirsizlikler", unless explicitly requested.',
+    'Use the preceding chat only to understand context; address the LATEST user message.',
+    'Follow the user\'s latest corrections, and preserve explicit instructions such as not changing the main Council or AthalAI.',
+    'Do not claim to have performed tool calls, code changes, or OpenCode work.',
+    'For an ambiguous consequential task, ask one brief clarifying question rather than assuming approval.',
+    'Keep casual replies short (usually one to three sentences), without stock disclaimers.'
+  ].join(' ');
+  const user=context?
+    'Önceki konuşma (yalnızca bağlam; yeni bir görev değil):\n'+context+
+    '\n\nSon kullanıcı mesajı (buna doğal biçimde yanıt ver):\n'+latest:
+    latest;
+  return [{role:'system',content:system},{role:'user',content:user}];
 }
 function modelText(raw){
  const obj=raw&&typeof raw==='object'?raw:{};
