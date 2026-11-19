@@ -77,7 +77,7 @@ async function taskRoutes(request,env,path){
   if(!env.TASKS)return response({error:'test_queue_not_configured'},503);
   const owner=path.startsWith('/task/');
   if(owner?!isOwner(request,env):!(await isAgent(request,env,path)))return response({error:'unauthorized_test_only'},401);
-  if(Number(request.headers.get('content-length')||0)>3300)return response({error:'too_large'},413);
+  if(Number(request.headers.get('content-length')||0)>4200)return response({error:'too_large'},413);
   const body=request.method==='POST'?await safeJson(request):null;
   if(request.method==='POST'&&!body)return response({error:'bad_json'},400);
   if(path==='/task/create'&&request.method==='POST'){
@@ -87,7 +87,11 @@ async function taskRoutes(request,env,path){
     if(body.mode!=='read_only_plan')return response({error:'only_read_only_plan_supported'},400);
     // Never queue into any Council production room, repo or existing agent.
     const id='lab_'+crypto.randomUUID();
-    const task={schemaVersion:1,id,mode:'read_only_plan',status:'queued',context,latest,scope:'separate-test-workspace-only',createdAt:new Date().toISOString(),ownerApproved:true};
+    const proposed=body.review&&typeof body.review==='object'?body.review:{};
+    const review={inferredTask:string(proposed.inferredTask).slice(0,230),
+      sourceReference:string(proposed.sourceReference).slice(0,230),
+      humanDecisions:Array.isArray(proposed.humanDecisions)?proposed.humanDecisions.slice(0,2).map(d=>string(d).slice(0,150)):[]};
+    const task={schemaVersion:1,id,mode:'read_only_plan',status:'queued',context,latest,review,scope:'separate-test-workspace-only',createdAt:new Date().toISOString(),ownerApproved:true};
     await env.TASKS.put(taskPrefix+id,JSON.stringify(task),{expirationTtl:86400});
     return response({id,status:'queued',mode:task.mode,agentStarted:false,productionTouched:false},201);
   }
@@ -106,7 +110,7 @@ async function taskRoutes(request,env,path){
       if(!task||task.status!=='queued'||task.mode!=='read_only_plan')continue;
       task.status='claimed';task.claimId=crypto.randomUUID();task.claimedAt=new Date().toISOString();
       await env.TASKS.put(item.name,JSON.stringify(task),{expirationTtl:86400});
-      return response({task:{id:task.id,mode:task.mode,context:task.context,latest:task.latest,scope:task.scope,claimId:task.claimId}});
+      return response({task:{id:task.id,mode:task.mode,context:task.context,latest:task.latest,scope:task.scope,review:task.review,claimId:task.claimId}});
     }
     return response({task:null});
   }
