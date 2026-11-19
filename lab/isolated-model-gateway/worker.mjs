@@ -5,7 +5,7 @@ const LLAMA='@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const response=(obj,status=200)=>new Response(JSON.stringify(obj),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 const string=s=>typeof s==='string'?s.trim():'';
 const allowed=new Set(['gemini','qwen','llama']);
-function status(env){return {system:'Atha Council TEST',mode:'isolated_three_model_lab',dataStored:false,productionConnected:false,models:{gemini:{configured:!!env.GEMINI_API_KEY,provider:'Google AI Studio - new TEST key only'},qwen:{configured:!!env.AI,provider:'Cloudflare Workers AI'},llama:{configured:!!env.AI,provider:'Cloudflare Workers AI'}}};}
+function status(env){return {system:'Atha Council TEST',mode:'isolated_three_model_lab',dataStored:!!env.TASKS,storageScope:'separate_TEST_KV_24h',productionConnected:false,models:{gemini:{configured:!!env.GEMINI_API_KEY,provider:'Google AI Studio - new TEST key only'},qwen:{configured:!!env.AI,provider:'Cloudflare Workers AI'},llama:{configured:!!env.AI,provider:'Cloudflare Workers AI'}}};}
 function messages(body){
   const context=string(body.context).slice(0,1000);
   const latest=string(body.latest).slice(0,600);
