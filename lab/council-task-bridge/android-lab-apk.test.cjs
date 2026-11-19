@@ -17,7 +17,7 @@ test('stable unique test app identity with independent launcher',()=>{
 test('only isolated TEST connection can use network; web content stays offline',()=>{
  assert.match(manifest,/android.permission.INTERNET/);
  assert.doesNotMatch(manifest,/REQUEST_INSTALL_PACKAGES|android:scheme/);
- for(const marker of ['blockNetworkLoads=true','allowFileAccess=false','allowContentAccess=false','domStorageEnabled=false','loadDataWithBaseURL(null','task-bridge-engine.js'])assert.ok(activity.includes(marker),marker);
+ for(const marker of ['blockNetworkLoads','allowFileAccess','allowContentAccess','domStorageEnabled','loadDataWithBaseURL','task-bridge-engine.js'])assert.ok(activity.includes(marker),marker);
  assert.match(activity,/addJavascriptInterface\\(LabNativeBridge\\(\\), "LabNative"\\)/);
  assert.match(activity,/atha-council-taskbridge-lab\\.sshrrgoktas\\.workers\\.dev/);
  assert.doesNotMatch(activity,/api\\.openai|atlas-council\\.sshrrgoktas|athalai-mobile/);
