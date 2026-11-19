@@ -54,15 +54,15 @@ const isOwner=(r,env)=>!!env.TEST_ACCESS_TOKEN&&r.headers.get('authorization')==
 // This public key belongs only to C:/Users/seher/Documents/AthaCouncil-TaskBridge-TEST/agent-private.pem.
 const labAgentPublicX='kwPy4-ddR0lkIMgnwQ8Kd5Elal0cxfPH6E4BUOcFx6o';
 const bytes=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((s.length+3)%4)),c=>c.charCodeAt(0));
-const base64url=arr=>btoa(String.fromCharCode(...new Uint8Array(arr))).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');
+const base64url=arr=>btoa(String.fromCharCode(...new Uint8Array(arr))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 async function isAgent(r,env,path){
  if(!env.TASKS)return false;
  const when=r.headers.get('x-test-time')||'',nonce=r.headers.get('x-test-nonce')||'',sig=r.headers.get('x-test-signature')||'';
- if(!/^\\d{13}$/.test(when)||Math.abs(Date.now()-Number(when))>90000||!/^[a-f0-9-]{36}$/.test(nonce)||!sig)return false;
+ if(!/^\d{13}$/.test(when)||Math.abs(Date.now()-Number(when))>90000||!/^[a-f0-9-]{36}$/.test(nonce)||!sig)return false;
  const data=await r.clone().text();
  if(data.length>3200)return false;
  const digest=base64url(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(data)));
- const signed='POST\\n'+path+'\\n'+when+'\\n'+nonce+'\\n'+digest;
+ const signed='POST\n'+path+'\n'+when+'\n'+nonce+'\n'+digest;
  try{
    const key=await crypto.subtle.importKey('jwk',{kty:'OKP',crv:'Ed25519',x:labAgentPublicX},'Ed25519',false,['verify']);
    const ok=await crypto.subtle.verify('Ed25519',key,bytes(sig),new TextEncoder().encode(signed));
