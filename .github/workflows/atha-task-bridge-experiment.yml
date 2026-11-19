@@ -15,4 +15,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test experiment/atha-task-bridge/atha-task-bridge.test.cjs
+      - run: node --test experiment/atha-task-bridge/*.test.cjs
