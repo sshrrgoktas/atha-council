@@ -227,6 +227,8 @@ export default {
       label,expected,actual,messages,clientVersion:string(report.clientVersion).slice(0,70),
       bridgeStatus:string(report.bridgeStatus).slice(0,100),productionAffected:false,
       status:'needs_review'};
+    const {messages:transcript,...summary}=record;
+    await env.TASKS.put('report-archive:'+id,JSON.stringify({...summary,archiveVersion:1,chatTranscriptStored:false}));
     await env.TASKS.put('test-report:'+id,JSON.stringify(record),{expirationTtl:604800});
     return response({id,saved:true,status:'needs_review',retentionDays:7,autoNotifiedAssistant:false},201);
   }
