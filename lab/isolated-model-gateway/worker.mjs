@@ -185,6 +185,29 @@ export default {
  async fetch(request,env){
   const url=new URL(request.url);
   if(url.pathname==='/health'&&request.method==='GET')return response(status(env));
+  if(url.pathname==='/report/create'&&request.method==='POST'){
+    if(!isOwner(request,env))return response({error:'unauthorized_test_only'},401);
+    if(!env.TASKS)return response({error:'test_report_storage_unavailable'},503);
+    if(Number(request.headers.get('content-length')||0)>7000)return response({error:'report_too_large'},413);
+    const report=await safeJson(request);
+    if(!report||report.consent!==true)return response({error:'explicit_report_consent_required'},400);
+    const label=string(report.label).slice(0,100);
+    const expected=string(report.expected).slice(0,600);
+    const actual=string(report.actual).slice(0,600);
+    const messages=Array.isArray(report.messages)?report.messages.slice(-8).map(m=>({
+      role:m?.role==='user'?'user':m?.role==='model'?'model':'system',
+      speaker:string(m?.speaker).slice(0,30),
+      content:string(m?.content).slice(0,380)
+    })):[];
+    if(!label||!actual)return response({error:'report_requires_label_and_actual'},400);
+    const id='report_'+crypto.randomUUID();
+    const record={id,source:'Atha Council TEST only',createdAt:new Date().toISOString(),
+      label,expected,actual,messages,clientVersion:string(report.clientVersion).slice(0,70),
+      bridgeStatus:string(report.bridgeStatus).slice(0,100),productionAffected:false,
+      status:'needs_review'};
+    await env.TASKS.put('test-report:'+id,JSON.stringify(record),{expirationTtl:604800});
+    return response({id,saved:true,status:'needs_review',retentionDays:7,autoNotifiedAssistant:false},201);
+  }
   if(url.pathname.startsWith('/opencode/')){
     if(!['POST','GET'].includes(request.method))return response({error:'method'},405);
     if(['/opencode/heartbeat','/opencode/poll','/opencode/result'].includes(url.pathname)){
