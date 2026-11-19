@@ -20,7 +20,7 @@ test('TEST APK uses distinct permanent package, isolated module and label',()=>{
 test('TEST app has only isolated gateway networking and no production OAuth',()=>{
  assert.match(labManifest,/android.permission.INTERNET/);
  assert.doesNotMatch(labManifest,/REQUEST_INSTALL_PACKAGES|android:scheme/);
- assert.match(labActivity,/blockNetworkLoads=true/);
+ assert.match(labActivity,/blockNetworkLoads\\s*=\\s*true/);
  assert.match(labActivity,/loadDataWithBaseURL\(null,page/);
  assert.match(labActivity,/atha-council-taskbridge-lab\\.sshrrgoktas\\.workers\\.dev/);
  assert.doesNotMatch(labActivity,/atlas-council\\.sshrrgoktas|athalai-mobile|api\\.openai\\.com/);
