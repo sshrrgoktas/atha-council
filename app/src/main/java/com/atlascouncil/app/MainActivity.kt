@@ -640,15 +640,41 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
    sendUpdateResult("error",version,"İndirme başlatılamadı: "+(e.message?:"Android indirme hizmeti yanıt vermedi")+". APK’yı tarayıcıyla indir seçeneğini kullanabilirsin.")
   }
  }
+ private fun showTaskBridgeLab(){
+  // Independent, offline test pane. No JavascriptInterface, cookies, network, or task dispatch.
+  val localWeb=WebView(this)
+  localWeb.settings.javaScriptEnabled=true
+  localWeb.settings.domStorageEnabled=false
+  localWeb.settings.allowFileAccess=false
+  localWeb.settings.allowContentAccess=false
+  localWeb.settings.blockNetworkLoads=true
+  localWeb.webViewClient=object:WebViewClient(){
+   override fun shouldOverrideUrlLoading(view:WebView?,request:WebResourceRequest?):Boolean=true
+  }
+  val source=assets.open("task-bridge-lab.html").bufferedReader().use{it.readText()}
+  val engine=assets.open("task-bridge-engine.js").bufferedReader().use{it.readText()}
+  val safeEngine=engine.replace("</script","<\\/script",ignoreCase=true)
+  val html=source.replace("<!--ENGINE_HERE-->","<script>"+safeEngine+"</script>")
+  localWeb.loadDataWithBaseURL(null,html,"text/html","UTF-8",null)
+  val dialog=android.app.AlertDialog.Builder(this)
+   .setTitle("Task Bridge • LAB (çevrimdışı)")
+   .setView(localWeb)
+   .setPositiveButton("Kapat"){d,_->d.dismiss()}
+   .create()
+  dialog.setOnDismissListener{localWeb.destroy()}
+  dialog.show()
+ }
  override fun onCreateOptionsMenu(menu:Menu):Boolean {
   menu.add(0,100,1,"Bağlantılar ve güncellemeler")
   menu.add(0,101,2,"Konseyi yenile")
+  menu.add(0,102,3,"Task Bridge • LAB")
   return true
  }
  override fun onOptionsItemSelected(item:MenuItem):Boolean {
   when(item.itemId){
    100 -> {if(::nativeSettingsDialog.isInitialized)nativeSettingsDialog.show();return true}
    101 -> {if(::councilWeb.isInitialized)councilWeb.reload();return true}
+   102 -> {showTaskBridgeLab();return true}
   }
   return super.onOptionsItemSelected(item)
  }
