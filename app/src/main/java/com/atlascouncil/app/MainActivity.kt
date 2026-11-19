@@ -348,7 +348,7 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
       startGoogleLogin()
       return true
      }
-     return if(true){true} else {
+     return if(packageName=="com.atlascouncil.taskbridgelab"){true} else {
       try{startActivity(Intent(Intent.ACTION_VIEW,u))}catch(_:Exception){}
       true
      }
@@ -366,7 +366,7 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
   val incoming=intent?.data;if(incoming?.scheme=="atlascouncil"&&incoming.host=="google-auth"){incoming.getQueryParameter("ticket")?.let{completeGoogleLogin(it)}}else if(incoming?.scheme=="atlascouncil"&&incoming.host=="github-auth"){incoming.getQueryParameter("ticket")?.let{completeGitHubLogin(it)}}
   // Future releases appear in-app without asking users to find or download an APK file.
   // LAB is offline; never request production APK updates.
-  if(!BuildConfig.APPLICATION_ID.endsWith(".taskbridgelab"))checkForUpdates(false)
+  if(packageName!="com.atlascouncil.taskbridgelab")checkForUpdates(false)
  }
 
  @Deprecated("Uses the platform document picker for WebView attachments")
