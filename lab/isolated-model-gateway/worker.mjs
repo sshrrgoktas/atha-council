@@ -14,7 +14,15 @@ function messages(body){
     {role:'user',content:'ÖNCEKİ İSTEK:\n'+context+'\n\nSON DÜZELTME/İSTEK:\n'+latest+'\n\nSon karar önceliklidir. İptal ve koruma talimatlarına uy.'}
   ];
 }
-function modelText(raw){const obj=typeof raw==='object'&&raw?raw:{};const t=obj.response??obj.output_text??obj.text??'';return typeof t==='string'?t:String(t??'');}
+function modelText(raw){
+ const obj=raw&&typeof raw==='object'?raw:{};
+ const values=[obj.response,obj.output_text,obj.text,obj.choices?.[0]?.message?.content,obj.choices?.[0]?.text,obj.output?.[0]?.content,obj.result?.response];
+ for(const value of values){
+   if(typeof value==='string'&&value.trim())return value;
+   if(Array.isArray(value)){const s=value.map(x=>typeof x==='string'?x:x?.text||'').join('');if(s.trim())return s;}
+ }
+ return '';
+}
 async function ask(kind,body,env){
   const msg=messages(body);
   if(kind==='gemini'){
@@ -30,9 +38,9 @@ async function ask(kind,body,env){
   if(!env.AI)return {status:'not_configured',note:'Workers AI bağlantısı yok.'};
   try{
     const model=kind==='qwen'?QWEN:LLAMA;
-    const raw=await env.AI.run(model,{messages:msg,max_tokens:220,temperature:0.1});
+    const raw=await env.AI.run(model,{messages:msg,max_tokens:400,temperature:0.1});
     const text=modelText(raw).slice(0,2500);
-    return text?{status:'ok',answer:text}:{status:'empty'};
+    return text?{status:'ok',answer:text}:{status:'empty',fields:Object.keys(raw||{}),finish:raw?.choices?.[0]?.finish_reason||null};
   }catch(e){return {status:'provider_error',note:String(e?.message||'model çağrısı başarısız').slice(0,180)};}
 }
 export default {
