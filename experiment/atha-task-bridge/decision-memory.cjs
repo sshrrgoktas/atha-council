@@ -29,7 +29,7 @@ function makeLedger(turns,{roomId=null}={}){
  const events=[],issues=[];
  let previousScope=null;
  for(const msg of humanTurns){
-  const subjects=identify(msg.text),correction=REPLACEMENT.test(msg.text), stop=STOP.test(msg.text);
+  const subjects=identify(msg.text),correction=REPLACEMENT.test(msg.text), stop=STOP.test(msg.text.toLocaleLowerCase('tr-TR'));
   const vague=GENERIC.test(msg.text) || (REFS.test(msg.text)&&subjects.length===0);
   let scope=subjects;
   if(!scope.length && (correction||stop) && previousScope)scope=[previousScope];
