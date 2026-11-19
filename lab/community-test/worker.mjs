@@ -88,6 +88,9 @@ async function api(req,env,url){
    const record={id,source:'Atha Council WEB TEST',testerId:tester.testerId,createdAt:new Date().toISOString(),
      label,actual,expected,messages,clientVersion:'web-beta-1',status:'needs_review',
      productionAffected:false,retentionDays:7};
+   // Keep only report metadata for long-term Atha development; chat excerpts expire.
+   const {messages:transcript,...summary}=record;
+   await env.COMMUNITY.put('report-archive:'+id,JSON.stringify({...summary,archiveVersion:1,chatTranscriptStored:false}));
    await env.COMMUNITY.put('test-report:'+id,JSON.stringify(record),{expirationTtl:604800});
    return response({saved:true,id,status:'needs_review',retentionDays:7,receipt:'TEST_KV_WRITE_ACKNOWLEDGED'},201);
  }
@@ -103,7 +106,7 @@ async function admin(req,env,url){
  if(!expected||hex!==expected)return response({error:'admin_unauthorized'},401);
  if(url.pathname==='/api/admin/list'){
    const cursor=clean(url.searchParams.get('cursor'),300);
-   const keys=await env.COMMUNITY.list({prefix:'test-report:',limit:30,...(cursor?{cursor}:{})});
+   const keys=await env.COMMUNITY.list({prefix:'report-archive:',limit:30,...(cursor?{cursor}:{})});
    const records=await Promise.all(keys.keys.map(k=>env.COMMUNITY.get(k.name,'json')));
    const reports=records.filter(Boolean).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
    return response({reports,pagination:keys.list_complete?'complete':'partial',nextCursor:keys.list_complete?null:keys.cursor,source:'WEB and Android TEST'});
@@ -112,10 +115,13 @@ async function admin(req,env,url){
    let body;try{body=await req.json()}catch{return response({error:'bad_json'},400)}
    const id=clean(body.id,64),status=body.status;
    if(!/^report_[a-f0-9-]{36}$/.test(id)||!['needs_review','investigating','fixed_pending_retest','closed'].includes(status))return response({error:'invalid_report_status'},400);
-   const key='test-report:'+id,old=await env.COMMUNITY.get(key,'json');
+   const archiveKey='report-archive:'+id,originalKey='test-report:'+id;
+   const old=await env.COMMUNITY.get(archiveKey,'json');
    if(!old)return response({error:'report_not_found'},404);
    const next={...old,status,reviewNote:clean(body.note,300),reviewedAt:new Date().toISOString()};
-   await env.COMMUNITY.put(key,JSON.stringify(next),{expirationTtl:604800});
+   await env.COMMUNITY.put(archiveKey,JSON.stringify(next));
+   const original=await env.COMMUNITY.get(originalKey,'json');
+   if(original)await env.COMMUNITY.put(originalKey,JSON.stringify({...original,status,reviewNote:next.reviewNote,reviewedAt:next.reviewedAt}),{expirationTtl:604800});
    return response({saved:true,id,status});
  }
  return response({error:'not_found'},404);
