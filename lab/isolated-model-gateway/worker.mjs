@@ -43,10 +43,71 @@ async function ask(kind,body,env){
     return text?{status:'ok',answer:text}:{status:'empty',fields:Object.keys(raw||{}),finish:raw?.choices?.[0]?.finish_reason||null};
   }catch(e){return {status:'provider_error',note:String(e?.message||'model çağrısı başarısız').slice(0,180)};}
 }
+
+// Dedicated TEST task broker. All task records live ONLY in the isolated TASKS KV.
+// Read-only OpenCode agent; no live repo edits, publishing, or shell commands from users.
+const taskPrefix='opencode-lab:';
+const validTaskId=id=>typeof id==='string'&&/^lab_[a-f0-9-]{36}$/.test(id);
+const safeJson=async r=>{try{return await r.json()}catch{return null}};
+const isOwner=(r,env)=>!!env.TEST_ACCESS_TOKEN&&r.headers.get('authorization')==='Bearer '+env.TEST_ACCESS_TOKEN;
+const isAgent=(r,env)=>!!env.TEST_OPENCODE_AGENT_TOKEN&&r.headers.get('authorization')==='Agent '+env.TEST_OPENCODE_AGENT_TOKEN;
+async function taskRoutes(request,env,path){
+  if(!env.TASKS)return response({error:'test_queue_not_configured'},503);
+  const owner=path.startsWith('/task/');
+  if(owner?!isOwner(request,env):!isAgent(request,env))return response({error:'unauthorized_test_only'},401);
+  if(Number(request.headers.get('content-length')||0)>3300)return response({error:'too_large'},413);
+  const body=request.method==='POST'?await safeJson(request):null;
+  if(request.method==='POST'&&!body)return response({error:'bad_json'},400);
+  if(path==='/task/create'&&request.method==='POST'){
+    const context=string(body.context),latest=string(body.latest);
+    if(!body.ownerApproved||body.confirm!=='SEND_TO_TEST_OPENCODE'||!latest||latest.length>600||context.length>1000)
+      return response({error:'approval_or_context_missing'},400);
+    if(body.mode!=='read_only_plan')return response({error:'only_read_only_plan_supported'},400);
+    // Never queue into any Council production room, repo or existing agent.
+    const id='lab_'+crypto.randomUUID();
+    const task={schemaVersion:1,id,mode:'read_only_plan',status:'queued',context,latest,scope:'separate-test-workspace-only',createdAt:new Date().toISOString(),ownerApproved:true};
+    await env.TASKS.put(taskPrefix+id,JSON.stringify(task),{expirationTtl:86400});
+    return response({id,status:'queued',mode:task.mode,agentStarted:false,productionTouched:false},201);
+  }
+  if(path==='/task/status'&&request.method==='POST'){
+    const id=body.id;
+    if(!validTaskId(id))return response({error:'invalid_task_id'},400);
+    const task=await env.TASKS.get(taskPrefix+id,'json');
+    if(!task)return response({error:'not_found'},404);
+    const {context,latest,claimId,...publicTask}=task;
+    return response(publicTask);
+  }
+  if(path==='/agent/claim'&&request.method==='POST'){
+    const keys=await env.TASKS.list({prefix:taskPrefix,limit:30});
+    for(const item of keys.keys){
+      const task=await env.TASKS.get(item.name,'json');
+      if(!task||task.status!=='queued'||task.mode!=='read_only_plan')continue;
+      task.status='claimed';task.claimId=crypto.randomUUID();task.claimedAt=new Date().toISOString();
+      await env.TASKS.put(item.name,JSON.stringify(task),{expirationTtl:86400});
+      return response({task:{id:task.id,mode:task.mode,context:task.context,latest:task.latest,scope:task.scope,claimId:task.claimId}});
+    }
+    return response({task:null});
+  }
+  if(path==='/agent/report'&&request.method==='POST'){
+    if(!validTaskId(body.id)||typeof body.claimId!=='string')return response({error:'invalid_claim'},400);
+    const task=await env.TASKS.get(taskPrefix+body.id,'json');
+    if(!task||task.status!=='claimed'||task.claimId!==body.claimId)return response({error:'not_claimed'},409);
+    const exitCode=Number.isInteger(body.exitCode)?body.exitCode:null;
+    task.status=exitCode===0?'reported_unverified':'agent_error';
+    task.result={exitCode,summary:string(body.summary).slice(0,1200),evidence:string(body.evidence).slice(0,2000),
+      verification:'Agent-reported only; no independent file verification or production changes'};
+    task.reportedAt=new Date().toISOString();
+    await env.TASKS.put(taskPrefix+task.id,JSON.stringify(task),{expirationTtl:86400});
+    return response({accepted:true,id:task.id,status:task.status,verified:false});
+  }
+  return response({error:'not_found'},404);
+}
+
 export default {
  async fetch(request,env){
   const url=new URL(request.url);
   if(url.pathname==='/health'&&request.method==='GET')return response(status(env));
+  if(url.pathname.startsWith('/task/')||url.pathname.startsWith('/agent/'))return taskRoutes(request,env,url.pathname);
   if(url.pathname!=='/compare'||request.method!=='POST')return response({error:'not_found'},404);
   const auth=request.headers.get('authorization')||'';
   const valid=string(env.TEST_ACCESS_TOKEN);
