@@ -95,10 +95,11 @@ async function admin(req,env,url){
  const expected=await env.COMMUNITY.get('admin:sha256');
  if(!expected||hex!==expected)return response({error:'admin_unauthorized'},401);
  if(url.pathname==='/api/admin/list'){
-   const keys=await env.COMMUNITY.list({prefix:'test-report:',limit:100});
+   const cursor=clean(url.searchParams.get('cursor'),300);
+   const keys=await env.COMMUNITY.list({prefix:'test-report:',limit:30,...(cursor?{cursor}:{})});
    const records=await Promise.all(keys.keys.map(k=>env.COMMUNITY.get(k.name,'json')));
    const reports=records.filter(Boolean).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
-   return response({reports,pagination:keys.list_complete?'complete':'partial',source:'WEB and Android TEST'});
+   return response({reports,pagination:keys.list_complete?'complete':'partial',nextCursor:keys.list_complete?null:keys.cursor,source:'WEB and Android TEST'});
  }
  if(url.pathname==='/api/admin/status'&&req.method==='POST'){
    let body;try{body=await req.json()}catch{return response({error:'bad_json'},400)}
