@@ -30,7 +30,7 @@
     '<strong>Bağlandığım önceki istek:</strong><p>'+esc(shadow.inferred.reference||'Bulunamadı')+'</p>'+
     '<strong>Son kullanıcı kararları:</strong><pre>'+esc(JSON.stringify(ledger.latestBySubject,null,2))+'</pre>'+
     '<strong>Eksikler / uyarılar:</strong><pre>'+esc(issues.length?issues.join('\n'):'Belirgin uyarı yok')+'</pre>'+
-    '<p class="red"><strong>OpenCode'a gönderildi mi?</strong> HAYIR. Bu yalnız cihaz içinde yorumlama testidir.</p>';
+    '<p class="red"><strong>OpenCode görev olarak gönderildi mi?</strong> HAYIR. Bu yalnız cihaz içinde yorumlama testidir.</p>';
   }catch(e){out.textContent='Köprü testi hata verdi: '+e.message;}
  }
  document.getElementById('analyze').addEventListener('click',assess);
