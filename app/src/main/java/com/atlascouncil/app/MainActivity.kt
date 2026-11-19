@@ -660,6 +660,10 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
    .setTitle("Task Bridge • LAB (çevrimdışı)")
    .setView(localWeb)
    .setPositiveButton("Kapat"){d,_->d.dismiss()}
+   .setNeutralButton("Testi bitir, gizle"){_,_->
+    getSharedPreferences("atha-council-task-bridge-lab",MODE_PRIVATE).edit().putBoolean("hidden",true).apply()
+    invalidateOptionsMenu()
+   }
    .create()
   dialog.setOnDismissListener{localWeb.destroy()}
   dialog.show()
@@ -667,7 +671,7 @@ class MainActivity: Activity(), TextToSpeech.OnInitListener {
  override fun onCreateOptionsMenu(menu:Menu):Boolean {
   menu.add(0,100,1,"Bağlantılar ve güncellemeler")
   menu.add(0,101,2,"Konseyi yenile")
-  menu.add(0,102,3,"Task Bridge • LAB")
+  if(!getSharedPreferences("atha-council-task-bridge-lab",MODE_PRIVATE).getBoolean("hidden",false))menu.add(0,102,3,"Task Bridge • LAB")
   return true
  }
  override fun onOptionsItemSelected(item:MenuItem):Boolean {
