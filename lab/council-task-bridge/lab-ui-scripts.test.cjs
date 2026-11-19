@@ -67,13 +67,14 @@ test('OpenCode TEST needs human preview and separate explicit approval; cancella
    addEventListener:(kind,fn)=>{handlers[id+':'+kind]=fn;}});
  get('history').value='Ana Konsey canlı kalacak, ayrı test yap.';
  get('latest').value='Yalnız TEST klasörü için görev planı oluştur.';
+ get('task-approve').disabled=true;
  let submissions=0,lastBody=null,statusQueries=0;
  const native={tokenConfigured:()=>true,lastTask:()=>'',rememberTask:()=>{},createTask:(id,body)=>{submissions++;lastBody=JSON.parse(body)},taskStatus:()=>{statusQueries++}};
  const ctx={window:{LabNative:native},document:{getElementById:get},console};vm.createContext(ctx);
  const scripts=[...source.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)];
  assert.equal(scripts.length,3);vm.runInContext(scripts[2][1],ctx,{timeout:3000});
  assert.equal(submissions,0);
- assert.notEqual(get('task-approve').disabled,false);
+ assert.equal(get('task-approve').disabled,true);
  handlers['task-prepare:click']();
  assert.equal(submissions,0);
  assert.equal(get('task-approve').disabled,false);
