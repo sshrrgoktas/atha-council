@@ -48,8 +48,12 @@ function bubble(who,text,mine=false,pending=false){
  const p=document.createElement('span');p.textContent=text;el.appendChild(p);$('messages').appendChild(el);$('messages').scrollTop=$('messages').scrollHeight;return p;
 }
 function recipients(text){
- const s=text.toLocaleLowerCase('tr-TR'),names=[...s.matchAll(/\b(qwen|llama)\b/g)];
- if(names.length){active=names[names.length-1][1];return [active]}
+ const s=text.trim().toLocaleLowerCase('tr-TR');
+ // A mention is not an address: require vocative punctuation or a greeting.
+ if(/^@?(?:qwen|llama)\s*(?:ve|ile|&)\s*@?(?:qwen|llama)\b/iu.test(s)){active=null;return ['qwen','llama']}
+ const start=s.match(/^(?:(?:hey|selam|merhaba)\s+@?(qwen|llama)\b|@?(qwen|llama)\s*[,!:])/iu);
+ const end=s.match(/[,!?]\s*@?(qwen|llama)\s*[!?.]*$/iu);
+ if(start||end){active=start?(start[1]||start[2]):end[1];return [active]}
  if(active&&/^(hangi|peki|neden|nasıl|neler|ne\b|bunu|onu|sen|kim|kaç|hani)\b/iu.test(s))return [active];
  active=null;return ['qwen','llama'];
 }
@@ -81,11 +85,14 @@ if(!isAdmin){
    const start=Date.now();
    try{const out=await call('/api/chat',{invite:session(),model,latest,history:past});
     const value=out.status==='ok'?out.answer:'Model yanıt vermedi: '+(out.error||out.status);place.textContent=value;
-    history.push({role:'model',speaker:model,content:value.slice(0,9000)});saveHistory();
     note(model.toUpperCase()+' yanıtladı ('+((Date.now()-start)/1000).toFixed(1)+' sn)');
-   }catch(e){place.textContent='TEST bağlantısı: '+e.message;note('Hata · Raporlayabilirsin')}
+    return {role:'model',speaker:model,content:value.slice(0,9000)};
+   }catch(e){place.textContent='TEST bağlantısı: '+e.message;note('Hata · Raporlayabilirsin');return {role:'model',speaker:model,content:place.textContent}}
   });
-  await Promise.all(responses);busy=false;$('send').disabled=false;
+  // Store in target order, not provider completion order, to preserve chronology.
+  const ordered=await Promise.all(responses);
+  history.push(...ordered);saveHistory();
+  busy=false;$('send').disabled=false;
  });
  $('message').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('composer').requestSubmit()}});
  $('resetBtn').addEventListener('click',()=>{
