@@ -1,0 +1,27 @@
+name: Council Task Bridge isolated laboratory
+on:
+  pull_request:
+    paths:
+      - 'lab/council-task-bridge/**'
+      - '.github/workflows/council-task-bridge-lab.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolation-and-mock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm standalone Council source boundaries
+        run: node --test test/unified-mobile.test.mjs
+      - name: Run all bridge and fake OpenCode queue tests
+        run: node --test lab/council-task-bridge/*.test.cjs
+      - name: Report Turkish-context benchmark
+        run: node lab/council-task-bridge/turkish-shadow-benchmark.cjs
+      - name: Assert no real network dispatch module in lab adapter
+        run: |
+          ! grep -En 'fetch\\(|https?\.request|child_process|spawn\\(|exec\\(' lab/council-task-bridge/council-lab-adapter.cjs
