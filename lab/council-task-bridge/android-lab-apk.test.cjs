@@ -14,10 +14,13 @@ test('stable unique test app identity with independent launcher',()=>{
  assert.equal((manifest.match(/android.intent.category.LAUNCHER/g)||[]).length,1);
  assert.doesNotMatch(manifest,/android:scheme=|google-auth|github-auth/);
 });
-test('no permissions or network access in TEST app',()=>{
- assert.doesNotMatch(manifest,/uses-permission|INTERNET|REQUEST_INSTALL_PACKAGES/);
+test('only isolated TEST connection can use network; web content stays offline',()=>{
+ assert.match(manifest,/android.permission.INTERNET/);
+ assert.doesNotMatch(manifest,/REQUEST_INSTALL_PACKAGES|android:scheme/);
  for(const marker of ['blockNetworkLoads=true','allowFileAccess=false','allowContentAccess=false','domStorageEnabled=false','loadDataWithBaseURL(null','task-bridge-engine.js'])assert.ok(activity.includes(marker),marker);
- assert.doesNotMatch(activity,/addJavascriptInterface|api\\.openai|atlas-council\\.sshrrgoktas|HttpURLConnection|new URL/);
+ assert.match(activity,/addJavascriptInterface\\(LabNativeBridge\\(\\), "LabNative"\\)/);
+ assert.match(activity,/atha-council-taskbridge-lab\\.sshrrgoktas\\.workers\\.dev/);
+ assert.doesNotMatch(activity,/api\\.openai|atlas-council\\.sshrrgoktas|athalai-mobile/);
 });
 test('approved Council app files stay unchanged from separation base',()=>{
  const main=read('app/src/main/java/com/atlascouncil/app/MainActivity.kt');
