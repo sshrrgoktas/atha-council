@@ -43,7 +43,7 @@ window.athaGatewayResult=function(id,data){
   }
   if(id.startsWith('chat_')){
     // Each model replies independently: one slow model must not hold the other.
-    const match=id.match(/^(chat_\\d+)_(qwen|llama)$/);
+    const match=id.match(/^(chat_\d+)_(qwen|llama)$/);
     if(!match)return;
     const parent=match[1],model=match[2],batch=pending[parent];
     if(!batch||!batch[model]||batch.done[model])return;
