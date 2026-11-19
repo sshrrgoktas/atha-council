@@ -68,3 +68,21 @@ test('report is opt-in and can be reviewed by reference without exposing credent
  ctx.window.athaGatewayResult('report',{_http:201,saved:true,id:'report_test'});
  assert.match(node('reportResult').textContent,/report_test/);
 });
+
+test('directed Qwen/Llama conversation and follow-ups do not make both answer',()=>{
+ const {node,handlers,native,ctx}=mockUI();
+ function send(v){node('message').value=v;handlers['compose:submit']({preventDefault(){}});return native.lastCompare;}
+ function answer(req,model,text){ctx.window.athaGatewayResult(req.id+'_'+model,{_http:200,results:{[model]:{status:'ok',answer:text}}});}
+ let x=send('Ahahahaha Qwen canımsın ya Llama sen ne hatırlıyosun');
+ assert.equal(x.body.models.join(','),'llama');
+ answer(x,'llama','Bu konuşmada geçenleri biliyorum.');
+ assert.equal(node('send').disabled,false);
+ x=send('Hangi bilgileri edindin balım');
+ assert.equal(x.body.models.join(','),'llama','follow-up must stay with Llama');
+ answer(x,'llama','Şu konuşmamızdaki bilgiler.');
+ x=send('Qwen o sensin amk, kime teşekkür ediyorsun?');
+ assert.equal(x.body.models.join(','),'qwen');
+ answer(x,'qwen','Haklısın, kendime teşekkür ettim.');
+ x=send('Selammm');
+ assert.equal(x.body.models.join(','),'qwen,llama','new generic greeting goes to both');
+});
