@@ -9,7 +9,7 @@
 <header><div><strong>Atha Council</strong><span class="testTag">TEST</span></div>
 <div><button id="reportOpen" aria-label="Sorun bildir">⚑ Sorun</button> <button id="settingsOpen" aria-label="Test ayarları">☰</button></div></header>
 <main id="chat" class="chat" aria-live="polite">
-<section class="intro" id="welcome"><h2>Hoş geldin! 💙</h2><p>Normal Konsey gibi yazış. Gemini, Qwen ve Llama cevaplarını burada göreceksin.</p><p>Bu yalnız TEST uygulamasıdır. ANA Konsey değişmez.</p></section>
+<section class="intro" id="welcome"><h2>Hoş geldin! 💙</h2><p>Normal Konsey gibi yazış. Qwen ve Llama cevaplarını burada göreceksin.</p><p>Bu yalnız TEST uygulamasıdır. ANA Konsey değişmez.</p></section>
 </main>
 <div class="helper" id="state">Bağlantı denetleniyor…</div>
 <form id="compose" class="compose"><textarea id="message" rows="1" placeholder="Konsey'e bir şey yaz..." aria-label="Konsey'e mesaj yaz"></textarea><button class="primary" id="send" type="submit" aria-label="Gönder">➤</button></form>
@@ -37,21 +37,27 @@ function closePending(){busy=false;send.disabled=false}
 window.athaGatewayResult=function(id,data){
   if(id==='health'){
     connected=data._http===200&&!data.error;
-    $('connection').textContent=connected?'Ayrı TEST sunucusu açık. '+['gemini','qwen','llama'].map(x=>x+': '+(data.models?.[x]?.configured?'hazır':'bağlı değil')).join(' · '):'TEST sunucusuna bağlanılamadı.';
+    $('connection').textContent=connected?'Ayrı TEST sunucusu açık. '+['qwen','llama'].map(x=>x+': '+(data.models?.[x]?.configured?'hazır':'bağlı değil')).join(' · '):'TEST sunucusuna bağlanılamadı.';
     setState(connected?'TEST sunucusu hazır · Ana Konsey ayrı':'TEST sunucusu erişilemiyor.');
     return;
   }
   if(id.startsWith('chat_')){
-    const slots=pending[id];if(!slots)return;delete pending[id];
-    const errors={not_configured:'Bu modelin ayrı TEST bağlantısı henüz kurulmadı.',provider_error:'Model servisinden yanıt alınamadı.',empty:'Model boş yanıt verdi.'};
-    for(const model of ['gemini','qwen','llama']){
-      const result=data.results?.[model];
-      const value=data.error?(data._http===401?'TEST bağlantı anahtarı geçersiz. Ayarlardan kontrol et.':String(data.error)):
-        result?.status==='ok'?result.answer:(errors[result?.status]||result?.note||'Model yanıtı bulunamadı.');
-      slots[model].part.textContent=value;slots[model].el.classList.remove('pending');
-      history.push({role:'model',speaker:model,content:String(value).slice(0,800)});
-    }
-    if(data.error)lastError=String(data.error);closePending();setState('Yanıtlar geldi · TEST');
+    // Each model replies independently: one slow model must not hold the other.
+    const match=id.match(/^(chat_\\d+)_(qwen|llama)$/);
+    if(!match)return;
+    const parent=match[1],model=match[2],batch=pending[parent];
+    if(!batch||!batch[model]||batch.done[model])return;
+    batch.done[model]=true;
+    const errors={not_configured:'Bu model TEST ortamında bağlı değil.',provider_error:'Model servisinden yanıt alınamadı.',empty:'Model boş yanıt verdi.'};
+    const result=data.results?.[model];
+    const value=data.error?(data._http===401?'TEST bağlantı anahtarı geçersiz.':String(data.error)):
+      result?.status==='ok'?result.answer:(errors[result?.status]||result?.note||'Model yanıtı bulunamadı.');
+    batch[model].part.textContent=value;
+    batch[model].el.classList.remove('pending');
+    history.push({role:'model',speaker:model,content:String(value).slice(0,800)});
+    if(data.error)lastError=String(data.error);
+    if(batch.done.qwen&&batch.done.llama){delete pending[parent];closePending();setState('İki model yanıtladı · TEST');}
+    else setState(model.toUpperCase()+' yanıtladı · Diğer model bekleniyor…');
     return;
   }
   if(id==='report'){
@@ -80,10 +86,10 @@ $('compose').addEventListener('submit',event=>{
  const context=chatContext();const safety=interpret(latest);
  bubble('Sen',latest,'user');history.push({role:'user',speaker:'human',content:latest});msg.value='';
  const id='chat_'+(++requestIndex);
- pending[id]={};for(const model of ['gemini','qwen','llama'])pending[id][model]=bubble(model.toUpperCase(),'Yanıt bekleniyor…','model',true);
+ pending[id]={done:{qwen:false,llama:false}};for(const model of ['qwen','llama'])pending[id][model]=bubble(model.toUpperCase(),'Yanıt bekleniyor…','model',true);
  busy=true;send.disabled=true;setState('Modeller bağlamı değerlendiriyor…');
  try{native.compare(id,JSON.stringify({context:(context+'\n'+safety).slice(-1000),latest}));}
- catch(e){lastError=String(e);for(const model of ['gemini','qwen','llama']){pending[id][model].part.textContent='TEST bağlantısı başarısız.';pending[id][model].el.classList.remove('pending')}delete pending[id];closePending();setState('Bağlantı hatası. Sorun bildir bölümünü kullan.')}
+ catch(e){lastError=String(e);for(const model of ['qwen','llama']){pending[id][model].part.textContent='TEST bağlantısı başarısız.';pending[id][model].el.classList.remove('pending')}delete pending[id];closePending();setState('Bağlantı hatası. Sorun bildir bölümünü kullan.')}
 });
 msg.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();$('compose').requestSubmit()}});
 $('settingsOpen').addEventListener('click',()=>showSheet('settingsSheet'));
