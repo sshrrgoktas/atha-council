@@ -95,7 +95,7 @@ $('saveKey').addEventListener('click',()=>{
  if(!native.saveToken($('key').value.trim())){$('connection').textContent='Anahtar biçimi hatalı.';return;}
  $('key').value='';hideSheet('settingsSheet');setState('Anahtar kaydedildi · Test bağlantısı kontrol ediliyor…');native.health('health');
 });
-$('clearChat').addEventListener('click',()=>{if(!confirm('Yalnızca bu TEST sohbetini temizlemek istiyor musun?'))return;history=[];chat.replaceChildren();if(welcome){welcome.hidden=false;chat.appendChild(welcome)}hideSheet('settingsSheet');note('Yeni TEST sohbeti başladı.')});
+$('clearChat').addEventListener('click',()=>{history=[];chat.replaceChildren();if(welcome){welcome.hidden=false;chat.appendChild(welcome)}hideSheet('settingsSheet');note('Yeni TEST sohbeti başladı.')});
 $('sendReport').addEventListener('click',()=>{
  const label=$('reportLabel').value.trim(),actual=$('actual').value.trim(),expected=$('expected').value.trim();
  if(!label||!actual){$('reportResult').textContent='Başlık ve ne olduğu alanlarını doldur.';return}
