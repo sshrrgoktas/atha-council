@@ -9,7 +9,7 @@ const read=p=>readFileSync(path.join(root,p),'utf8');
 const source=read('labapp/src/main/assets/task-bridge-lab.html');
 const engine=read('labapp/src/main/assets/task-bridge-engine.js');
 test('all scripts in the actual composed WebView HTML parse',()=>{
- const composed=source.replace('<!--ENGINE_HERE-->','<script>'+engine.replace(/<\\/script/gi,'<\\\\/script')+'</script>');
+ const composed=source.replace('<!--ENGINE_HERE-->','<script>'+engine+'</script>');
  const scripts=[...composed.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)].map(m=>m[1]);
  assert.equal(scripts.length,2);
  scripts.forEach((script,index)=>assert.doesNotThrow(()=>new vm.Script(script,{filename:'webview-inline-'+index+'.js'})));
