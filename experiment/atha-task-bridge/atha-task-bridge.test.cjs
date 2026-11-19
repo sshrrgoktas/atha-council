@@ -30,3 +30,8 @@ test('repair request needs affected component and reproduction steps',()=>{
  const t=interpretCouncilTask([user('QR bağlanmıyor bunu düzelt')]);assert.equal(t.intent.id,'repair');assert.ok(t.missingFields.includes('affected_component'));
 });
 test('refuse malformed turns',()=>assert.throws(()=>interpretCouncilTask([]),/INVALID_TURNS/));
+
+test('capital Turkish İptal must block previous task even with attached verb',()=>{
+ const t=interpretCouncilTask([user('E-kitap oluştur'),user('İptal et')]);
+ assert.equal(t.status,'blocked');assert.equal(t.workerDispatchAllowed,false);
+});
