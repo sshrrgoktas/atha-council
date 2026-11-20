@@ -112,7 +112,12 @@ if(!isAdmin){
   forgetInvite();$('joinModal').hidden=false;$('invite').value='';
   $('joinStatus').textContent='Cihazdaki giriş unutuldu. Sohbet geçmişi bu tarayıcıda kalır.';
  });
- $('reportBtn').addEventListener('click',()=>{$('reportModal').hidden=false});
+ const receiptKey=()=> 'atha_test_last_report_receipt_'+testerId;
+ function rememberReceipt(id){try{localStorage.setItem(receiptKey(),id)}catch(e){}}
+ function latestReceipt(){try{return localStorage.getItem(receiptKey())||''}catch(e){return ''}}
+ $('reportBtn').addEventListener('click',()=>{$('reportModal').hidden=false;
+  const saved=latestReceipt();
+  if(saved)$('reportStatus').textContent='Son rapor makbuzun: '+saved+' · Bu kodla kaydı sorgulayabiliriz.';});
  $('shareMessages').addEventListener('change',()=>{$('transcriptConsent').disabled=!$('shareMessages').checked;if(!$('shareMessages').checked)$('transcriptConsent').checked=false});
  $('closeReport').addEventListener('click',()=>{$('reportModal').hidden=true});
  $('submitReport').addEventListener('click',async()=>{
@@ -124,6 +129,7 @@ if(!isAdmin){
      consent:true,includeTranscript:$('shareMessages').checked,transcriptConsent:$('shareMessages').checked&&$('transcriptConsent').checked,
      messages:$('shareMessages').checked?history:[]});
    if(!out.saved||!/^report_[a-f0-9-]{36}$/.test(out.id||''))throw new Error('Sunucu geçerli bir rapor makbuzu vermedi.');
+   rememberReceipt(out.id);
    $('reportStatus').textContent='Rapor alındı, kayıt doğrulanıyor… '+out.id;
    let receipt=null;
    for(let attempt=0;attempt<4;attempt++){
@@ -146,7 +152,16 @@ if(!isAdmin){
      $('description').value='';
      $('consent').checked=false;$('shareMessages').checked=false;$('transcriptConsent').checked=false;$('transcriptConsent').disabled=true;
    },1200);
-  }catch(e){$('reportStatus').textContent='Rapor gönderilemedi: '+e.message}finally{$('submitReport').disabled=false}
+  }catch(e){
+   const error=String(e.message||e);
+   const friendly=error==='daily_report_limit_reached'?'Günlük rapor sınırına ulaştın. Son makbuzunu sakla ve yöneticiye bildir.':
+     error==='transcript_too_large_send_report_without_history'?'Sohbet geçmişi çok büyük. Geçmiş ekleme seçeneğini kapatıp yalnız sorun açıklamasıyla yeniden gönder.':
+     error==='invalid_or_expired_invite'?'TEST davetin geçersiz veya süresi dolmuş. Yeniden giriş yap.':
+     error==='report_description_and_consent_required'?'Sorunu kısaca yazıp rapor iznini işaretle.':
+     error==='daily_test_quota_reached'?'TEST sohbet kotası dolmuş. Raporu göndermek için sayfayı yenile; sorun sürerse yöneticiye bildir.':
+     'Rapor kaydedilemedi: '+error;
+   $('reportStatus').textContent=friendly+' · Başarı makbuzu oluşmadı, rapor gönderildi sayma.';
+  }finally{$('submitReport').disabled=false}
  });
 }
 if(isAdmin){
