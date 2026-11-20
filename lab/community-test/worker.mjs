@@ -20,6 +20,15 @@ async function dailyQuota(env,token){
  // KV rate limit is an abuse backstop, not a strict atomic limit.
  await env.COMMUNITY.put(key,String(used+1),{expirationTtl:90000});return true;
 }
+async function reportQuota(env,token){
+ // TEST reports remain available even when AI chat budget is exhausted.
+ const day=new Date().toISOString().slice(0,10),key='report-rate:'+token+':'+day;
+ const used=Number(await env.COMMUNITY.get(key))||0;
+ if(used>=20)return false;
+ // KV counters are best-effort, not strict atomic anti-abuse limits.
+ await env.COMMUNITY.put(key,String(used+1),{expirationTtl:90000});
+ return true;
+}
 function humanHistory(raw){
  if(!Array.isArray(raw))return [];
  return raw.slice(-36).map(x=>({speaker:clean(x?.speaker,20),role:x?.role==='user'?'user':'model',content:clean(x?.content,2600)}))
@@ -92,7 +101,6 @@ async function api(req,env,url){
    return response({found:true,id,status:record.status,createdAt:record.createdAt,source:record.source});
  }
  if(url.pathname==='/api/report'){
-   if(!await dailyQuota(env,token))return response({error:'daily_test_quota_reached'},429);
    const description=clean(body.description||body.actual,1800);
    const label=clean(body.label,100)||'TEST sorun bildirimi';
    const expected=clean(body.expected,600);
@@ -104,6 +112,7 @@ async function api(req,env,url){
      role:x?.role==='user'?'user':'model',speaker:clean(x?.speaker,20),content:clean(x?.content,8000)
    })).filter(x=>x.content):[];
    if(messages.length>300||new TextEncoder().encode(JSON.stringify(messages)).length>200000)return response({error:'transcript_too_large_send_report_without_history'},413);
+   if(!await reportQuota(env,token))return response({error:'daily_report_limit_reached'},429);
    const id='report_'+crypto.randomUUID();
    const record={id,source:'Atha Council WEB TEST',testerId:tester.testerId,createdAt:new Date().toISOString(),
      label,actual:description,expected,messages,transcriptConsent:body.includeTranscript===true&&body.transcriptConsent===true,clientVersion:'web-beta-2',status:'needs_review',
