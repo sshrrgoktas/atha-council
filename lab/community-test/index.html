@@ -15,7 +15,7 @@ function savedInvite(){try{return localStorage.getItem(identityKey)||sessionStor
 function rememberInvite(code,remember){currentInvite=code;try{sessionStorage.setItem('atha_community_test_invite',code);if(remember)localStorage.setItem(identityKey,code);else localStorage.removeItem(identityKey)}catch(e){}}
 function forgetInvite(){currentInvite='';testerId='';try{localStorage.removeItem(identityKey);sessionStorage.removeItem('atha_community_test_invite')}catch(e){}}
 const session=()=>currentInvite||savedInvite();
-const history=[];let active=null,busy=false,seq=0;
+const history=[];let active=null,busy=false,seq=0,quotaPauseUntil=0;
 const chatKey=id=>'atha_community_test_chat_'+id;
 function saveHistory(){
  if(!testerId)return;
@@ -76,7 +76,9 @@ if(!isAdmin){
  });
  $('joinBtn').addEventListener('click',async()=>{try{$('joinStatus').textContent='Bağlanılıyor…';await join($('invite').value.trim())}catch(e){$('joinStatus').textContent='Davet doğrulanamadı: '+e.message}});
  $('composer').addEventListener('submit',async e=>{
-  e.preventDefault();if(busy||!session())return;const latest=$('message').value.trim();if(!latest)return;
+  e.preventDefault();if(busy||!session())return;
+  if(quotaPauseUntil>Date.now()){note('Cloudflare AI günlük kotası doldu. TEST modelleri geçici olarak kullanılamıyor; daha sonra tekrar dene.');return}
+  const latest=$('message').value.trim();if(!latest)return;
   const targets=recipients(latest),past=history.slice(-30).map(m=>({...m,content:m.content.slice(0,2400)}));
   history.push({role:'user',speaker:'human',content:latest});bubble('Sen',latest,true);saveHistory();$('message').value='';
   busy=true;$('send').disabled=true;note('Modeller yanıtlıyor…');
@@ -84,13 +86,20 @@ if(!isAdmin){
    const place=bubble(model.toUpperCase(),'Yanıt bekleniyor…');
    const start=Date.now();
    try{const out=await call('/api/chat',{invite:session(),model,latest,history:past});
-    const value=out.status==='ok'?out.answer:'Model yanıt vermedi: '+(out.error||out.status);place.textContent=value;
+    if(out.status==='quota_exhausted'){
+      quotaPauseUntil=Math.max(quotaPauseUntil,Date.now()+Math.max(60,Number(out.retryAfterSec)||900)*1000);
+      place.parentElement.remove();
+      note('Cloudflare Workers AI günlük ücretsiz kotası doldu (4006). TEST modelleri yanıt üretemiyor; daha sonra yeniden dene. Ücretli plana geçmen gerekmiyor.');
+      return null;
+    }
+    if(out.status!=='ok'){place.textContent='TEST model hatası: '+(out.error||out.status);note('TEST model hatası · Sorun bildirebilirsin');return null}
+    place.textContent=out.answer;
     note(model.toUpperCase()+' yanıtladı ('+((Date.now()-start)/1000).toFixed(1)+' sn)');
-    return {role:'model',speaker:model,content:value.slice(0,9000)};
-   }catch(e){place.textContent='TEST bağlantısı: '+e.message;note('Hata · Raporlayabilirsin');return {role:'model',speaker:model,content:place.textContent}}
+    return {role:'model',speaker:model,content:out.answer.slice(0,9000)};
+   }catch(e){place.textContent='TEST bağlantısı: '+e.message;note('Hata · Raporlayabilirsin');return null}
   });
-  // Store in target order, not provider completion order, to preserve chronology.
-  const ordered=await Promise.all(responses);
+  // Only real model answers enter the conversation history; provider errors cannot poison context.
+  const ordered=(await Promise.all(responses)).filter(Boolean);
   history.push(...ordered);saveHistory();
   busy=false;$('send').disabled=false;
  });
