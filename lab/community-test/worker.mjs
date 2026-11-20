@@ -43,6 +43,9 @@ function flatten(raw){
  return '';
 }
 async function modelResponse(env,model,history,latest){
+ const pause=Number(await env.COMMUNITY.get('runtime:ai_quota_pause_until'))||0;
+ if(pause>Date.now())return {model,status:'quota_exhausted',retryAfterSec:Math.ceil((pause-Date.now())/1000)};
+
  const who=model==='qwen'?'Qwen':'Llama';
  const isStory=/(hikaye|hikâye|öykü|metin).*(tek metin|birleştir|baştan sona|tamamını)|(tek metin|birleştir).*(hikaye|hikâye|öykü|metin)/iu.test(latest);
  const context=history.map(x=> (x.role==='user'?'Kullanıcı':x.speaker)+': '+x.content).join('\n').slice(-12500);
@@ -55,7 +58,16 @@ async function modelResponse(env,model,history,latest){
   const raw=await env.AI.run(MODEL[model],payload);
   const answer=flatten(raw).slice(0,9500);
   return {model,status:answer?'ok':'empty',answer,elapsedMs:Date.now()-started};
- }catch(e){return {model,status:'provider_error',error:clean(String(e?.message||'Provider error'),130),elapsedMs:Date.now()-started}}
+ }catch(e){
+  const detail=String(e?.message||e||'Provider error');
+  if(/\b4006\b|daily free allocation|10,?000 neurons|daily.*neurons/iu.test(detail)){
+   // Shared TEST-only cooldown prevents repeated paid/free AI calls after quota exhaustion.
+   const until=Date.now()+15*60*1000;
+   try{await env.COMMUNITY.put('runtime:ai_quota_pause_until',String(until),{expirationTtl:900})}catch(_){}
+   return {model,status:'quota_exhausted',retryAfterSec:900,elapsedMs:Date.now()-started};
+  }
+  return {model,status:'provider_error',error:clean(detail,130),elapsedMs:Date.now()-started};
+ }
 }
 async function api(req,env,url){
  if(!env.COMMUNITY||!env.AI)return response({error:'test_not_ready'},503);
