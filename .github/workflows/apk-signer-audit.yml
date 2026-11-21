@@ -1,0 +1,48 @@
+name: Atlas Council APK signer diagnostics
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/apk-signer-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  signer-diagnostics:
+    runs-on: ubuntu-latest
+    env:
+      ATLAS_KEYSTORE_BASE64: ${{ secrets.ATLAS_KEYSTORE_BASE64 }}
+      ATLAS_KEYSTORE_PASSWORD: ${{ secrets.ATLAS_KEYSTORE_PASSWORD }}
+      ATLAS_KEY_ALIAS: ${{ secrets.ATLAS_KEY_ALIAS }}
+      ATLAS_KEY_PASSWORD: ${{ secrets.ATLAS_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Confirm Android build tools
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - name: Build and inspect CI debug APK
+        run: |
+          gradle :app:assembleDebug --no-daemon
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | grep 'certificate SHA-256 digest'
+      - name: Restore permanent signer (never disclose keystore)
+        if: env.ATLAS_KEYSTORE_BASE64 != '' && env.ATLAS_KEYSTORE_PASSWORD != '' && env.ATLAS_KEY_ALIAS != '' && env.ATLAS_KEY_PASSWORD != ''
+        run: |
+          umask 077
+          printf '%s' "$ATLAS_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/atlas-council-release.jks"
+          echo "ATLAS_SIGNING_FILE=$RUNNER_TEMP/atlas-council-release.jks" >> "$GITHUB_ENV"
+      - name: Build and inspect signed release APK
+        if: env.ATLAS_KEYSTORE_BASE64 != '' && env.ATLAS_KEYSTORE_PASSWORD != '' && env.ATLAS_KEY_ALIAS != '' && env.ATLAS_KEY_PASSWORD != ''
+        run: |
+          gradle :app:assembleRelease --no-daemon
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk | grep 'certificate SHA-256 digest'
+          echo 'NOTE: This reports CI debug vs release signing fingerprints, not the fingerprint of the APK installed on the user phone.'
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/atlas-council-release.jks"
