@@ -6,7 +6,7 @@ const invitation = 'synthetic_test_invitation_never_used_live';
 const user = content => ({role: 'user', speaker: 'human', content});
 const modelMessage = (speaker, content) => ({role: 'model', speaker, content});
 
-async function chat(model, latest, history = [], provider = () => 'Synthetic provider answer') {
+async function chat(model, latest, history = [], provider = () => 'Synthetic provider answer', expectedStatus = 'ok') {
   const calls = [];
   const env = {
     COMMUNITY: {
@@ -29,7 +29,7 @@ async function chat(model, latest, history = [], provider = () => 'Synthetic pro
   const response = await worker.fetch(request, env);
   assert.equal(response.status, 200);
   const result = await response.json();
-  assert.equal(result.status, 'ok');
+  assert.equal(result.status, expectedStatus);
   assert.equal(result.model, model);
   return {calls, answer: result.answer};
 }
@@ -162,8 +162,8 @@ for (const model of ['qwen', 'llama']) {
   test(model + ' withholds a suspect draft if verification fails or returns malformed output', async () => {
     const draft = 'Dün sen yokken diğer modelle gizlice sohbet ettik ve Gümüş Anahtar adını seçtik.';
     for (const verdict of ['not a valid verdict', new Error('fixture verifier unavailable')]) {
-      const result = await chat(model, 'Selam!', [], stagedProvider(draft, verdict));
-      assertCorrected(result, draft);
+      const result = await chat(model, 'Selam!', [], stagedProvider(draft, verdict), 'review_unavailable');
+      assert.equal(result.answer, undefined, 'an unavailable verifier cannot supply a chat answer');
       assert.equal(result.calls.length, 2);
     }
   });

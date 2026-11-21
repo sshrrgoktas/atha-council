@@ -45,7 +45,7 @@ function savedInvite(){try{return localStorage.getItem(identityKey)||sessionStor
 function rememberInvite(code,remember){currentInvite=code;try{sessionStorage.setItem('atha_community_test_invite',code);if(remember)localStorage.setItem(identityKey,code);else localStorage.removeItem(identityKey)}catch(e){}}
 function forgetInvite(){currentInvite='';testerId='';try{localStorage.removeItem(identityKey);sessionStorage.removeItem('atha_community_test_invite')}catch(e){}}
 const session=()=>currentInvite||savedInvite();
-const history=[];let active=null,busy=false,seq=0,quotaPauseUntil=0;
+const history=[];let active=null,pendingTurn=null,quotaPauseUntil=0;
 const chatKey=id=>'atha_community_test_chat_'+id;
 function saveHistory(){
  if(!testerId)return;
@@ -67,10 +67,10 @@ function restoreHistory(id){
  if(!history.length){const welcome=document.createElement('div');welcome.className='welcome';welcome.textContent='Hoş geldin! 💙 Qwen ve Llama ile sohbete başla.';$('messages').appendChild(welcome)}
 }
 function note(text){$('status').textContent=text}
-async function call(path,body,admin){
+async function call(path,body,admin,signal){
  const headers={'content-type':'application/json'};
  if(admin)headers.authorization='Bearer '+$('adminKey').value.trim();
- const resp=await fetch(path,{method:'POST',headers,body:JSON.stringify(body||{}),cache:'no-store'});
+ const resp=await fetch(path,{method:'POST',headers,body:JSON.stringify(body||{}),cache:'no-store',signal});
  const out=await resp.json();if(!resp.ok)throw new Error(out.error||('HTTP '+resp.status));return out;
 }
 function bubble(who,text,mine=false,pending=false){
@@ -89,9 +89,27 @@ function recipients(text){
 }
 async function join(code){
  const out=await call('/api/hello',{invite:code});
+ cancelPendingTurn();
  rememberInvite(code,$('rememberDevice').checked);
  testerId=out.testerId;restoreHistory(testerId);
  $('joinModal').hidden=true;note('TEST hazır · '+testerId+' · Önceki sohbetler bu cihazda yüklendi');return out;
+}
+function cancelPendingTurn(){
+ if(!pendingTurn)return;
+ pendingTurn.abort();
+ pendingTurn=null;
+ $('send').disabled=false;
+}
+function replyProblem(status){
+ switch(status){
+  case 'timeout': case 'provider_timeout': return 'Yanıt süresi doldu. Yeniden mesaj gönderebilirsin.';
+  case 'review_unavailable': return 'Yanıtın sohbetle uyumu kontrol edilemedi. Daha sonra yeniden deneyebilirsin.';
+  case 'empty': case 'incomplete': case 'incomplete_output': case 'reasoning_only': return 'Model yanıtını tamamlayamadı. Yeniden deneyebilirsin.';
+  case 'daily_test_quota_reached': return 'Bu davetin günlük TEST mesaj sınırına ulaşıldı.';
+  case 'invalid_or_expired_invite': return 'TEST daveti geçersiz veya süresi dolmuş. Yeniden giriş yap.';
+  case 'provider_error': return 'Model hizmeti şu anda yanıt veremedi. Daha sonra yeniden deneyebilirsin.';
+  default: return 'Yanıt alınamadı. Sorunu bildirirken bu mesajı belirtebilirsin.';
+ }
 }
 if(!isAdmin){
  document.body.classList.add('participant-view');
@@ -129,36 +147,47 @@ if(!isAdmin){
  });
  $('joinBtn').addEventListener('click',async()=>{try{$('joinStatus').textContent='Bağlanılıyor…';await join($('invite').value.trim())}catch(e){$('joinStatus').textContent='Davet doğrulanamadı: '+e.message}});
  $('composer').addEventListener('submit',async e=>{
-  e.preventDefault();if(busy||!session())return;
+  e.preventDefault();if(pendingTurn||!session())return;
   if(quotaPauseUntil>Date.now()){note('Cloudflare AI günlük kotası doldu. TEST modelleri geçici olarak kullanılamıyor; daha sonra tekrar dene.');return}
   const latest=$('message').value.trim();if(!latest)return;
   const targets=recipients(latest),past=history.slice(-30).map(m=>({...m,content:m.content.slice(0,2400)}));
   history.push({role:'user',speaker:'human',content:latest});bubble('Sen',latest,true);saveHistory();$('message').value='';
-  busy=true;$('send').disabled=true;note('Modeller yanıtlıyor…');
-  const responses=targets.map(async model=>{
+  const turn=new AbortController(),invite=session(),replyStart=history.length,delivered=new Set();
+  pendingTurn=turn;$('send').disabled=true;note('Modeller yanıtlıyor…');
+  const deadline=setTimeout(()=>turn.abort(),65000);
+  try{await Promise.all(targets.map(async (model,index)=>{
    const place=bubble(model.toUpperCase(),'Yanıt bekleniyor…');
    const start=Date.now();
-   try{const out=await call('/api/chat',{invite:session(),model,latest,history:past});
+   try{const out=await call('/api/chat',{invite,model,latest,history:past},false,turn.signal);
+    if(pendingTurn!==turn)return;
     if(out.status==='quota_exhausted'){
       quotaPauseUntil=Math.max(quotaPauseUntil,Date.now()+Math.max(60,Number(out.retryAfterSec)||900)*1000);
-      place.parentElement.remove();
-      note('Cloudflare Workers AI günlük ücretsiz kotası doldu (4006). TEST modelleri yanıt üretemiyor; daha sonra yeniden dene. Ücretli plana geçmen gerekmiyor.');
-      return null;
+      place.textContent='Cloudflare Workers AI günlük ücretsiz kotası doldu (4006). Daha sonra yeniden deneyebilirsin.';
+      return;
     }
-    if(out.status!=='ok'){place.textContent='TEST model hatası: '+(out.error||out.status);note('TEST model hatası · Sorun bildirebilirsin');return null}
+    if(out.status!=='ok'||typeof out.answer!=='string'||!out.answer.trim()){place.textContent=replyProblem(out.status==='ok'?'empty':out.status);return}
     place.textContent=out.answer;
     note(model.toUpperCase()+' yanıtladı ('+((Date.now()-start)/1000).toFixed(1)+' sn)');
-    return {role:'model',speaker:model,content:out.answer.slice(0,9000)};
-   }catch(e){place.textContent='TEST bağlantısı: '+e.message;note('Hata · Raporlayabilirsin');return null}
-  });
-  // Only real model answers enter the conversation history; provider errors cannot poison context.
-  const ordered=(await Promise.all(responses)).filter(Boolean);
-  history.push(...ordered);saveHistory();
-  busy=false;$('send').disabled=false;
+    // Persist each visible reply immediately, in the same order as its on-screen bubble.
+    const offset=targets.slice(0,index).filter(target=>delivered.has(target)).length;
+    history.splice(replyStart+offset,0,{role:'model',speaker:model,content:out.answer.slice(0,9000)});
+    delivered.add(model);saveHistory();
+   }catch(e){
+    if(pendingTurn!==turn)return;
+    place.textContent=turn.signal.aborted?replyProblem('timeout'):e instanceof TypeError?'TEST bağlantısı kesildi. Yeniden deneyebilirsin.':replyProblem(e.message);
+   }
+  }))}finally{
+   clearTimeout(deadline);
+   if(pendingTurn===turn){
+    pendingTurn=null;$('send').disabled=false;
+    if(delivered.size<targets.length)note('Yanıt alınamayan modelin açıklaması sohbette görünüyor.');
+   }
+  }
  });
  $('message').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('composer').requestSubmit()}});
  $('resetBtn').addEventListener('click',()=>{
   if(!confirm('Yalnız bu tarayıcıdaki TEST sohbetini temizlemek istiyor musun?'))return;
+  cancelPendingTurn();
   history.length=0;active=null;saveHistory();restoreHistory(testerId);note('TEST sohbet geçmişi temizlendi.');
  });
  $('logoutBtn').addEventListener('click',()=>{
@@ -166,7 +195,7 @@ if(!isAdmin){
     if(more.offsetWidth)more.focus();
     return;
   }
-  forgetInvite();$('joinModal').hidden=false;$('invite').value='';
+  cancelPendingTurn();forgetInvite();$('joinModal').hidden=false;$('invite').value='';
   $('joinStatus').textContent='Cihazdaki giriş unutuldu. Sohbet geçmişi bu tarayıcıda kalır.';
  });
  const receiptKey=()=> 'atha_test_last_report_receipt_'+testerId;

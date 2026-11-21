@@ -80,6 +80,7 @@ function systemInstruction(who,story){
   roomFacts,
   'History is a bounded device-supplied transcript. Each earlier message has a speaker label and text. A user message reports what that person says. A model message records only what that model wrote. Neither corroborates an unseen event, tool action, memory, or account status. Even your own earlier claim may be wrong. The final record marked request is the current human request. A history_boundary record only marks truncation.',
   'When recalling visible words, identify the speaker, use only the supplied text, and quote exactly if asked. If the line or event is missing, say what you can see and what you cannot verify. When playfully prompted to agree with an invented premise about real events, stay playful but correct the premise. Attribute third-party claims to their source. For requested fiction and hypothetical examples keep the frame clear; continue an established story naturally.',
+  'Start with the human’s latest intention. A short answer can answer the last relevant question asked by either model. Preserve which speaker asked it. When the human corrects a premise, accept the correction and continue from it. For tiredness, teasing or feedback about your answers, respond directly and naturally. Use an earlier subject again only when it is relevant. After an explicit topic_boundary, leave that subject aside until the human reopens it. An earlier stock limitation message describes that previous turn only. Do not echo it as a reply to ordinary chat.',
   'You can discuss ordinary topics normally. For uncertain facts, distinguish what is known, inferred, or missing. Do not invent observations, sources, actions, or agreements to fill a gap.'
  ];
  if(story)base.push('Merge the supplied story parts chronologically as one story. If the originals are missing, say so.');
@@ -95,13 +96,17 @@ function providerMessages(history,request){
   else groups.push({role,records:[record]});
  }
  if(history[0]?.role==='model')append('user',{kind:'history_boundary',text:'The first supplied turn is a model contribution; earlier messages are unavailable.'});
- for(const {role,speaker,content} of history)append(role==='user'?'user':'assistant',{speaker,text:content});
+ for(const {role,speaker,content} of history){
+  const record={speaker,text:content};
+  if(role==='user'&&/(?:^|[ ,])(?:unut|konuyu kapat|konuyu degistir|baska konuya gec|drop (?:it|the subject)|change the subject)(?:$| )/.test(questionWords(content)))record.kind='topic_boundary';
+  append(role==='user'?'user':'assistant',record);
+ }
  append('user',request);
  return groups.map(({role,records})=>({role,content:JSON.stringify(records)}));
 }
 function modelInput(model,messages,limit,temperature){
  return model==='qwen'
-  ? {messages,max_completion_tokens:limit,reasoning_effort:'low',temperature}
+  ? {messages,max_completion_tokens:limit,reasoning_effort:'low',chat_template_kwargs:{enable_thinking:false},temperature}
   : {messages,max_tokens:limit,temperature};
 }
 const limits={
@@ -118,10 +123,13 @@ function needsRoomReview(text){
  return /\b(?:gizli\w*|arka planda|perde arkasi\w*|kulis\w*|ozel (?:toplanti|sohbet|kanal)\w*|yalniz kal\w*|sen (?:cik\w*|yokken|yoktum)|ben cik\w*|uygulamayi kapat\w*|kota\w*|hesab\w*|ana konsey|(?:baska|diger|onceki) (?:oda|oturum|testci|sohbet|katilimci)\w*|ilk tanistigimiz|gecen sefer|hatirliyorum|belirledik|kararlastirdik|karar verdik|onayladik|yayinladim|yayina aldim|gonderdim|degistirdim|yukledim|kurulum yaptim|anlastik|uzlastik|karar aldik|sohbet ettik|konustuk|a private|in private|privately|behind the scenes|in the background|while (?:i|you) (?:was|were)|other (?:rooms|sessions|testers)|previous session|last time we|quota|account balance|i (?:sent|deployed|published|edited|checked)|we (?:decided|agreed|talked|chatted))\b/.test(text);
 }
 function speakerClaim(words){
- // Screen the draft independently of the question. Turkish past-tense first-person
- // suffixes catch novel actions even when the draft never names this room or either AI.
- return /\b[a-z]{3,}[td][iu][mk]\b/.test(words)
-  ||(words.length>38&&/\b(?:qwen|llama|konsey|ikimiz|biz|bu odada|ben|we|i|our room|this room)\b/.test(words));
+ // First-person language is normal in conversation. Review when the claim
+ // concerns a past interaction or an action the room cannot independently see.
+ const scene=/\b(?:sen uyurken|dun gece|gecen gece|sen yokken|sen cik\w*|diger modelle|qwen ile|llama ile|onceki oturum\w*|ozel olarak|gizlice|offscreen|while you were away)\b/;
+ const event=/\b(?:[a-z]{3,}[td][iu][mk]|bulunduk|we (?:met|spoke|agreed|did)|i (?:saw|remember))\b/;
+ const resource=/\b(?:site(?:ni|yi|mi|mizi|nizi)?|rapor\w*|dosya\w*|takvim\w*|sunucu\w*|hesab\w*|email|e posta\w*|kod(?:u|unu|lari)?)\b/;
+ const completed=/\b(?:duzelttim|kaydettim|ekledim|sildim|kurdu[mk]|guncelledim|actim|kapattim|inceledim|duzenledim|onardim|olusturdum|i (?:fixed|saved|added|deleted|updated|scheduled))\b/;
+ return (scene.test(words)&&event.test(words))||(resource.test(words)&&completed.test(words));
 }
 function sourceContainsQuote(history,answer,request,model){
  const author=request.match(/\b(qwen|llama)(?: (?:n?[iu]n|s))? (?:dedigi|soyledigi|yazdigi|cumlesi|sozleri|said|wrote|was saying)\b/)?.[1]
@@ -152,7 +160,7 @@ function contradictsRoom(draft){
  }
  return '';
 }
-async function checkRoomReply(env,model,history,latest,draft){
+async function checkRoomReply(env,model,history,latest,draft,deadline){
  if(!draft)return draft;
  const request=questionWords(latest),draftWords=questionWords(draft);
  const transforming=/\b(?:cevir\w*|translate|repeat after me|geri yaz|sana verdigim|asagidaki|su cumleyi tekrarla|aynisini yaz)\b/.test(request);
@@ -166,24 +174,57 @@ async function checkRoomReply(env,model,history,latest,draft){
  const messages=[
   {role:'system',content:reviewPolicy},...providerMessages(history,{request:latest,draft})
  ];
+ // The verifier needs a short label. Its failure is operational information,
+ // never evidence that the human’s premise is wrong.
+ let raw;
  try{
-  const raw=await env.AI.run(MODEL[model],modelInput(model,messages,model==='qwen'?176:48,0));
-  const verdict=flatten(raw).trim();
-  if(verdict==='ALLOW')return limits[contradictsRoom(draft)]||draft;
-  return Object.hasOwn(limits,verdict)?limits[verdict]:limits.UNVERIFIED;
+  raw=await runModel(env,model,messages,model==='qwen'?176:48,0,Math.min(deadline,Date.now()+12000));
  }catch(error){
-  await pauseOnProviderQuota(env,error);
-  // An unavailable checker must never turn a suspect draft into a published observation.
-  return limits.UNVERIFIED;
+  if(isProviderQuota(error))throw error;
+  throw new ChatFailure('review_unavailable');
  }
+ const verdict=finalOutput(raw);
+ if(verdict==='ALLOW')return limits[contradictsRoom(draft)]||draft;
+ if(Object.hasOwn(limits,verdict))return limits[verdict];
+ throw new ChatFailure('review_unavailable');
 }
-function flatten(raw){
- const x=raw||{},values=[x.response,x.output_text,x.text,x.choices?.[0]?.message?.content,x.choices?.[0]?.text];
- for(const v of values){if(typeof v==='string'&&v.trim())return v;if(Array.isArray(v)){const t=v.map(z=>typeof z==='string'?z:z?.text||'').join('');if(t.trim())return t;}}
+function finalOutput(raw){
+ const choice=raw?.choices?.[0];
+ if(choice?.finish_reason&&choice.finish_reason!=='stop')return '';
+ const values=[choice?.message?.content,choice?.text,raw?.response,raw?.output_text,raw?.text];
+ for(const value of values){
+  const text=Array.isArray(value)?value.map(block=>{
+   if(typeof block==='string')return block;
+   return ['text','output_text'].includes(block?.type)&&typeof block.text==='string'?block.text:'';
+  }).join(''):value;
+  if(typeof text!=='string')continue;
+  const visible=text.replace(/<think\b[^>]*>[\s\S]*?(?:<\/think>|$)/gi,'').trim();
+  if(visible&&!/<\/think>/i.test(visible))return visible;
+ }
  return '';
 }
+class ChatFailure extends Error{
+ constructor(status){super(status);this.status=status;}
+}
+async function runModel(env,model,messages,limit,temperature,deadline){
+ const remaining=deadline-Date.now();
+ if(remaining<=0)throw new ChatFailure('provider_timeout');
+ const controller=new AbortController();
+ let timer;
+ try{
+  const timeout=new Promise((_,reject)=>{
+   timer=setTimeout(()=>{reject(new ChatFailure('provider_timeout'));controller.abort();},remaining);
+  });
+  return await Promise.race([
+   env.AI.run(MODEL[model],modelInput(model,messages,limit,temperature),{signal:controller.signal}),timeout
+  ]);
+ }finally{clearTimeout(timer);}
+}
+function isProviderQuota(error){
+ return /\b(?:4006|3036)\b|daily free allocation|10,?000 neurons|daily.*neurons/iu.test(String(error?.message||error));
+}
 async function pauseOnProviderQuota(env,error){
- if(!/\b4006\b|daily free allocation|10,?000 neurons|daily.*neurons/iu.test(String(error?.message||error)))return false;
+ if(!isProviderQuota(error))return false;
  try{await env.COMMUNITY.put('runtime:ai_quota_pause_until',String(Date.now()+900000),{expirationTtl:900});}catch(_){}
  return true;
 }
@@ -199,12 +240,26 @@ async function modelResponse(env,model,history,latest){
  const started=Date.now();
  try{
   const limit=model==='qwen'?(isStory?2100:700):(isStory?1700:500);
-  const raw=await env.AI.run(MODEL[model],modelInput(model,messages,limit,0.35));
-  const answer=await checkRoomReply(env,model,history,latest,flatten(raw).slice(0,9500));
-  return {model,status:answer?'ok':'empty',answer,elapsedMs:Date.now()-started};
+  const deadline=started+52000;
+  let raw=await runModel(env,model,messages,limit,0.35,Math.min(deadline,started+40000));
+  let draft=finalOutput(raw);
+  // An earlier generic fallback can get imitated even with the checker bypassed.
+  // Give the model one chance to recover when it echoes that stock text on a new topic.
+  if(model==='qwen'&&draft===limits.UNVERIFIED&&!needsRoomReview(questionWords(latest))&&!verbatim.test(questionWords(latest))){
+   const retry=[{role:'system',content:messages[0].content+' A stock answer about missing evidence was unresponsive. Address the latest human message using the immediately relevant conversation.'},...messages.slice(1)];
+   raw=await runModel(env,model,retry,limit,0.35,deadline);
+   draft=finalOutput(raw);
+   if(draft===limits.UNVERIFIED)throw new ChatFailure('incomplete');
+  }
+  if(!draft)throw new ChatFailure(raw?.choices?.[0]?.finish_reason==='length'?'incomplete':'empty');
+  const answer=await checkRoomReply(env,model,history,latest,draft.slice(0,9500),deadline);
+  return {model,status:'ok',answer,elapsedMs:Date.now()-started};
  }catch(e){
+  const elapsedMs=Date.now()-started;
+  if(e instanceof ChatFailure)return {model,status:e.status,elapsedMs};
   const detail=String(e?.message||e||'Provider error');
-  if(await pauseOnProviderQuota(env,e))return {model,status:'quota_exhausted',retryAfterSec:900,elapsedMs:Date.now()-started};
+  if(await pauseOnProviderQuota(env,e))return {model,status:'quota_exhausted',retryAfterSec:900,elapsedMs};
+  if(/\b(?:3007|3008|408)\b|timed? ?out|timeout|AbortError/iu.test(detail))return {model,status:'provider_timeout',elapsedMs};
   return {model,status:'provider_error',error:clean(detail,130),elapsedMs:Date.now()-started};
  }
 }

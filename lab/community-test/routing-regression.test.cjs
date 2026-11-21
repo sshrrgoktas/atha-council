@@ -29,42 +29,51 @@ function memoryStorage() {
  };
 }
 
-async function openParticipant({confirm,requestChat}) {
+async function openParticipant({confirm,requestChat,localStorage=memoryStorage()}) {
  const elements=new Map();
  function makeElement() {
-  const listeners=new Map();
+  const listeners=new Map(),children=[];
   return {
+   children,
    addEventListener: (event,handler)=>listeners.set(event,handler),
    dispatch: event=>listeners.get(event)({preventDefault(){}}),
-   appendChild(){}, replaceChildren(){}, focus(){}
+   appendChild(child){children.push(child)}, replaceChildren(){children.length=0}, focus(){}
   };
  }
  for(const [tag,id] of html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)){
   elements.set(id,Object.assign(makeElement(),{hidden:/\shidden\b/.test(tag),checked:/\schecked\b/.test(tag)}));
  }
  const element=id=>elements.get(id);
- const localStorage=memoryStorage(),sessionStorage=memoryStorage();
+ const sessionStorage=memoryStorage();
  const historyKey='atha_community_test_chat_fixture';
  const history=()=>JSON.parse(localStorage.getItem(historyKey)||'[]');
- const fetch=async (path,{body})=>{
+ const fetch=async (path,{body,signal})=>{
   const input=JSON.parse(body);
   assert.equal(input.invite,'fixture-invite');
   if(path==='/api/hello')return {ok:true,json:async()=>({testerId:'fixture'})};
   assert.equal(path,'/api/chat');
-  return {ok:true,json:async()=>requestChat(input.model)};
+  const result=await requestChat(input.model,signal,input);
+  return {ok:true,json:async()=>result};
  };
  const document={
   getElementById:element,createElement:makeElement,addEventListener(){},body:{classList:{add(){}}}
  };
  const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
- vm.runInNewContext(script,{document,window:{},location:{pathname:'/',hash:''},fetch,confirm,localStorage,sessionStorage});
- element('invite').value='fixture-invite';
- await element('joinBtn').dispatch('click');
+ const timers=new Map();
+ const setTimeout=(fn,ms)=>{const id=Symbol();timers.set(id,{fn,ms});return id};
+ vm.runInNewContext(script,{document,window:{},location:{pathname:'/',hash:''},fetch,confirm,localStorage,sessionStorage,
+  AbortController,TypeError,setTimeout,clearTimeout:id=>timers.delete(id)});
+ if(localStorage.getItem('atha_community_test_invite_persistent'))await new Promise(setImmediate);
+ else{
+  element('invite').value='fixture-invite';
+  await element('joinBtn').dispatch('click');
+ }
  assert.equal(element('joinModal').hidden,true,'fixture must have joined');
- return {element,localStorage,sessionStorage,history,historyKey};
+ const bubbleText=who=>element('messages').children.find(el=>el.children[0]?.textContent===who)?.children[1]?.textContent;
+ return {element,localStorage,sessionStorage,history,historyKey,bubbleText,timers};
 }
 
-test('History saves replies in target order after all have settled',async()=>{
+test('A visible reply survives reload while its sibling is pending, preserving target order when both finish',async()=>{
  const reply=new Map();
  const client=await openParticipant({requestChat:model=>new Promise(resolve=>reply.set(model,resolve))});
  client.element('message').value='Merhaba';
@@ -72,10 +81,62 @@ test('History saves replies in target order after all have settled',async()=>{
  await new Promise(setImmediate);
  reply.get('llama')({status:'ok',answer:'Llama answer'});
  await new Promise(setImmediate);
- assert.deepEqual(client.history().map(m=>m.speaker),['human']);
+ assert.deepEqual(client.history().map(m=>m.speaker),['human','llama']);
+ const reloaded=await openParticipant({localStorage:client.localStorage});
+ assert.equal(reloaded.bubbleText('LLAMA'),'Llama answer');
  reply.get('qwen')({status:'ok',answer:'Qwen answer'});
  await submitted;
  assert.deepEqual(client.history().map(m=>m.content),['Merhaba','Qwen answer','Llama answer']);
+});
+
+test('A hanging chat request is aborted, send reopens and the delivered sibling supplies later context',async()=>{
+ let stalledSignal,followupHistory;
+ const client=await openParticipant({requestChat:(model,signal,input)=>{
+  if(input.latest==='Merhaba'&&model==='qwen'){
+   stalledSignal=signal;
+   return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true}));
+  }
+  followupHistory=input.history;
+  return {status:'ok',answer:'Yanıt geldi.'};
+ }});
+ client.element('message').value='Merhaba';
+ const pending=client.element('composer').dispatch('submit');
+ await new Promise(setImmediate);
+ assert.equal(client.element('send').disabled,true);
+ const [deadline]=client.timers.values();
+ assert.ok(deadline.ms>0&&deadline.ms<=65000);
+ deadline.fn();await pending;
+ assert.equal(stalledSignal.aborted,true);
+ assert.equal(client.timers.size,0);
+ assert.equal(client.element('send').disabled,false);
+ assert.match(client.bubbleText('QWEN'),/süresi doldu/u);
+ assert.deepEqual(client.history().map(m=>m.speaker),['human','llama']);
+ client.element('message').value='Llama, tekrar';
+ await client.element('composer').dispatch('submit');
+ assert.deepEqual(followupHistory.map(m=>m.speaker),['human','llama']);
+});
+
+test('An unavailable reviewer is visible as a failure and stays out of subsequent context',async()=>{
+ const client=await openParticipant({requestChat:()=>({status:'review_unavailable',answer:'taslak'})});
+ client.element('message').value='Qwen, bakar mısın?';
+ await client.element('composer').dispatch('submit');
+ assert.match(client.bubbleText('QWEN'),/kontrol edilemedi/u);
+ assert.deepEqual(client.history().map(m=>m.role),['user']);
+});
+
+test('Clearing a chat prevents a late response from overwriting the next conversation',async()=>{
+ let finishOld;
+ const client=await openParticipant({confirm:()=>true,requestChat:(model,signal,input)=>{
+  if(input.latest==='Qwen, ilk mesaj')return new Promise(resolve=>{finishOld=resolve});
+  return {status:'ok',answer:'Yeni yanıt'};
+ }});
+ client.element('message').value='Qwen, ilk mesaj';
+ const old=client.element('composer').dispatch('submit');
+ client.element('resetBtn').dispatch('click');
+ client.element('message').value='Llama, yeni mesaj';
+ await client.element('composer').dispatch('submit');
+ finishOld({status:'ok',answer:'Gecikmiş yanıt'});await old;
+ assert.deepEqual(client.history().map(m=>m.content),['Llama, yeni mesaj','Yeni yanıt']);
 });
 
 test('Report and cancelled logout preserve the session, confirmed logout keeps chat',async()=>{
