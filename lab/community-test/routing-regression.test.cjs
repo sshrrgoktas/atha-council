@@ -20,7 +20,86 @@ for(const [label,message,expected] of [
  ['Address Qwen','Qwen, ne oldu?','qwen'],
  ['Follow up to active model','Peki neden?','qwen']
 ])test(label,()=>{context.resetRoute(); if(label==='Follow up to active model')context.testRoute('Qwen, selam');assert.equal(context.testRoute(message),expected)});
-test('History appended only after all model replies settle in target order',()=>{
- assert.match(html,/const ordered=await Promise\.all\(responses\);\s*history\.push\(\.\.\.ordered\);saveHistory\(\)/);
- assert.doesNotMatch(html,/history\.push\(\{role:'model',speaker:model,content:value/);
+function memoryStorage() {
+ const values=new Map();
+ return {
+  getItem: key=>values.get(key)??null,
+  setItem: (key,value)=>values.set(key,String(value)),
+  removeItem: key=>values.delete(key)
+ };
+}
+
+async function openParticipant({confirm,requestChat}) {
+ const elements=new Map();
+ function makeElement() {
+  const listeners=new Map();
+  return {
+   addEventListener: (event,handler)=>listeners.set(event,handler),
+   dispatch: event=>listeners.get(event)({preventDefault(){}}),
+   appendChild(){}, replaceChildren(){}, focus(){}
+  };
+ }
+ for(const [tag,id] of html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)){
+  elements.set(id,Object.assign(makeElement(),{hidden:/\shidden\b/.test(tag),checked:/\schecked\b/.test(tag)}));
+ }
+ const element=id=>elements.get(id);
+ const localStorage=memoryStorage(),sessionStorage=memoryStorage();
+ const historyKey='atha_community_test_chat_fixture';
+ const history=()=>JSON.parse(localStorage.getItem(historyKey)||'[]');
+ const fetch=async (path,{body})=>{
+  const input=JSON.parse(body);
+  assert.equal(input.invite,'fixture-invite');
+  if(path==='/api/hello')return {ok:true,json:async()=>({testerId:'fixture'})};
+  assert.equal(path,'/api/chat');
+  return {ok:true,json:async()=>requestChat(input.model)};
+ };
+ const document={
+  getElementById:element,createElement:makeElement,addEventListener(){},body:{classList:{add(){}}}
+ };
+ const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+ vm.runInNewContext(script,{document,window:{},location:{pathname:'/',hash:''},fetch,confirm,localStorage,sessionStorage});
+ element('invite').value='fixture-invite';
+ await element('joinBtn').dispatch('click');
+ assert.equal(element('joinModal').hidden,true,'fixture must have joined');
+ return {element,localStorage,sessionStorage,history,historyKey};
+}
+
+test('History saves replies in target order after all have settled',async()=>{
+ const reply=new Map();
+ const client=await openParticipant({requestChat:model=>new Promise(resolve=>reply.set(model,resolve))});
+ client.element('message').value='Merhaba';
+ const submitted=client.element('composer').dispatch('submit');
+ await new Promise(setImmediate);
+ reply.get('llama')({status:'ok',answer:'Llama answer'});
+ await new Promise(setImmediate);
+ assert.deepEqual(client.history().map(m=>m.speaker),['human']);
+ reply.get('qwen')({status:'ok',answer:'Qwen answer'});
+ await submitted;
+ assert.deepEqual(client.history().map(m=>m.content),['Merhaba','Qwen answer','Llama answer']);
+});
+
+test('Report and cancelled logout preserve the session, confirmed logout keeps chat',async()=>{
+ let confirmed=false, prompts=0;
+ const {element,localStorage,sessionStorage,historyKey}=await openParticipant({confirm:()=>{prompts++;return confirmed}});
+ const savedChat=JSON.stringify([{role:'user',speaker:'human',content:'Saved message'}]);
+ localStorage.setItem(historyKey,savedChat);
+ function assertSession(active) {
+  const expected=active?'fixture-invite':null;
+  assert.equal(localStorage.getItem('atha_community_test_invite_persistent'),expected);
+  assert.equal(sessionStorage.getItem('atha_community_test_invite'),expected);
+  assert.equal(element('joinModal').hidden,active);
+  assert.equal(localStorage.getItem(historyKey),savedChat);
+ }
+ element('reportBtn').dispatch('click');
+ assert.equal(element('reportModal').hidden,false);
+ assert.equal(prompts,0);
+ assertSession(true);
+ element('closeReport').dispatch('click');
+ element('logoutBtn').dispatch('click');
+ assert.equal(prompts,1);
+ assertSession(true);
+ confirmed=true;
+ element('logoutBtn').dispatch('click');
+ assert.equal(prompts,2);
+ assertSession(false);
 });
