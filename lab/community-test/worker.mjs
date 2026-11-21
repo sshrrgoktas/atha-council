@@ -34,12 +34,41 @@ function humanHistory(raw){
  return raw.slice(-36).map(x=>({speaker:clean(x?.speaker,20),role:x?.role==='user'?'user':'model',content:clean(x?.content,2600)}))
  .filter(x=>x.content).slice(-32);
 }
+function questionWords(text){
+ return text.toLowerCase().normalize('NFD').replace(/\p{M}/gu,'').replace(/ı/g,'i')
+  .replace(/[^a-z0-9]+/g,' ').trim();
+}
+function asksAboutBackground(text){
+ // Constrain local answers to common questions about unseen activity. Let the model
+ // interpret quotations, writing requests and references to the visible conversation.
+ const words=questionWords(text);
+ if(/["“”«»]/u.test(text)||/\b(?:hikaye\w*|oyku\w*|senaryo\w*|kurgu\w*|cevir\w*|hayal|uydur\w*|rol|diyalog\w*|story|fiction\w*|scene|translate|pretend|imagine|roleplay|dialogue|ekranda|bu sohbette|az once|demin|onceki mesaj\w*|previous repl\w*|in this chat)\b/.test(words))return false;
+ const offscreen=/\b(?:ben (?:burada |burda )?yokken|ben gelmeden|ben yazmadigimda|benden habersiz|arka planda)\b/;
+ const direct=/\b(?:yaptiniz|yaptin|yaptiginizi|konustunuz|konustun|konustugunuzu|takildiniz|takildin|tartistiniz|yazistiniz|(?:sohbet|muhabbet) ettiniz|konusuyor musunuz)\b/;
+ if(offscreen.test(words)&&direct.test(words))return true;
+ if(/\bkendi aranizda nasil takildiniz\b/.test(words))return true;
+ if(/\b(?:milletle|baskalariyla) (?:kaynat|konus|takil)[iu]?yor?mussunuz\b/.test(words))return true;
+ return /\b(?:while i was (?:away|gone|offline)|without me|in the background)\b/.test(words)
+  &&/\b(?:(?:did|do|were) you (?:two |both )?(?:do|doing|talk|talking|chat|chatting|discuss|say)|what you (?:two |both )?(?:did|discussed|said|talked about))\b/.test(words);
+}
+function runtimeAnswer(model,history,latest){
+ const followup=/^(?:(?:peki|then|so) )?(?:ne konustunuz|neler yaptiniz|gorebilir miyim|what did you (?:talk about|discuss)|can i see (?:it|the conversation))$/.test(questionWords(latest));
+ if(!asksAboutBackground(latest)&&!(followup&&asksAboutBackground(history.findLast(m=>m.role==='user')?.content||'')))return '';
+ if(/\b(?:you|can i|i was)\b/i.test(latest))return model==='qwen'
+  ? 'I do not talk to Llama while you are away. In this chat I only reply when you send a message.'
+  : 'There is no background chat with Qwen. When you write again I can refer to earlier replies visible in this room.';
+ return model==='qwen'
+  ? 'Sen yokken Llama ile aramızda ayrı bir konuşma geçmiyor. Bu TEST odasında ancak sen mesaj gönderince yanıt veriyorum.'
+  : 'Ben de bu sohbette sen yazınca yanıt veriyorum. Sen yokken Qwen’le yazışmıyorum. Burada daha önce yazdığı bir şeyi sorarsan ona değinebilirim.';
+}
 function systemInstruction(who,story){
  const base=[
  'You are '+who+', a named participant of an isolated Atha Council TEST group conversation.',
  'The other participant is '+(who==='Qwen'?'Llama':'Qwen')+'. The human is the user. Preserve speaker attribution accurately.',
  'Reply in natural Turkish, directly to the user. Casual greetings should receive friendly greetings, never an intent-analysis report.',
  'Remember only text supplied in this current chat. Do not pretend you remember the user from earlier sessions.',
+ 'In this WEB TEST you only respond when the human sends a message. When both models are addressed, both answer the same user turn independently and can refer to the other visible answer only on a later turn.',
+ 'There is no private conversation between models, background work while the human is away, or access to other testers’ conversations. Correct earlier claims about secret chats as mistaken. When asked about a visible past exchange, use only the supplied messages and attribute each statement to its speaker. Clearly frame any requested fictional exchange as fiction.',
  'Never claim you executed tasks or edited software. The production Atha Council and AthalAI are strictly off-limits.',
  'Answer briefly for casual chat; for story writing follow the requested length and preserve the shared storyline.'
  ];
@@ -52,6 +81,8 @@ function flatten(raw){
  return '';
 }
 async function modelResponse(env,model,history,latest){
+ const factualAnswer=runtimeAnswer(model,history,latest);
+ if(factualAnswer)return {model,status:'ok',answer:factualAnswer,elapsedMs:0};
  const pause=Number(await env.COMMUNITY.get('runtime:ai_quota_pause_until'))||0;
  if(pause>Date.now())return {model,status:'quota_exhausted',retryAfterSec:Math.ceil((pause-Date.now())/1000)};
 
