@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Atha Council TEST</title>
+<style>
+:root{color-scheme:dark;--bg:#091521;--panel:#102536;--border:#2c4c5a;--accent:#58d9c8;--text:#edf6fa;--muted:#9bb2bf;--me:#15514c}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px system-ui,-apple-system,sans-serif;line-height:1.46}button,input,textarea{font:inherit}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}header{height:58px;display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#102536;border-bottom:1px solid var(--border)}header strong{color:var(--accent);font-size:17px}.testTag{font-size:10px;letter-spacing:1px;color:#fff;background:#355d68;border-radius:6px;padding:3px 6px;margin-left:5px}header button,.secondary{background:#243d4a;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:8px 11px}.app{height:100dvh;display:flex;flex-direction:column}.chat{flex:1;min-height:0;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px}.intro{margin:auto 0;text-align:center;color:var(--muted)}.intro h2{font-size:19px;color:var(--accent);margin-bottom:6px}.bubble{max-width:88%;padding:12px 14px;border:1px solid var(--border);border-radius:14px;background:var(--panel);white-space:pre-wrap;overflow-wrap:anywhere;align-self:flex-start}.bubble.mine{align-self:flex-end;background:var(--me);border-color:#28776e}.bubble small{display:block;color:var(--accent);font-size:12px;font-weight:700;margin-bottom:5px}.bubble.error{border-color:#92604c}.bubble.pending{opacity:.7}.systemNote{align-self:center;font-size:12px;color:var(--muted);text-align:center;max-width:92%}.compose{display:flex;gap:8px;align-items:end;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:var(--panel);border-top:1px solid var(--border)}textarea{flex:1;resize:none;min-height:45px;max-height:145px;padding:11px 12px;background:#071927;border:1px solid #496b76;border-radius:13px;color:white;outline:none}textarea:focus,input:focus{border-color:var(--accent)}.primary{background:#168a7d;border:0;border-radius:12px;color:#fff;font-weight:700;padding:12px 15px;min-height:44px}.helper{font-size:11px;color:var(--muted);padding:4px 14px;background:var(--panel)}.sheet{position:absolute;inset:0;background:rgba(3,12,20,.83);display:flex;align-items:center;justify-content:center;padding:16px;z-index:5}.sheet[hidden]{display:none}.sheetInner{background:#142b3b;border:1px solid #3e5d6d;border-radius:15px;padding:18px;width:min(100%,510px);max-height:92vh;overflow:auto}.sheet h2{font-size:17px;margin:0 0 8px}.sheet p{color:var(--muted);font-size:13px}.sheet label{display:block;font-size:13px;margin:13px 0 5px}.sheet input:not([type=checkbox]),.sheet textarea{width:100%;border:1px solid #547481;border-radius:9px;background:#0a1a29;color:white;padding:10px}.sheet textarea{min-height:75px}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:13px}.notice{font-size:13px;color:#acd8cf;margin:10px 0;overflow-wrap:anywhere}.checkboxLine{display:flex;align-items:start;gap:8px;margin:15px 0;font-size:13px;color:#d6e3eb}.checkboxLine input{margin-top:4px}.details{margin:12px 0;color:var(--muted);font-size:13px}.details summary{cursor:pointer}#reportResult{white-space:pre-wrap}button:focus-visible{outline:2px solid var(--accent)}
+</style></head>
+<body><div class="app">
+<header><div><strong>Atha Council</strong><span class="testTag">TEST</span></div>
+<div><button id="reportOpen" aria-label="Sorun bildir">⚑ Sorun</button> <button id="settingsOpen" aria-label="Test ayarları">☰</button></div></header>
+<main id="chat" class="chat" aria-live="polite">
+<section class="intro" id="welcome"><h2>Hoş geldin! 💙</h2><p>Normal Konsey gibi yazış. Qwen ve Llama cevaplarını burada göreceksin.</p><p>Bu yalnız TEST uygulamasıdır. ANA Konsey değişmez.</p></section>
+</main>
+<div class="helper" id="state">Bağlantı denetleniyor…</div>
+<form id="compose" class="compose"><textarea id="message" rows="1" placeholder="Konsey'e bir şey yaz..." aria-label="Konsey'e mesaj yaz"></textarea><button class="primary" id="send" type="submit" aria-label="Gönder">➤</button></form>
+</div>
+<section class="sheet" id="settingsSheet" hidden><div class="sheetInner"><h2>TEST bağlantısı</h2><p>Ayrı TEST model sunucusuna bağlanır. Ana Konsey'in hesabı, odası ve tüneli kullanılmaz.</p><p class="notice" id="connection">Bağlantı denetleniyor…</p><label for="key">TEST bağlantı anahtarı</label><input id="key" type="password" autocomplete="off" placeholder="TEST anahtarını yapıştır"><div class="actions"><button id="saveKey" class="primary" type="button">Kaydet</button><button id="closeSettings" class="secondary" type="button">Kapat</button></div><details class="details"><summary>Task Bridge ve OpenCode hakkında</summary><p>Task Bridge mesajı arka planda yorumlar. OpenCode henüz yalnız izole ve onay gerektiren TEST görev işçisi olarak geliştirilmektedir; bu sohbetten otomatik dosya değişikliği veya gerçek görev yapılmaz.</p></details><button id="clearChat" type="button" class="secondary">Bu TEST sohbetini temizle</button></div></section>
+<section class="sheet" id="reportSheet" hidden><div class="sheetInner"><h2>Sorunu bildir</h2><p>Yanlış anlaşılan yanıtı veya çalışmayan özelliği TEST kayıtlarına gönder. Son 8 sohbet mesajı da isteğe bağlı olarak rapora eklenir.</p><label for="reportLabel">Sorun başlığı</label><input id="reportLabel" placeholder="Örn. Qwen önceki kararımı unuttu" maxlength="100"><label for="expected">Ne olmasını bekliyordun?</label><textarea id="expected" maxlength="600" placeholder="Örn. ANA Konsey'e dokunulmaması kararını korumalıydı."></textarea><label for="actual">Ne oldu?</label><textarea id="actual" maxlength="600" placeholder="Örn. ANA uygulamayı güncellemeyi önerdi."></textarea><label class="checkboxLine"><input type="checkbox" id="sendTranscript">Son 8 mesajı da rapora eklemeye izin veriyorum (özel bilgileri önce kontrol et).</label><label class="checkboxLine"><input type="checkbox" id="reportConsent">Bu raporun yalnız TEST hata incelemesi için 7 gün saklanmasını onaylıyorum.</label><div id="reportResult" class="notice"></div><div class="actions"><button id="sendReport" class="primary" type="button">Raporu kaydet</button><button id="closeReport" class="secondary" type="button">Kapat</button></div><p>Rapor kimliğini bu sohbette bana söyle; kaydı inceleyebilirim. Rapor göndermek beni otomatik olarak uyandırmaz.</p></div></section>
+<!--ENGINE_HERE-->
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id), native=window.LabNative;
+const chat=$('chat'),welcome=$('welcome'),state=$('state'),msg=$('message'),send=$('send');
+let history=[],busy=false,connected=false,requestIndex=0,lastError='',pending={},activeTarget=null;
+function showSheet(id){$(id).hidden=false}
+function hideSheet(id){$(id).hidden=true}
+function bubble(who,content,kind='model',isPending=false){
+  if(welcome)welcome.hidden=true;
+  const el=document.createElement('div');el.className='bubble '+(kind==='user'?'mine':kind==='error'?'error':'')+(isPending?' pending':'');
+  if(kind!=='user'){const label=document.createElement('small');label.textContent=who;el.appendChild(label)}
+  const part=document.createElement('span');part.textContent=content;el.appendChild(part);chat.appendChild(el);chat.scrollTop=chat.scrollHeight;return {el,part};
+}
+function note(value){const p=document.createElement('div');p.className='systemNote';p.textContent=value;chat.appendChild(p);chat.scrollTop=chat.scrollHeight}
+function setState(v){state.textContent=v}
+function closePending(){busy=false;send.disabled=false}
+window.athaGatewayResult=function(id,data){
+  if(id==='health'){
+    connected=data._http===200&&!data.error;
+    $('connection').textContent=connected?'Ayrı TEST sunucusu açık. '+['qwen','llama'].map(x=>x+': '+(data.models?.[x]?.configured?'hazır':'bağlı değil')).join(' · '):'TEST sunucusuna bağlanılamadı.';
+    setState(connected?'TEST sunucusu hazır · Ana Konsey ayrı':'TEST sunucusu erişilemiyor.');
+    return;
+  }
+  if(id.startsWith('chat_')){
+    // Each model replies independently: one slow model must not hold the other.
+    const match=id.match(/^(chat_\d+)_(qwen|llama)$/);
+    if(!match)return;
+    const parent=match[1],model=match[2],batch=pending[parent];
+    if(!batch||!batch[model]||batch.done[model])return;
+    batch.done[model]=true;
+    const errors={not_configured:'Bu model TEST ortamında bağlı değil.',provider_error:'Model servisinden yanıt alınamadı.',empty:'Model boş yanıt verdi.'};
+    const result=data.results?.[model];
+    const value=data.error?(data._http===401?'TEST bağlantı anahtarı geçersiz.':String(data.error)):
+      result?.status==='ok'?result.answer:(errors[result?.status]||result?.note||'Model yanıtı bulunamadı.');
+    batch[model].part.textContent=value;
+    batch[model].el.classList.remove('pending');
+    history.push({role:'model',speaker:model,content:String(value).slice(0,12500)});
+    if(data.error)lastError=String(data.error);
+    if(batch.models.every(m=>batch.done[m])){delete pending[parent];closePending();setState(batch.models.length===1?model.toUpperCase()+' yanıtladı · TEST':'İki model yanıtladı · TEST');}
+    else setState(model.toUpperCase()+' yanıtladı · Diğer model bekleniyor…');
+    return;
+  }
+  if(id==='report'){
+    $('sendReport').disabled=false;
+    if(data._http===201&&data.saved&&data.id){
+      $('reportResult').textContent='Rapor kaydedildi: '+data.id+'\nBu kimliği ChatGPT sohbetimizde bana gönder. Otomatik bildirim yok.';
+    }else $('reportResult').textContent='Rapor kaydedilemedi: '+(data.error||data._http||'Bilinmeyen hata');
+  }
+};
+function chatContext(){
+ const prior=history.slice(-48).map(x=>(x.role==='user'?'Kullanıcı':x.speaker)+': '+x.content).join('\n');
+ // Preserve much more of the shared fiction; bounded to the separate TEST request budget.
+ return prior.length>13500?'[Eski konuşmanın bir kısmı pencereye sığmadı. Eksik bölümleri uydurma.]\n'+prior.slice(-13000):prior;
+}
+function chooseRecipients(latest){
+ const s=latest.toLocaleLowerCase('tr-TR');
+ const mentions=[...s.matchAll(/\b(qwen|llama)\b/g)];
+ if(mentions.length){
+   const marked=mentions.filter(m=>{
+      const tail=s.slice(m.index+m[0].length,m.index+m[0].length+26);
+      return /^\s*[,!:]?\s*(?:sen|sana|seni|senden|canım|balım|sence|ne|neden|nasıl|hangi)\b/u.test(tail);
+   });
+   const hit=(marked.length?marked:mentions).at(-1);
+   activeTarget=hit[1];
+   return [activeTarget];
+ }
+ // Consecutive follow-up addressed to the same model, not a new collective greeting.
+ if(activeTarget && /^(?:hangi|peki|neden|nasıl|ne\b|neler|kim|kaç|nerede|hani|bunu|onu|o zaman|ya sen|sen|hangi bilgileri)/iu.test(s))return [activeTarget];
+ activeTarget=null;
+ return ['qwen','llama'];
+}
+function interpret(latest){
+ try{
+   const turns=history.filter(x=>x.role==='user').slice(-7).map(x=>({role:'user',content:x.content}));
+   turns.push({role:'user',content:latest});
+   const review=window.AthaLab?.shadowReview(turns);
+   return review?.needsHumanClarification?'Belirsiz talimat varsa kullanıcıya sor; mevcut uygulamalara dokunma.':'';
+ }catch(_){return ''}
+}
+$('compose').addEventListener('submit',event=>{
+ event.preventDefault();if(busy)return;
+ const latest=msg.value.trim();if(!latest)return;
+ if(!native||!native.tokenConfigured()){showSheet('settingsSheet');setState('TEST anahtarını kaydetmeden model cevabı istenemez.');return;}
+ const context=chatContext();const safety=interpret(latest);const recipients=chooseRecipients(latest);
+ bubble('Sen',latest,'user');history.push({role:'user',speaker:'human',content:latest});msg.value='';
+ const id='chat_'+(++requestIndex);
+ pending[id]={models:recipients,done:{qwen:false,llama:false}};for(const model of recipients)pending[id][model]=bubble(model.toUpperCase(),'Yanıt bekleniyor…','model',true);
+ busy=true;send.disabled=true;setState(recipients.length===1?recipients[0].toUpperCase()+' yanıtlıyor…':'Modeller yanıtlıyor…');
+ try{native.compare(id,JSON.stringify({context:(context+'\n'+safety).slice(-14000),latest,models:recipients}));}
+ catch(e){lastError=String(e);for(const model of recipients){pending[id][model].part.textContent='TEST bağlantısı başarısız.';pending[id][model].el.classList.remove('pending')}delete pending[id];closePending();setState('Bağlantı hatası. Sorun bildir bölümünü kullan.')}
+});
+msg.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();$('compose').requestSubmit()}});
+$('settingsOpen').addEventListener('click',()=>showSheet('settingsSheet'));
+$('closeSettings').addEventListener('click',()=>hideSheet('settingsSheet'));
+$('reportOpen').addEventListener('click',()=>showSheet('reportSheet'));
+$('closeReport').addEventListener('click',()=>hideSheet('reportSheet'));
+$('saveKey').addEventListener('click',()=>{
+ if(!native){$('connection').textContent='Bu APK model bağlantısını desteklemiyor.';return;}
+ if(!native.saveToken($('key').value.trim())){$('connection').textContent='Anahtar biçimi hatalı.';return;}
+ $('key').value='';hideSheet('settingsSheet');setState('Anahtar kaydedildi · Test bağlantısı kontrol ediliyor…');native.health('health');
+});
+$('clearChat').addEventListener('click',()=>{history=[];activeTarget=null;chat.replaceChildren();if(welcome){welcome.hidden=false;chat.appendChild(welcome)}hideSheet('settingsSheet');note('Yeni TEST sohbeti başladı.')});
+$('sendReport').addEventListener('click',()=>{
+ const label=$('reportLabel').value.trim(),actual=$('actual').value.trim(),expected=$('expected').value.trim();
+ if(!label||!actual){$('reportResult').textContent='Başlık ve ne olduğu alanlarını doldur.';return}
+ if(!$('reportConsent').checked){$('reportResult').textContent='Önce rapor gönderimine onay ver.';return}
+ if(!native||!native.sendBugReport){$('reportResult').textContent='Bu APK sürümünde rapor bağlantısı yok.';return}
+ const messages=$('sendTranscript').checked?history.slice(-8).map(m=>({...m,content:m.content.slice(0,380)})):[];
+ $('sendReport').disabled=true;$('reportResult').textContent='Rapor yalnız TEST kayıtlarına gönderiliyor…';
+ native.sendBugReport('report',JSON.stringify({label,actual,expected,messages,consent:true,clientVersion:'council-test-chat-v1',bridgeStatus:state.textContent}));
+});
+if(native){setState(native.tokenConfigured()?'TEST bağlantısı kontrol ediliyor…':'Bir defalık TEST anahtarı gerekiyor; ☰ menüsünü aç.');native.health('health')}
+else setState('Bu cihazda TEST bağlantısı bulunamadı.');
+})();
+</script></body></html>

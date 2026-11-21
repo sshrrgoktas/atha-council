@@ -1,0 +1,370 @@
+<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Atha Council TEST • Katılımcılar</title>
+<style>:root{color-scheme:dark;--bg:#071821;--pane:#112b37;--ink:#f1fafc;--muted:#a4bdc7;--accent:#55e0d0;--border:#375561}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px system-ui,sans-serif}button,textarea,input,select{font:inherit}button{cursor:pointer;border:0;border-radius:11px;padding:11px 14px;background:#177e74;color:#fff;font-weight:650}button:disabled{opacity:.55;cursor:default}.ghost{background:#294350}.app{height:100dvh;display:flex;flex-direction:column;max-width:980px;margin:auto;background:#0b202b}header{display:flex;align-items:center;justify-content:space-between;padding:13px 14px;border-bottom:1px solid var(--border)}header b{color:var(--accent)}.tag{font-size:11px;border-radius:5px;background:#355767;padding:3px 6px;margin-left:5px}.messages{flex:1;min-height:0;overflow:auto;padding:17px;display:flex;flex-direction:column;gap:12px}.welcome{align-self:center;text-align:center;color:var(--muted);margin:auto 0;max-width:540px}.welcome h2{color:var(--accent)}.bubble{background:var(--pane);border:1px solid var(--border);max-width:88%;align-self:flex-start;border-radius:13px;padding:12px 14px;white-space:pre-wrap;overflow-wrap:anywhere}.bubble.mine{align-self:flex-end;background:#14554e}.bubble strong{display:block;color:var(--accent);font-size:12px;margin-bottom:5px}.muted{color:var(--muted);font-size:12px}.compose{display:flex;gap:8px;padding:10px;background:#112b37;border-top:1px solid var(--border)}textarea{width:100%;min-height:45px;max-height:130px;resize:vertical;border-radius:11px;border:1px solid #557582;padding:10px;background:#061823;color:var(--ink)}input{padding:10px;border:1px solid #557582;border-radius:10px;background:#061823;color:#fff;width:100%}.status{font-size:12px;color:var(--muted);padding:4px 14px}.modal{position:fixed;inset:0;background:rgba(0,8,13,.87);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}.modal[hidden]{display:none}.panel{background:#152d3a;border:1px solid var(--border);padding:20px;border-radius:15px;width:min(100%,570px);max-height:92vh;overflow:auto}.panel label{display:block;margin:12px 0 4px}.panel h2{margin-top:0;color:var(--accent);font-size:19px}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}.check{display:flex;align-items:flex-start;gap:8px;margin-top:12px;font-size:13px}.check input{width:auto;margin-top:4px}.info{white-space:pre-wrap;font-size:13px;color:#d0dedf}.admin{padding:16px;max-width:980px;margin:auto}.report{border:1px solid var(--border);border-radius:12px;padding:12px;margin:12px 0;background:var(--pane);overflow-wrap:anywhere}.report pre{white-space:pre-wrap}.report select{background:var(--pane);color:var(--ink);padding:8px}.report textarea{min-height:50px}a{color:var(--accent)}[hidden]{display:none!important}
+.council-tools,.other-actions{display:flex;align-items:center;gap:8px}
+.council-tools{position:relative}
+#moreBtn{display:none}
+#reportBtn{background:#17695f;color:#fff;white-space:nowrap}
+@media(max-width:700px),(pointer:coarse) and (max-width:1100px) and (max-height:560px){
+ body.participant-view{overflow:hidden}
+ .app{position:fixed;top:var(--test-viewport-top,0px);left:0;right:0;height:100vh;height:var(--test-viewport-height,100dvh);width:100%;overflow:hidden}
+ .app header{flex:none;flex-wrap:wrap;gap:4px 8px;padding:calc(6px + env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) 6px max(10px,env(safe-area-inset-left));z-index:1;background:#0b202b}
+ .council-title{min-width:0}
+ .council-title .tag{display:block;width:fit-content;margin:2px 0 0}
+ .council-tools{margin-left:auto;gap:6px}
+ .council-tools button,.compose button{min-height:44px}
+ .council-tools button{padding:8px 10px}
+ #moreBtn{display:block}
+ .other-actions{display:none;position:absolute;right:0;top:calc(100% + 4px);padding:6px;background:#152d3a;border:1px solid var(--border);border-radius:12px;min-width:128px}
+ #moreBtn[aria-expanded="true"]+.other-actions{display:grid;gap:4px}
+ .other-actions button{text-align:left}
+ #logoutBtn{color:#ffd4c9}
+ .messages{overscroll-behavior:contain}
+ .compose,.status{flex:none}
+ .compose{padding:6px max(8px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));align-items:end}
+ .compose textarea{min-width:0;resize:none}
+ .participant-view input,.participant-view textarea{font-size:16px}
+ .participant-view .modal{top:var(--test-viewport-top,0px);bottom:auto;height:100vh;height:var(--test-viewport-height,100dvh);padding:max(8px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left))}
+ .participant-view .panel{max-height:100%;overscroll-behavior:contain}
+}
+</style></head><body>
+<div class="app" id="chatApp"><header><span class="council-title"><b>Atha Council</b><span class="tag">TEST · Topluluk</span></span>
+ <div class="council-tools" id="councilTools"><button id="reportBtn" type="button"><span aria-hidden="true">⚑</span> Sorun bildir</button>
+ <button id="moreBtn" type="button" class="ghost" aria-expanded="false" aria-controls="otherActions">Diğer</button>
+ <div class="other-actions" id="otherActions"><button class="ghost" id="resetBtn">Temizle</button><button class="ghost" id="logoutBtn">Çıkış</button></div></div></header><div class="messages" id="messages"><div class="welcome" id="welcome"><h2>Hoş geldin! 💙</h2><p>Qwen ve Llama ile konuş. İstersen ikisine birden, istersen isimleriyle doğrudan birine seslen.</p><p>Bu test ortamı ANA Konsey'den tamamen ayrıdır. Sohbetler bu tarayıcıda tutulur. Yalnız sen hata bildirirken ayrıca izin verirsen mevcut sohbet geçmişin TEST sunucusuna 7 günlüğüne gönderilir.</p></div></div><div class="status" id="status">TEST bağlantısı kontrol ediliyor…</div><form class="compose" id="composer"><textarea id="message" placeholder="Konsey'e yaz…" maxlength="600" aria-label="Konsey mesajı"></textarea><button id="send" type="submit">Gönder</button></form></div>
+<section class="modal" id="joinModal"><div class="panel"><h2>TEST Konseyi'ne katıl</h2><p>Yalnızca davet edilen kişiler test yapabilir. Adını veya kişisel bilgilerini vermen gerekmiyor.</p><label for="invite">Davet kodun</label><input id="invite" placeholder="Davet kodunu yapıştır" autocomplete="off"><label class="check"><input id="rememberDevice" type="checkbox" checked><span>Bu cihazda TEST kimliğimi hatırla (ortak cihazlarda kapat).</span></label><div id="joinStatus" class="info"></div><div class="actions"><button id="joinBtn">Katıl</button></div><p class="muted">Test için yazdığın mesajlar, cevap üretmeleri amacıyla AI model sağlayıcılarına iletilir. Yalnız hata raporunu göndermeyi seçersen rapor TEST kayıtlarında 7 gün tutulur.</p></div></section>
+<section class="modal" id="reportModal" hidden><div class="panel"><h2>Hata bildir</h2><p class="muted">Ne olduğunu kısaca anlatman yeterli. Teknik terimleri bilmene gerek yok.</p><label for="description">Yaşadığın sorun</label><textarea id="description" maxlength="1800" placeholder="Örneğin: Llama beni yanlış anladı, Qwen çok geç cevap verdi…"></textarea><label class="check"><input id="shareMessages" type="checkbox"><span>Bu cihazdaki mevcut TEST sohbet geçmişimin tamamını rapora ekle (isteğe bağlı).</span></label><p class="muted">Paylaşmadan önce sohbetindeki özel bilgileri kontrol et. Geçmiş yalnızca bu cihazda kayıtlı konuşmaları kapsar; 7 gün sonunda TEST kaydından silinir. Çok büyük sohbetler için dosya gönderimi desteklenmez.</p><label class="check"><input id="transcriptConsent" type="checkbox" disabled><span>TEST sohbet geçmişimi yetkili incelemecinin görmesine ayrıca izin veriyorum.</span></label><label class="check"><input id="consent" type="checkbox"><span>Bu raporun yalnız TEST incelemesi için 7 gün saklanmasına izin veriyorum.</span></label><div id="reportStatus" class="info"></div><div class="actions"><button id="submitReport">Raporu gönder</button><button class="ghost" id="closeReport">Kapat</button></div></div></section>
+<div class="admin" id="adminApp" hidden><h2>TEST · Yönetici Rapor Paneli</h2><p class="muted">Yalnız yetkili kişi görebilir. ANA Konsey raporları burada değildir.</p><label>Yönetici erişim anahtarı</label><input id="adminKey" type="password" autocomplete="off"><label class="check"><input type="checkbox" id="rememberAdmin"><span>Bu cihazda yönetici girişimi hatırla (yalnız kendi telefonumda)</span></label><div class="actions"><button id="adminLogin" type="button">Giriş yap</button><button id="forgetAdmin" type="button" class="ghost">Bu cihazı unut / Çıkış</button></div><div class="actions"><button id="showActive">Açık Raporlar</button><button id="showClosed" class="ghost">Kapalı Raporlar</button><button id="loadReports">Yenile</button></div><div id="adminStatus" class="info"></div><div id="adminReports"></div></div>
+<script>
+(function(){
+'use strict';const $=id=>document.getElementById(id);const isAdmin=location.pathname==='/admin';
+if(isAdmin){$('chatApp').hidden=true;$('joinModal').hidden=true;$('adminApp').hidden=false;const keyFragment=location.hash.startsWith('#key=')?decodeURIComponent(location.hash.slice(5)):'';if(keyFragment){$('adminKey').value=keyFragment;window.history.replaceState(null,'',location.pathname)}}
+// TEST identity is remembered per browser when opted in; no device fingerprinting.
+let currentInvite='',testerId='';
+const identityKey='atha_community_test_invite_persistent';
+function savedInvite(){try{return localStorage.getItem(identityKey)||sessionStorage.getItem('atha_community_test_invite')||''}catch(e){return currentInvite}}
+function rememberInvite(code,remember){currentInvite=code;try{sessionStorage.setItem('atha_community_test_invite',code);if(remember)localStorage.setItem(identityKey,code);else localStorage.removeItem(identityKey)}catch(e){}}
+function forgetInvite(){currentInvite='';testerId='';try{localStorage.removeItem(identityKey);sessionStorage.removeItem('atha_community_test_invite')}catch(e){}}
+const session=()=>currentInvite||savedInvite();
+const history=[];let active=null,pendingTurn=null,quotaPauseUntil=0;
+const chatKey=id=>'atha_community_test_chat_'+id;
+function saveHistory(){
+ if(!testerId)return;
+ try{const entries=history.slice(-90).map(m=>({role:m.role,speaker:m.speaker,content:String(m.content).slice(0,8000)}));
+ let json=JSON.stringify(entries);if(json.length>220000)json=JSON.stringify(entries.slice(-30));
+ localStorage.setItem(chatKey(testerId),json);localStorage.setItem(chatKey(testerId)+'_active',active||'');}
+ catch(e){$('status').textContent='Bu tarayıcı sohbet geçmişini kaydedemiyor (gizli mod veya dolu depolama olabilir).'}
+}
+function restoreHistory(id){
+ history.length=0;active=null;let entries=[];
+ try{const data=JSON.parse(localStorage.getItem(chatKey(id))||'[]');if(Array.isArray(data))entries=data.slice(-90);
+ const last=localStorage.getItem(chatKey(id)+'_active');if(last==='qwen'||last==='llama')active=last;}catch(e){}
+ $('messages').replaceChildren();
+ for(const m of entries){
+  if(!m||!['user','model'].includes(m.role)||typeof m.content!=='string')continue;
+  history.push({role:m.role,speaker:String(m.speaker||'').slice(0,20),content:m.content.slice(0,8000)});
+  bubble(m.role==='user'?'Sen':String(m.speaker||'TEST').toUpperCase(),m.content,m.role==='user');
+ }
+ if(!history.length){const welcome=document.createElement('div');welcome.className='welcome';welcome.textContent='Hoş geldin! 💙 Qwen ve Llama ile sohbete başla.';$('messages').appendChild(welcome)}
+}
+function note(text){$('status').textContent=text}
+async function call(path,body,admin,signal){
+ const headers={'content-type':'application/json'};
+ if(admin)headers.authorization='Bearer '+$('adminKey').value.trim();
+ const resp=await fetch(path,{method:'POST',headers,body:JSON.stringify(body||{}),cache:'no-store',signal});
+ const out=await resp.json();if(!resp.ok)throw new Error(out.error||('HTTP '+resp.status));return out;
+}
+function bubble(who,text,mine=false,pending=false){
+ const el=document.createElement('div');el.className='bubble'+(mine?' mine':'');if(!mine){const s=document.createElement('strong');s.textContent=who;el.appendChild(s)}
+ const p=document.createElement('span');p.textContent=text;el.appendChild(p);$('messages').appendChild(el);$('messages').scrollTop=$('messages').scrollHeight;return p;
+}
+function recipients(text){
+ const s=text.trim().toLocaleLowerCase('tr-TR');
+ // A mention is not an address: require vocative punctuation or a greeting.
+ if(/^@?(?:qwen|llama)\s*(?:ve|ile|&)\s*@?(?:qwen|llama)\b/iu.test(s)){active=null;return ['qwen','llama']}
+ const start=s.match(/^(?:(?:hey|selam|merhaba)\s+@?(qwen|llama)\b|@?(qwen|llama)\s*[,!:])/iu);
+ const end=s.match(/[,!?]\s*@?(qwen|llama)\s*[!?.]*$/iu);
+ if(start||end){active=start?(start[1]||start[2]):end[1];return [active]}
+ if(active&&/^(hangi|peki|neden|nasıl|neler|ne\b|bunu|onu|sen|kim|kaç|hani)\b/iu.test(s))return [active];
+ active=null;return ['qwen','llama'];
+}
+async function join(code){
+ const out=await call('/api/hello',{invite:code});
+ cancelPendingTurn();
+ rememberInvite(code,$('rememberDevice').checked);
+ testerId=out.testerId;restoreHistory(testerId);
+ $('joinModal').hidden=true;note('TEST hazır · '+testerId+' · Önceki sohbetler bu cihazda yüklendi');return out;
+}
+function cancelPendingTurn(){
+ if(!pendingTurn)return;
+ pendingTurn.abort();
+ pendingTurn=null;
+ $('send').disabled=false;
+}
+function replyProblem(status){
+ switch(status){
+  case 'timeout': case 'provider_timeout': return 'Yanıt süresi doldu. Yeniden mesaj gönderebilirsin.';
+  case 'review_unavailable': return 'Yanıtın sohbetle uyumu kontrol edilemedi. Daha sonra yeniden deneyebilirsin.';
+  case 'empty': case 'incomplete': case 'incomplete_output': case 'reasoning_only': return 'Model yanıtını tamamlayamadı. Yeniden deneyebilirsin.';
+  case 'daily_test_quota_reached': return 'Bu davetin günlük TEST mesaj sınırına ulaşıldı.';
+  case 'invalid_or_expired_invite': return 'TEST daveti geçersiz veya süresi dolmuş. Yeniden giriş yap.';
+  case 'provider_error': return 'Model hizmeti şu anda yanıt veremedi. Daha sonra yeniden deneyebilirsin.';
+  default: return 'Yanıt alınamadı. Sorunu bildirirken bu mesajı belirtebilirsin.';
+ }
+}
+if(!isAdmin){
+ document.body.classList.add('participant-view');
+ const more=$('moreBtn');
+ function closeActions(){more.setAttribute('aria-expanded','false')}
+ more.addEventListener('click',()=>more.setAttribute('aria-expanded',String(more.getAttribute('aria-expanded')!=='true')));
+ document.addEventListener('click',e=>{
+   if(!more.contains(e.target))closeActions();
+ });
+ document.addEventListener('keydown',e=>{
+   if(e.key==='Escape'&&more.getAttribute('aria-expanded')==='true'){closeActions();more.focus()}
+ });
+ // In iOS Safari the keyboard can shift and shrink the visual viewport independently of the page.
+ const viewport=window.visualViewport;
+ if(viewport){
+   function syncViewport(){
+     if(viewport.scale!==1)return;
+     const style=document.documentElement.style;
+     style.setProperty('--test-viewport-top',viewport.offsetTop+'px');
+     style.setProperty('--test-viewport-height',viewport.height+'px');
+   }
+   viewport.addEventListener('resize',syncViewport);
+   viewport.addEventListener('scroll',syncViewport);
+   syncViewport();
+ }
+ const fragment=location.hash.startsWith('#invite=')?decodeURIComponent(location.hash.slice(8)):'';
+ if(fragment){$('invite').value=fragment;window.history.replaceState(null,'',location.pathname)}
+ const remembered=session();
+ if(fragment)join(fragment).catch(()=>{$('joinModal').hidden=false;$('joinStatus').textContent='Davet geçersiz veya süresi dolmuş.'});
+ else if(remembered)join(remembered).catch(e=>{
+   // A temporary network failure must NOT erase a remembered invitation.
+   $('joinModal').hidden=false;
+   $('invite').value=remembered;
+   $('joinStatus').textContent='Önceki TEST kimliğin bulundu, ancak bağlantı doğrulanamadı. Tekrar Katıl\'a bas. '+(e.message||'');
+ });
+ $('joinBtn').addEventListener('click',async()=>{try{$('joinStatus').textContent='Bağlanılıyor…';await join($('invite').value.trim())}catch(e){$('joinStatus').textContent='Davet doğrulanamadı: '+e.message}});
+ $('composer').addEventListener('submit',async e=>{
+  e.preventDefault();if(pendingTurn||!session())return;
+  if(quotaPauseUntil>Date.now()){note('Cloudflare AI günlük kotası doldu. TEST modelleri geçici olarak kullanılamıyor; daha sonra tekrar dene.');return}
+  const latest=$('message').value.trim();if(!latest)return;
+  const targets=recipients(latest),past=history.slice(-30).map(m=>({...m,content:m.content.slice(0,2400)}));
+  history.push({role:'user',speaker:'human',content:latest});bubble('Sen',latest,true);saveHistory();$('message').value='';
+  const turn=new AbortController(),invite=session(),replyStart=history.length,delivered=new Set();
+  pendingTurn=turn;$('send').disabled=true;note('Modeller yanıtlıyor…');
+  const deadline=setTimeout(()=>turn.abort(),65000);
+  try{await Promise.all(targets.map(async (model,index)=>{
+   const place=bubble(model.toUpperCase(),'Yanıt bekleniyor…');
+   const start=Date.now();
+   try{const out=await call('/api/chat',{invite,model,latest,history:past},false,turn.signal);
+    if(pendingTurn!==turn)return;
+    if(out.status==='quota_exhausted'){
+      quotaPauseUntil=Math.max(quotaPauseUntil,Date.now()+Math.max(60,Number(out.retryAfterSec)||900)*1000);
+      place.textContent='Cloudflare Workers AI günlük ücretsiz kotası doldu. Daha sonra yeniden deneyebilirsin.';
+      return;
+    }
+    if(out.status!=='ok'||typeof out.answer!=='string'||!out.answer.trim()){place.textContent=replyProblem(out.status==='ok'?'empty':out.status);return}
+    place.textContent=out.answer;
+    note(model.toUpperCase()+' yanıtladı ('+((Date.now()-start)/1000).toFixed(1)+' sn)');
+    // Persist each visible reply immediately, in the same order as its on-screen bubble.
+    const offset=targets.slice(0,index).filter(target=>delivered.has(target)).length;
+    history.splice(replyStart+offset,0,{role:'model',speaker:model,content:out.answer.slice(0,9000)});
+    delivered.add(model);saveHistory();
+   }catch(e){
+    if(pendingTurn!==turn)return;
+    place.textContent=turn.signal.aborted?replyProblem('timeout'):e instanceof TypeError?'TEST bağlantısı kesildi. Yeniden deneyebilirsin.':replyProblem(e.message);
+   }
+  }))}finally{
+   clearTimeout(deadline);
+   if(pendingTurn===turn){
+    pendingTurn=null;$('send').disabled=false;
+    if(delivered.size<targets.length)note('Yanıt alınamayan modelin açıklaması sohbette görünüyor.');
+   }
+  }
+ });
+ $('message').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('composer').requestSubmit()}});
+ $('resetBtn').addEventListener('click',()=>{
+  if(!confirm('Yalnız bu tarayıcıdaki TEST sohbetini temizlemek istiyor musun?'))return;
+  cancelPendingTurn();
+  history.length=0;active=null;saveHistory();restoreHistory(testerId);note('TEST sohbet geçmişi temizlendi.');
+ });
+ $('logoutBtn').addEventListener('click',()=>{
+  if(!confirm('Bu cihazda TEST oturumunu kapatmak istiyor musun? Tekrar girmek için kişisel davet bağlantın veya kodun gerekir. Sohbetin bu tarayıcıda kalır.')){
+    if(more.offsetWidth)more.focus();
+    return;
+  }
+  cancelPendingTurn();forgetInvite();$('joinModal').hidden=false;$('invite').value='';
+  $('joinStatus').textContent='Cihazdaki giriş unutuldu. Sohbet geçmişi bu tarayıcıda kalır.';
+ });
+ const receiptKey=()=> 'atha_test_last_report_receipt_'+testerId;
+ function rememberReceipt(id){try{localStorage.setItem(receiptKey(),id)}catch(e){}}
+ function latestReceipt(){try{return localStorage.getItem(receiptKey())||''}catch(e){return ''}}
+ $('reportBtn').addEventListener('click',()=>{$('reportModal').hidden=false;
+  const saved=latestReceipt();
+  if(saved)$('reportStatus').textContent='Son rapor makbuzun: '+saved+' · Bu kodla kaydı sorgulayabiliriz.';});
+ $('shareMessages').addEventListener('change',()=>{$('transcriptConsent').disabled=!$('shareMessages').checked;if(!$('shareMessages').checked)$('transcriptConsent').checked=false});
+ $('closeReport').addEventListener('click',()=>{$('reportModal').hidden=true});
+ $('submitReport').addEventListener('click',async()=>{
+  if(!$('consent').checked){$('reportStatus').textContent='Önce rapor kaydına izin ver.';return}
+  if(!$('description').value.trim()){$('reportStatus').textContent='Yaşadığın sorunu kısaca yaz.';return}
+  if($('shareMessages').checked&&!$('transcriptConsent').checked){$('reportStatus').textContent='Geçmiş paylaşmak için ayrı onayı işaretle veya geçmişi ekleme.';return}
+  $('submitReport').disabled=true;try{
+   const out=await call('/api/report',{invite:session(),label:'TEST sorun bildirimi',description:$('description').value.trim(),
+     consent:true,includeTranscript:$('shareMessages').checked,transcriptConsent:$('shareMessages').checked&&$('transcriptConsent').checked,
+     messages:$('shareMessages').checked?history:[]});
+   if(!out.saved||!/^report_[a-f0-9-]{36}$/.test(out.id||''))throw new Error('Sunucu geçerli bir rapor makbuzu vermedi.');
+   rememberReceipt(out.id);
+   $('reportStatus').textContent='Rapor alındı, kayıt doğrulanıyor… '+out.id;
+   let receipt=null;
+   for(let attempt=0;attempt<4;attempt++){
+     try{receipt=await call('/api/report/status',{invite:session(),id:out.id});}
+     catch(e){receipt=null;}
+     if(receipt?.found===true)break;
+     await new Promise(resolve=>setTimeout(resolve,800*(attempt+1)));
+   }
+   if(!receipt?.found){
+     $('reportStatus').textContent='Rapor makbuzu oluşturuldu ancak kaydı henüz doğrulayamadık: '+out.id+
+       '\\nBu kodu sakla. Pencereyi kapatmıyorum, daha sonra tekrar kontrol edilebilir.';
+     return;
+   }
+   $('reportStatus').textContent='Rapor gönderildi ✅ · '+out.id;
+   $('status').textContent='Rapor gönderildi ✅ · '+out.id;
+   // Auto-close only after report can be read back from TEST storage.
+   setTimeout(()=>{
+     $('reportModal').hidden=true;
+     $('reportStatus').textContent='';
+     $('description').value='';
+     $('consent').checked=false;$('shareMessages').checked=false;$('transcriptConsent').checked=false;$('transcriptConsent').disabled=true;
+   },1200);
+  }catch(e){
+   const error=String(e.message||e);
+   const friendly=error==='daily_report_limit_reached'?'Günlük rapor sınırına ulaştın. Son makbuzunu sakla ve yöneticiye bildir.':
+     error==='transcript_too_large_send_report_without_history'?'Sohbet geçmişi çok büyük. Geçmiş ekleme seçeneğini kapatıp yalnız sorun açıklamasıyla yeniden gönder.':
+     error==='invalid_or_expired_invite'?'TEST davetin geçersiz veya süresi dolmuş. Yeniden giriş yap.':
+     error==='report_description_and_consent_required'?'Sorunu kısaca yazıp rapor iznini işaretle.':
+     error==='daily_test_quota_reached'?'TEST sohbet kotası dolmuş. Raporu göndermek için sayfayı yenile; sorun sürerse yöneticiye bildir.':
+     'Rapor kaydedilemedi: '+error;
+   $('reportStatus').textContent=friendly+' · Başarı makbuzu oluşmadı, rapor gönderildi sayma.';
+  }finally{$('submitReport').disabled=false}
+ });
+}
+if(isAdmin){
+ let adminBusy=false,currentView='active',adminAuthenticated=false;
+ const adminStorageKey='atha_community_test_admin_remember_v1';
+ // Persistent access is strictly opt-in and only for private devices.
+ // This is browser-local storage, NOT a verified hardware/device binding.
+ function loadSavedAdmin(){
+  try {return localStorage.getItem(adminStorageKey)||''}catch(e){return ''}
+ }
+ function storeAdmin(){
+  try{
+    if($('rememberAdmin').checked)localStorage.setItem(adminStorageKey,$('adminKey').value.trim());
+    else localStorage.removeItem(adminStorageKey);
+  }catch(e){$('adminStatus').textContent='Tarayıcı girişi hatırlayamadı; gizli sekme veya depolama izni olabilir.'}
+ }
+ function clearAdmin(){
+  try{localStorage.removeItem(adminStorageKey)}catch(e){}
+  $('adminKey').value='';$('rememberAdmin').checked=false;adminAuthenticated=false;
+  $('adminReports').replaceChildren();
+  $('adminStatus').textContent='Bu cihazdaki TEST yönetici oturumu unutuldu.';
+ }
+ $('forgetAdmin').addEventListener('click',clearAdmin);
+ $('adminLogin').addEventListener('click',async()=>{
+   const key=$('adminKey').value.trim();
+   if(!/^[A-Za-z0-9_-]{30,100}$/.test(key)){$('adminStatus').textContent='Önce yönetici anahtarını gir.';return}
+   const ok=await reloadReports();
+   if(ok){adminAuthenticated=true;storeAdmin();}
+ });
+ const stored=loadSavedAdmin();
+ if(stored){$('adminKey').value=stored;$('rememberAdmin').checked=true;
+  reloadReports().then(ok=>{if(ok){adminAuthenticated=true;$('adminStatus').textContent+=' · Bu cihazda yönetici hatırlandı.'}
+   else{clearAdmin();$('adminStatus').textContent='Kaydedilen giriş artık geçerli değil. Yeniden giriş yap.'}});
+ }
+ const isClosed=r=>r.status==='closed';
+ function setTab(){
+   $('showActive').className=currentView==='active'?'':'ghost';
+   $('showClosed').className=currentView==='closed'?'':'ghost';
+ }
+ async function loadAllReports(){
+   let cursor=null,results=[],pages=0;
+   do{
+     const path='/api/admin/list'+(cursor?'?cursor='+encodeURIComponent(cursor):'');
+     const response=await fetch(path,{headers:{authorization:'Bearer '+$('adminKey').value.trim()},cache:'no-store'});
+     const data=await response.json();
+     if(!response.ok)throw new Error(data.error||'Yetki hatası');
+     results.push(...(data.reports||[]));
+     cursor=data.nextCursor||null;
+     pages++;
+   }while(cursor&&pages<20);
+   return {reports:results,complete:!cursor};
+ }
+ function card(r){
+   const el=document.createElement('div');el.className='report';
+   const heading=document.createElement('h3');heading.textContent=r.label+' · '+(r.testerId||'Android TEST');el.appendChild(heading);
+   for(const [key,value] of [['Rapor kodu',r.id],['Beklenen',r.expected],['Gerçek',r.actual],['Zaman',r.createdAt],['Durum',r.status]]){
+     const p=document.createElement('p');p.textContent=key+': '+(value||'—');el.appendChild(p);
+   }
+   if(r.transcriptConsent===true&&r.transcriptAvailableForDays){
+     const details=document.createElement('details'),summary=document.createElement('summary');
+     summary.textContent='İzinli TEST sohbet geçmişini görüntüle (7 gün)';
+     details.appendChild(summary);
+     const output=document.createElement('pre');output.textContent='Açıldığında yetkili TEST kaydından alınacak.';details.appendChild(output);
+     details.addEventListener('toggle',async()=>{
+       if(!details.open)return;
+       output.textContent='İzinli sohbet yükleniyor…';
+       try{const data=await call('/api/admin/transcript',{id:r.id},true);
+         output.textContent=data.consent===true?JSON.stringify(data.messages,null,2):'Paylaşım izni bulunamadı veya kayıt süresi doldu.';
+       }catch(e){output.textContent='Sohbet yüklenemedi: '+e.message}
+     });
+     el.appendChild(details);
+   }
+   const select=document.createElement('select');
+   for(const status of ['needs_review','investigating','fixed_pending_retest','closed']){
+     const option=document.createElement('option');option.value=status;option.textContent=status;option.selected=r.status===status;select.appendChild(option);
+   }
+   el.appendChild(select);
+   const note=document.createElement('textarea');note.placeholder='İnceleme notu';note.value=r.reviewNote||'';el.appendChild(note);
+   const save=document.createElement('button');save.textContent='Durumu kaydet';el.appendChild(save);
+   save.addEventListener('click',async()=>{
+     save.disabled=true;
+     try{
+       const out=await call('/api/admin/status',{id:r.id,status:select.value,note:note.value},true);
+       if(!out.saved)throw new Error('Durum kaydedilemedi');
+       // Immediately hide reports moved out of this view, without deleting them.
+       if((currentView==='active'&&select.value==='closed')||(currentView==='closed'&&select.value!=='closed'))el.remove();
+       $('adminStatus').textContent='Durum kaydedildi. Liste yenileniyor…';
+       await reloadReports();
+     }catch(e){save.textContent='Hata: '+e.message;save.disabled=false}
+   });
+   return el;
+ }
+ async function reloadReports(){
+   if(adminBusy)return;
+   adminBusy=true;$('adminStatus').textContent='TEST raporları güncelleniyor…';
+   try{
+     const result=await loadAllReports();
+     const active=result.reports.filter(r=>!isClosed(r));
+     const closed=result.reports.filter(isClosed);
+     const selected=currentView==='closed'?closed:active;
+     const root=$('adminReports');root.replaceChildren();
+     for(const r of selected.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')))root.appendChild(card(r));
+     $('adminStatus').textContent='Açık: '+active.length+' · Kapalı: '+closed.length+
+       ' · Görüntülenen: '+selected.length+(result.complete?'':' · Liste kısmi')+
+       ' · Son kontrol: '+new Date().toLocaleTimeString('tr-TR');
+     setTab();
+     return true;
+   }catch(e){$('adminStatus').textContent='Raporlar alınamadı: '+e.message;return false}
+   finally{adminBusy=false}
+ }
+ $('loadReports').addEventListener('click',()=>{reloadReports()});
+ $('showActive').addEventListener('click',()=>{currentView='active';reloadReports()});
+ $('showClosed').addEventListener('click',()=>{currentView='closed';reloadReports()});
+ setInterval(()=>{
+   const focus=document.activeElement;
+   if(!document.hidden&&adminAuthenticated&&$('adminKey').value.trim()&&!adminBusy&&!$('adminReports').contains(focus))reloadReports();
+ },30000);
+}
+})();
+</script></body></html>
