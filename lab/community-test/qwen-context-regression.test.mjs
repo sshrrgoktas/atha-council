@@ -197,3 +197,21 @@ test('an unresponsive provider or checker cannot hold the chat request open inde
     }
   }
 });
+
+test('Qwen corrects a draft taking credit for a peer question', async () => {
+  const history = [...teacherHistory, human('Biyoloji')];
+  const drafts = ['Ben de sadece seviyeyi netleştirmek için sordum.', 'Evet, lisede biyoloji dersi var.'];
+  const {result, calls} = await postChat('Zaten lisede biyoloji dersi var', history,
+    turn => finalText(drafts[turn - 1]));
+  assert.equal(calls.length, 2);
+  const input = calls[0].input.messages;
+  assert.ok(input.some(m => m.role === 'user' && m.content.includes('peer_statement') && m.content.includes('llama')));
+  assert.equal(result.answer, drafts[1]);
+});
+
+test('a repeated authorship error is corrected from the visible source', async () => {
+  const {result} = await postChat('Peki.', teacherHistory, () => finalText('Ben de o yüzden sormuştum.'));
+  assert.match(result.answer, /Llama/);
+  assert.ok(result.answer.includes(teacherHistory[1].content));
+  assert.doesNotMatch(result.answer, /sormuştum/u);
+});

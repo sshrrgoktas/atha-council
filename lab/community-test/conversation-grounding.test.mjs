@@ -176,7 +176,8 @@ for (const model of ['qwen', 'llama']) {
     assert.equal(result.answer, draft);
     const turns = result.calls[0].input.messages;
     const source = turns.find(turn => turn.content.includes(prior));
-    assert.equal(source.role, 'assistant');
+    assert.equal(source.role, 'user', 'a peer statement cannot be an assistant turn by the responding model');
+    assert.ok(source.content.includes('peer_statement'));
     assert.ok(source.content.toLowerCase().includes(peer));
     assert.equal(turns.at(-1).role, 'user');
     assert.ok(turns.at(-1).content.includes('alıntılar mısın'));

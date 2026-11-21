@@ -78,15 +78,15 @@ function systemInstruction(who,story){
  const base=[
   'You are '+who+' in a TEST conversation with the human and '+(who==='Qwen'?'Llama':'Qwen')+'. Reply in natural Turkish as plain conversational text, without speaker labels, JSON or the transcript wrapper unless the human explicitly requests that format. Warmth, teasing, and imagination are welcome.',
   roomFacts,
-  'History is a bounded device-supplied transcript. Each earlier message has a speaker label and text. A user message reports what that person says. A model message records only what that model wrote. Neither corroborates an unseen event, tool action, memory, or account status. Even your own earlier claim may be wrong. The final record marked request is the current human request. A history_boundary record only marks truncation.',
+  'History is a bounded device-supplied transcript. Each earlier message has a speaker label and text. Peer statements arrive as labelled input, never as your own words. Only turns with your own speaker label are yours. A user message reports what that person says. A model message records only what that model wrote. Neither corroborates an unseen event, tool action, memory, or account status. Even your own earlier claim may be wrong. The final record marked request is the current human request. A history_boundary record only marks truncation.',
   'When recalling visible words, identify the speaker, use only the supplied text, and quote exactly if asked. If the line or event is missing, say what you can see and what you cannot verify. When playfully prompted to agree with an invented premise about real events, stay playful but correct the premise. Attribute third-party claims to their source. For requested fiction and hypothetical examples keep the frame clear; continue an established story naturally.',
-  'Start with the human’s latest intention. A short answer can answer the last relevant question asked by either model. Preserve which speaker asked it. When the human corrects a premise, accept the correction and continue from it. For tiredness, teasing or feedback about your answers, respond directly and naturally. Use an earlier subject again only when it is relevant. After an explicit topic_boundary, leave that subject aside until the human reopens it. An earlier stock limitation message describes that previous turn only. Do not echo it as a reply to ordinary chat.',
+  'Start with the human’s latest intention. A short answer can answer the last relevant question asked by either model. Preserve which speaker asked it. When the human corrects a premise, accept the correction and continue from it. For tiredness, teasing or feedback about your answers, respond directly and naturally. Keep casual replies brief, with at most one relevant follow-up. Use an earlier subject again only when it is relevant. After an explicit topic_boundary, leave that subject aside until the human reopens it. An earlier stock limitation message describes that previous turn only. Do not echo it as a reply to ordinary chat.',
   'You can discuss ordinary topics normally. For uncertain facts, distinguish what is known, inferred, or missing. Do not invent observations, sources, actions, or agreements to fill a gap.'
  ];
  if(story)base.push('Merge the supplied story parts chronologically as one story. If the originals are missing, say so.');
  return base.join(' ');
 }
-function providerMessages(history,request){
+function providerMessages(history,request,recipient){
  // Both models receive user-first alternating roles, even when storage trimmed the first
  // user message or the two council members replied together. Each record keeps its author.
  const groups=[];
@@ -99,7 +99,9 @@ function providerMessages(history,request){
  for(const {role,speaker,content} of history){
   const record={speaker,text:content};
   if(role==='user'&&/(?:^|[ ,])(?:unut|konuyu kapat|konuyu degistir|baska konuya gec|drop (?:it|the subject)|change the subject)(?:$| )/.test(questionWords(content)))record.kind='topic_boundary';
-  append(role==='user'?'user':'assistant',record);
+  const peer=role==='model'&&recipient&&speaker!==recipient;
+  if(peer)record.kind='peer_statement';
+  append(role==='model'&&!peer?'assistant':'user',record);
  }
  append('user',request);
  return groups.map(({role,records})=>({role,content:JSON.stringify(records)}));
@@ -178,7 +180,7 @@ async function checkRoomReply(env,model,history,latest,draft,deadline){
  // never evidence that the human’s premise is wrong.
  let raw;
  try{
-  raw=await runModel(env,model,messages,model==='qwen'?176:48,0,Math.min(deadline,Date.now()+12000));
+  raw=await runModel(env,'llama',messages,48,0,Math.min(deadline,Date.now()+20000));
  }catch(error){
   if(isProviderQuota(error))throw error;
   throw new ChatFailure('review_unavailable');
@@ -228,6 +230,21 @@ async function pauseOnProviderQuota(env,error){
  try{await env.COMMUNITY.put('runtime:ai_quota_pause_until',String(Date.now()+900000),{expirationTtl:900});}catch(_){}
  return true;
 }
+function recentPeerQuestion(history,model){
+ // Inspect the group of answers surrounding the latest visible model question.
+ // If both participants asked a question in that group, attribution is ambiguous.
+ const last=history.findLastIndex(turn=>turn.role==='model'&&turn.content.includes('?'));
+ if(last<0||history.length-last>5||history[last].speaker===model)return null;
+ let start=last,end=last+1;
+ while(start>0&&history[start-1].role==='model')start--;
+ while(end<history.length&&history[end].role==='model')end++;
+ return history.slice(start,end).some(turn=>turn.speaker===model&&turn.content.includes('?'))?null:history[last];
+}
+function claimsPeerQuestion(draft,peer,latest){
+ if(!peer||/\b(?:cevir\w*|translate|hikaye\w*|oyku\w*|story|fiction\w*|tekrarla\w*)\b/.test(questionWords(latest)))return false;
+ const unquoted=draft.replace(/“[^”]*”|"[^"\n]*"|«[^»]*»/gu,'');
+ return /\b(?:sordum|sormustum|sordugum soru|sorma nedenim|i (?:had asked|asked (?:you|because)))\b/.test(questionWords(unquoted));
+}
 async function modelResponse(env,model,history,latest){
  const factualAnswer=runtimeAnswer(model,history,latest);
  if(factualAnswer)return {model,status:'ok',answer:factualAnswer,elapsedMs:0};
@@ -236,20 +253,32 @@ async function modelResponse(env,model,history,latest){
 
  const who=model==='qwen'?'Qwen':'Llama';
  const isStory=/(hikaye|hikâye|öykü|metin).*(tek metin|birleştir|baştan sona|tamamını)|(tek metin|birleştir).*(hikaye|hikâye|öykü|metin)/iu.test(latest);
- const messages=[{role:'system',content:systemInstruction(who,isStory)},...providerMessages(history,{request:latest})];
+ const peer=recentPeerQuestion(history,model);
+ const speakerHint=peer?' The latest visible model question comes from '+peer.speaker+'. Only that speaker asked it. Respond to the human as a participant who read the question, never as the one who asked.':'';
+ const messages=[{role:'system',content:systemInstruction(who,isStory)+speakerHint},...providerMessages(history,{request:latest},model)];
  const started=Date.now();
  try{
   const limit=model==='qwen'?(isStory?2100:700):(isStory?1700:500);
-  const deadline=started+52000;
-  let raw=await runModel(env,model,messages,limit,0.35,Math.min(deadline,started+40000));
+  const deadline=started+57000;
+  let raw=await runModel(env,model,messages,limit,0.35,Math.min(deadline,started+49000));
   let draft=finalOutput(raw);
   // An earlier generic fallback can get imitated even with the checker bypassed.
   // Give the model one chance to recover when it echoes that stock text on a new topic.
-  if(model==='qwen'&&draft===limits.UNVERIFIED&&!needsRoomReview(questionWords(latest))&&!verbatim.test(questionWords(latest))){
-   const retry=[{role:'system',content:messages[0].content+' A stock answer about missing evidence was unresponsive. Address the latest human message using the immediately relevant conversation.'},...messages.slice(1)];
+  const echoedNotice=()=>model==='qwen'&&draft===limits.UNVERIFIED&&!needsRoomReview(questionWords(latest))&&!verbatim.test(questionWords(latest));
+  const peerQuestion=claimsPeerQuestion(draft,peer,latest)?peer:null;
+  if(echoedNotice()||peerQuestion){
+   const instruction=peerQuestion
+    ? ' The last visible question was asked by '+peerQuestion.speaker+', not by you. Answer the human’s current message without claiming that question as yours.'
+    : ' A stock answer about missing evidence was unresponsive. Address the latest human message using the immediately relevant conversation.';
+   const retry=[{role:'system',content:messages[0].content+instruction},...messages.slice(1)];
    raw=await runModel(env,model,retry,limit,0.35,deadline);
    draft=finalOutput(raw);
-   if(draft===limits.UNVERIFIED)throw new ChatFailure('incomplete');
+   if(echoedNotice())throw new ChatFailure('incomplete');
+   const repeated=claimsPeerQuestion(draft,peer,latest)?peer:null;
+   if(repeated){
+    const author=repeated.speaker==='qwen'?'Qwen':'Llama';
+    return {model,status:'ok',answer:'Önceki soruyu '+author+' sordu. Mesajı şöyleydi: “'+repeated.content+'”',elapsedMs:Date.now()-started};
+   }
   }
   if(!draft)throw new ChatFailure(raw?.choices?.[0]?.finish_reason==='length'?'incomplete':'empty');
   const answer=await checkRoomReply(env,model,history,latest,draft.slice(0,9500),deadline);

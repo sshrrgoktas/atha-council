@@ -162,7 +162,7 @@ if(!isAdmin){
     if(pendingTurn!==turn)return;
     if(out.status==='quota_exhausted'){
       quotaPauseUntil=Math.max(quotaPauseUntil,Date.now()+Math.max(60,Number(out.retryAfterSec)||900)*1000);
-      place.textContent='Cloudflare Workers AI günlük ücretsiz kotası doldu (4006). Daha sonra yeniden deneyebilirsin.';
+      place.textContent='Cloudflare Workers AI günlük ücretsiz kotası doldu. Daha sonra yeniden deneyebilirsin.';
       return;
     }
     if(out.status!=='ok'||typeof out.answer!=='string'||!out.answer.trim()){place.textContent=replyProblem(out.status==='ok'?'empty':out.status);return}
