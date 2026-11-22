@@ -373,7 +373,7 @@ function sourceRoleAnswer(history,model,request,role){
     if(turn!==humanTurns.at(-1)&&!/\b(?:takildim|saka yaptim|hitap ettim|seslendim)\b/.test(words))continue;
     evidence.push({person:named[0],quote,speaker:turn.speaker});
    }else{
-    const optative=/\bben [a-z]{1,30}(?:ayim|eyim)\b/.test(words);
+    const optative=/\bben [a-z]{1,30}(?:ayim|eyim)\b/.test(words)&&!/\b[a-z]+(?:mayayim|meyeyim)\b/.test(words);
     const offering=/\b(?:ben teklif ettim|i offered)\b/.test(words)||/(?:^| )[a-z]+ (?:de |da )?benden$/.test(words);
     if(!optative&&!offering)continue;
     const generic=new Set(['teklif','etti','almay','simdi','benim','bende','bunu','kimdi','istem','offere']);

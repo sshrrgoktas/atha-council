@@ -319,6 +319,7 @@ test('missing participant answer gets one repair by the original author, but a g
 test('an old offer or an unrelated correction cannot establish the requested person', async () => {
   for(const [history,latest] of [
     [[human('Dün simitleri ben alayım dedim.')],'Simitleri almayı kim teklif etti?'],
+    [[human('Simitleri ben almayayım.')],'Simitleri almayı kim teklif etti?'],
     [[human('Renkleri Qwen’e sordum.'),human('Ben Llama’ya dedim.')],'Az önce renkleri kime sordum?'],
     [[human('Ben Llama’ya dedim.')],'Az önce kime takıldım?'],
     [[human('Simitleri ben alayım.')],'Geçen hafta simitleri almayı kim teklif etti?']
