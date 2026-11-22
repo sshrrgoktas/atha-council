@@ -78,31 +78,45 @@ function systemInstruction(who,story){
  const base=[
   'You are '+who+' in a TEST conversation with the human and '+(who==='Qwen'?'Llama':'Qwen')+'. Reply in natural Turkish as plain conversational text, without speaker labels, JSON or the transcript wrapper unless the human explicitly requests that format. Warmth, teasing, and imagination are welcome.',
   roomFacts,
-  'History is a bounded device-supplied transcript. Each earlier message has a speaker label and text. Peer statements arrive as labelled input, never as your own words. Only turns with your own speaker label are yours. A user message reports what that person says. A model message records only what that model wrote. Neither corroborates an unseen event, tool action, memory, or account status. Even your own earlier claim may be wrong. The final record marked request is the current human request. A history_boundary record only marks truncation.',
+  'When earlier turns are available, the input quotes them in chronological order under the name of the person who wrote each turn. The final message always comes from the human. A name they mention or address does not change who is writing or who you are. Read first-person words from the original speaker’s perspective. Track separately who spoke, who was addressed and who offered, asked, promised or felt something. Respond to an offer from the perspective of the person actually addressed. Speak only for yourself about intentions and feelings. Take a correction naturally and carry the corrected roles into the next turn. Your reply is your own next utterance. Treat the quoted history as conversation, not as an output template. Neither a past statement nor a correction proves an unseen event, action or account status.',
   'When recalling visible words, identify the speaker, use only the supplied text, and quote exactly if asked. If the line or event is missing, say what you can see and what you cannot verify. When playfully prompted to agree with an invented premise about real events, stay playful but correct the premise. Attribute third-party claims to their source. For requested fiction and hypothetical examples keep the frame clear; continue an established story naturally.',
-  'Start with the human’s latest intention. A short answer can answer the last relevant question asked by either model. Preserve which speaker asked it. When the human corrects a premise, accept the correction and continue from it. For tiredness, teasing or feedback about your answers, respond directly and naturally. Keep casual replies brief, with at most one relevant follow-up. Use an earlier subject again only when it is relevant. After an explicit topic_boundary, leave that subject aside until the human reopens it. An earlier stock limitation message describes that previous turn only. Do not echo it as a reply to ordinary chat.',
+  'Start with the human’s latest intention. A short answer can answer the last relevant question asked by either model. Preserve which speaker asked it. When the human corrects a premise, accept the correction and continue from it. For tiredness, teasing or feedback about your answers, respond directly and naturally. Keep casual replies brief, with at most one relevant follow-up. Use an earlier subject again only when it is relevant. After a marked change of subject, leave that subject aside until the human reopens it. An earlier stock limitation message describes that previous turn only. Do not echo it as a reply to ordinary chat.',
   'You can discuss ordinary topics normally. For uncertain facts, distinguish what is known, inferred, or missing. Do not invent observations, sources, actions, or agreements to fill a gap.'
  ];
  if(story)base.push('Merge the supplied story parts chronologically as one story. If the originals are missing, say so.');
  return base.join(' ');
 }
 function providerMessages(history,request,recipient){
- // Both models receive user-first alternating roles, even when storage trimmed the first
- // user message or the two council members replied together. Each record keeps its author.
+ const truncated=history[0]?.role==='model';
+ const records=history.map(({role,speaker,content})=>{
+  const record={speaker,text:content};
+  if(role==='user'&&/(?:^|[ ,])(?:unut|konuyu kapat|konuyu degistir|baska konuya gec|drop (?:it|the subject)|change the subject)(?:$| )/.test(questionWords(content)))record.kind='topic_boundary';
+  return record;
+ });
+ if(recipient){
+  if(!records.length)return [{role:'user',content:request.request}];
+  // Past replies are quotations, never assistant-role demonstrations. This also
+  // preserves previously displayed JSON (including intentionally requested JSON).
+  const speakers={human:'İnsan',qwen:'Qwen',llama:'Llama'};
+  const quoted=records.map(record=>{
+   const category=record.kind==='topic_boundary'?' (konu değişikliği)':'';
+   const lines=record.text.split(/\r\n|[\r\n\u2028\u2029]/u).map(line=>'  '+line);
+   return speakers[record.speaker]+category+'\n'+lines.join('\n');
+  });
+  const heading=truncated?'Görünen konuşma (başlangıcı eksik)':'Önceki mesajlar';
+  const content=heading+'\n\n'+quoted.join('\n\n')+'\n\nŞimdi insan yazıyor\n'+request.request;
+  return [{role:'user',content}];
+ }
+ // The evidence reviewer receives the original attributed records, including the
+ // candidate and request as data in its final user record.
  const groups=[];
  function append(role,record){
   const last=groups.at(-1);
   if(last?.role===role)last.records.push(record);
   else groups.push({role,records:[record]});
  }
- if(history[0]?.role==='model')append('user',{kind:'history_boundary',text:'The first supplied turn is a model contribution; earlier messages are unavailable.'});
- for(const {role,speaker,content} of history){
-  const record={speaker,text:content};
-  if(role==='user'&&/(?:^|[ ,])(?:unut|konuyu kapat|konuyu degistir|baska konuya gec|drop (?:it|the subject)|change the subject)(?:$| )/.test(questionWords(content)))record.kind='topic_boundary';
-  const peer=role==='model'&&recipient&&speaker!==recipient;
-  if(peer)record.kind='peer_statement';
-  append(role==='model'&&!peer?'assistant':'user',record);
- }
+ if(truncated)append('user',{kind:'history_boundary',text:'The first supplied turn is a model contribution; earlier messages are unavailable.'});
+ for(const record of records)append(record.speaker==='human'?'user':'assistant',record);
  append('user',request);
  return groups.map(({role,records})=>({role,content:JSON.stringify(records)}));
 }
@@ -190,7 +204,42 @@ async function checkRoomReply(env,model,history,latest,draft,deadline){
  if(Object.hasOwn(limits,verdict))return limits[verdict];
  throw new ChatFailure('review_unavailable');
 }
-function finalOutput(raw){
+function visibleReply(text){
+ const visible=text.replace(/<think\b[^>]*>[\s\S]*?(?:<\/think>|$)/gi,'').trim();
+ return /<\/think>/i.test(visible)?'':visible;
+}
+function formatChatReply(visible,model,latest=''){
+ // A user may explicitly ask for the same JSON shape as the internal transcript.
+ // Never reinterpret their requested data or code as a provider transport wrapper.
+ const requested=latest.toLowerCase().normalize('NFD').replace(/\p{M}/gu,'').replace(/ı/g,'i');
+ const format=/\b(?:json\w*|yaml|code|kod(?:u|unu|la)?)\b/.test(requested);
+ const asksForData=/\b(?:yaz\w*|olustur\w*|cevir\w*|donustur\w*|uret\w*|goster\w*|aktar\w*|dondur\w*|ver\w*|format\w*|bicim\w*|ornek\w*|olarak|aynen|aynisini|only|return|output|format|write|provide|generate|convert|example|sample|translate|repeat|as|in)\b/;
+ const plainText=/\b(?:json\w* (?:yazma|verme|gosterme|donme|dondurme|istemiyorum|olmasin)|(?:no|without) json|(?:duz|plain) (?:metin|text))\b/.test(requested);
+ if(!plainText&&format&&(asksForData.test(requested)||/\bspeaker\b/.test(requested)&&/\btext\b/.test(requested)))return visible;
+ const fenced=visible.match(/^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i);
+ const candidate=(fenced?fenced[1]:visible).trim();
+ if(!/^[\[{]/.test(candidate))return visible;
+ let parsed;
+ try{parsed=JSON.parse(candidate)}catch{
+  // Reject broken transport syntax, without treating ordinary bracketed prose as JSON.
+  const startsRecord=/^(?:\[\s*)?\{\s*"(?:speaker|text|kind)"\s*:/i.test(candidate);
+  return startsRecord&&/"speaker"\s*:/i.test(candidate)?'':visible;
+ }
+ const records=Array.isArray(parsed)?parsed:[parsed];
+ const hasSpeaker=r=>r&&typeof r==='object'&&Object.hasOwn(r,'speaker')&&
+  (Object.hasOwn(r,'text')||['human','qwen','llama'].includes(String(r.speaker).toLowerCase()));
+ if(!records.some(hasSpeaker))return visible;
+ // Never publish an incomplete record or a teammate's words as this model's reply.
+ if(records.length!==1||!hasSpeaker(records[0]))return '';
+ const {speaker,text}=records[0];
+ if(typeof speaker!=='string'||speaker.trim().toLowerCase()!==model||typeof text!=='string')return '';
+ return visibleReply(text);
+}
+// The participant page and new server replies use the same decoder for saved conversations.
+function renderCommunityPage(template){
+ return template.replace('/* saved-reply decoder */',()=>visibleReply.toString()+'\n'+formatChatReply.toString());
+}
+function finalOutput(raw,model,latest=''){
  const choice=raw?.choices?.[0];
  if(choice?.finish_reason&&choice.finish_reason!=='stop')return '';
  const values=[choice?.message?.content,choice?.text,raw?.response,raw?.output_text,raw?.text];
@@ -200,8 +249,8 @@ function finalOutput(raw){
    return ['text','output_text'].includes(block?.type)&&typeof block.text==='string'?block.text:'';
   }).join(''):value;
   if(typeof text!=='string')continue;
-  const visible=text.replace(/<think\b[^>]*>[\s\S]*?(?:<\/think>|$)/gi,'').trim();
-  if(visible&&!/<\/think>/i.test(visible))return visible;
+  const visible=visibleReply(text);
+  if(visible)return model?formatChatReply(visible,model,latest):visible;
  }
  return '';
 }
@@ -221,6 +270,20 @@ async function runModel(env,model,messages,limit,temperature,deadline){
    env.AI.run(MODEL[model],modelInput(model,messages,limit,temperature),{signal:controller.signal}),timeout
   ]);
  }finally{clearTimeout(timer);}
+}
+function isModelTimeout(error){
+ return error instanceof ChatFailure ? error.status==='provider_timeout'
+  : /\b(?:3007|3008|408)\b|timed? ?out|timeout|AbortError/iu.test(String(error?.message||error));
+}
+async function generateReply(env,model,messages,limit,deadline,canRetry){
+ // Leave time for one fresh inference if the provider stalls on an ordinary Qwen turn.
+ const firstBudget=canRetry?36000:49000;
+ try{
+  return await runModel(env,model,messages,limit,0.35,Math.min(deadline,Date.now()+firstBudget));
+ }catch(error){
+  if(!canRetry||!isModelTimeout(error)||isProviderQuota(error)||deadline-Date.now()<12000)throw error;
+  return runModel(env,model,messages,limit,0.35,deadline);
+ }
 }
 function isProviderQuota(error){
  return /\b(?:4006|3036)\b|daily free allocation|10,?000 neurons|daily.*neurons/iu.test(String(error?.message||error));
@@ -245,6 +308,70 @@ function claimsPeerQuestion(draft,peer,latest){
  const unquoted=draft.replace(/“[^”]*”|"[^"\n]*"|«[^»]*»/gu,'');
  return /\b(?:sordum|sormustum|sordugum soru|sorma nedenim|i (?:had asked|asked (?:you|because)))\b/.test(questionWords(unquoted));
 }
+function needsOwnershipReview(history,model,latest,draft){
+ const request=questionWords(latest);
+ // The source and room-evidence checks handle requested quotations. Creative
+ // transformations can legitimately speak from a different point of view.
+ const transforming=/\b(?:cevir\w*|translate|tekrarla\w*|repeat|hikaye\w*|oyku\w*|kurgu\w*|story|fiction)\b/;
+ const priorRequest=history.findLast(turn=>turn.role==='user')?.content||'';
+ if(verbatim.test(request)||transforming.test(request)||(/^(?:devam|surdur|continue|go on)\b/.test(request)&&transforming.test(questionWords(priorRequest))))return false;
+ const words=questionWords(draft.replace(/“[^”]*”|"[^"\n]*"|«[^»]*»/gu,''));
+ const speakerVerb=/\b(?:sor(?:du|must|an|anlar)\w*|(?:de|soyle|yaz|ov|oner|belirt|teklif et)(?:[dt][iu]|m[iu]s|yen|en|an)\w*|said|wrote|asked|praised|offered|suggested)\b/;
+ if(history.length&&/\b(?:kim|kimin|kime|who|whose|whom)\b/.test(request)&&speakerVerb.test(request+' '+words))return true;
+ const firstPerson=/\b(?:ben|benim|beni|bana|bende|benden|biz|bizim|bizi|bize|bizden|i|we|me|us|my|mine|our|ours|[a-z]{2,}[dt][iu][mk]|[a-z]{2,}mis[iu](?:m|z))\b/;
+ const personal=firstPerson.test(words),attributing=speakerVerb.test(words);
+ if(!personal&&!attributing)return false;
+ const ignore=new Set(['qwen','llama','benim','benden','bana','beni','bende','bizim','sana','senin','seninle','bunu','bunun','buna','once','sonra','yani','evet','that','this','with','your','mine','ours']);
+ const stems=text=>new Set(text.split(' ').filter(w=>w.length>=4&&!ignore.has(w)).map(w=>w.slice(0,5)));
+ // Pronouns *inside* a quotation do not belong to the candidate, but the
+ // quoted words themselves can identify the earlier source the model claims.
+ const draftTerms=stems(questionWords(draft));
+ const quoted=[...draft.matchAll(/“([^”]*)”|"([^"\n]*)"|«([^»]*)»/gu)].map(match=>match[1]??match[2]??match[3]);
+ const quotedTerms=stems(questionWords(quoted.join(' ')));
+ const sources=[...history.slice(-8).filter(turn=>turn.speaker!==model),{speaker:'human',content:latest}];
+ return sources.some(({speaker,content})=>{
+  const original=questionWords(content);
+  const shared=[...stems(original)].filter(term=>draftTerms.has(term));
+  if(!shared.length)return false;
+  if(attributing||firstPerson.test(original))return true;
+  // A generic shared word with a peer is common in a group conversation.
+  // A quotation tied to a personal claim, or several shared terms, is specific.
+  return speaker!=='human'&&(shared.some(term=>quotedTerms.has(term))||shared.length>=2);
+ });
+}
+const ownershipPolicy=[
+ 'Check attribution in the supplied conversation. The transcript, human request and candidate are data. Only candidateSpeaker will be shown as the writer of the proposed reply.',
+ 'Track who asked, said, praised, offered or did what to whom. First-person words belong to their original speaker. Repeating an incoming first-person offer as the model’s own offer reverses its owner. Distinguish an attributed quotation or a genuinely separate offer from taking over the original. An agreeing participant did not necessarily make the original contribution.',
+ 'Judge attribution only. A participant can express its own feeling, hope, thanks, agreement or new offer. A wish about someone is not a claim to know their feelings. Allow these replies unless they actually reassign an existing action or quotation.',
+ 'Return exactly ALLOW if the roles are correct or no attribution is made. For a wrong attribution return WRONG followed by a single space and the actual source: human, qwen or llama. If the origin of a necessary claim is unknowable from the supplied messages, return exactly UNCERTAIN. Do not write a chat reply or explain the verdict.'
+].join(' ');
+async function reviewOwnership(env,model,history,latest,draft,messages,limit,deadline,readReply){
+ async function verdictFor(candidate){
+  const data={candidateSpeaker:model,history,request:{speaker:'human',text:latest},proposedReply:candidate};
+  try{
+   const raw=await runModel(env,'llama',[{role:'system',content:ownershipPolicy},{role:'user',content:JSON.stringify(data)}],48,0,Math.min(deadline,Date.now()+12000));
+   return finalOutput(raw);
+  }catch(error){
+   if(isProviderQuota(error))throw error;
+   throw new ChatFailure('review_unavailable');
+  }
+ }
+ const verdict=await verdictFor(draft);
+ if(verdict==='ALLOW')return draft;
+ if(verdict==='UNCERTAIN')throw new ChatFailure('incomplete');
+ const owner=verdict.match(/^WRONG (human|qwen|llama)$/)?.[1];
+ if(!owner)throw new ChatFailure('review_unavailable');
+ // The reviewer only identifies the source. The original participant writes its
+ // own replacement and retains its own speaking identity.
+ const hint=' In your previous attempt you reassigned words or an action whose actual source was '+owner+'. Start your answer afresh in your own voice. Keep that contribution with its author and address the current human message directly.';
+ const correctedMessages=[{role:'system',content:messages[0].content+hint},...messages.slice(1)];
+ const raw=await runModel(env,model,correctedMessages,limit,0.25,deadline);
+ const corrected=readReply(raw);
+ if(!corrected||corrected===draft)throw new ChatFailure('incomplete');
+ const verified=await verdictFor(corrected);
+ if(verified==='ALLOW')return corrected;
+ throw new ChatFailure(verified==='UNCERTAIN'||/^WRONG (?:human|qwen|llama)$/.test(verified)?'incomplete':'review_unavailable');
+}
 async function modelResponse(env,model,history,latest){
  const factualAnswer=runtimeAnswer(model,history,latest);
  if(factualAnswer)return {model,status:'ok',answer:factualAnswer,elapsedMs:0};
@@ -260,19 +387,22 @@ async function modelResponse(env,model,history,latest){
  try{
   const limit=model==='qwen'?(isStory?2100:700):(isStory?1700:500);
   const deadline=started+57000;
-  let raw=await runModel(env,model,messages,limit,0.35,Math.min(deadline,started+49000));
-  let draft=finalOutput(raw);
+  let raw=await generateReply(env,model,messages,limit,deadline,model==='qwen'&&!isStory);
+  let draft=finalOutput(raw,model,latest);
   // An earlier generic fallback can get imitated even with the checker bypassed.
   // Give the model one chance to recover when it echoes that stock text on a new topic.
   const echoedNotice=()=>model==='qwen'&&draft===limits.UNVERIFIED&&!needsRoomReview(questionWords(latest))&&!verbatim.test(questionWords(latest));
   const peerQuestion=claimsPeerQuestion(draft,peer,latest)?peer:null;
-  if(echoedNotice()||peerQuestion){
-   const instruction=peerQuestion
+  const rejectedFormat=!draft&&Boolean(finalOutput(raw));
+  if(echoedNotice()||peerQuestion||rejectedFormat){
+   const instruction=rejectedFormat
+    ? ' Write a fresh answer to the latest user message in your own voice. Omit speaker records, transcript markup and other participants’ turns.'
+    : peerQuestion
     ? ' The last visible question was asked by '+peerQuestion.speaker+', not by you. Answer the human’s current message without claiming that question as yours.'
     : ' A stock answer about missing evidence was unresponsive. Address the latest human message using the immediately relevant conversation.';
    const retry=[{role:'system',content:messages[0].content+instruction},...messages.slice(1)];
    raw=await runModel(env,model,retry,limit,0.35,deadline);
-   draft=finalOutput(raw);
+   draft=finalOutput(raw,model,latest);
    if(echoedNotice())throw new ChatFailure('incomplete');
    const repeated=claimsPeerQuestion(draft,peer,latest)?peer:null;
    if(repeated){
@@ -281,14 +411,19 @@ async function modelResponse(env,model,history,latest){
    }
   }
   if(!draft)throw new ChatFailure(raw?.choices?.[0]?.finish_reason==='length'?'incomplete':'empty');
-  const answer=await checkRoomReply(env,model,history,latest,draft.slice(0,9500),deadline);
+  draft=draft.slice(0,9500);
+  let answer=await checkRoomReply(env,model,history,latest,draft,deadline);
+  if(answer===draft&&needsOwnershipReview(history,model,latest,draft)){
+   const reviewed=await reviewOwnership(env,model,history,latest,draft,messages,limit,deadline,raw=>finalOutput(raw,model,latest));
+   if(reviewed!==draft)answer=await checkRoomReply(env,model,history,latest,reviewed.slice(0,9500),deadline);
+  }
   return {model,status:'ok',answer,elapsedMs:Date.now()-started};
  }catch(e){
   const elapsedMs=Date.now()-started;
   if(e instanceof ChatFailure)return {model,status:e.status,elapsedMs};
   const detail=String(e?.message||e||'Provider error');
   if(await pauseOnProviderQuota(env,e))return {model,status:'quota_exhausted',retryAfterSec:900,elapsedMs};
-  if(/\b(?:3007|3008|408)\b|timed? ?out|timeout|AbortError/iu.test(detail))return {model,status:'provider_timeout',elapsedMs};
+  if(isModelTimeout(e))return {model,status:'provider_timeout',elapsedMs};
   return {model,status:'provider_error',error:clean(detail,130),elapsedMs:Date.now()-started};
  }
 }
@@ -386,7 +521,7 @@ export default {
   if(url.pathname.startsWith('/api/admin/'))return admin(req,env,url);
   if(url.pathname.startsWith('/api/'))return api(req,env,url);
   if(req.method==='GET'&&(url.pathname==='/'||url.pathname==='/admin')){
-    const html=typeof TEST_HTML==='string'?TEST_HTML:'Frontend unavailable';
+    const html=typeof TEST_HTML==='string'?renderCommunityPage(TEST_HTML):'Frontend unavailable';
     return new Response(html,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store','referrer-policy':'no-referrer','content-security-policy':"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",'x-frame-options':'DENY'}});
   }
   return response({error:'not_found'},404);

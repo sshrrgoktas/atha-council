@@ -91,15 +91,8 @@ test('a human request to drop a topic creates a boundary while preserving the ne
   assert.equal(result.answer, draft);
   assert.equal(calls.length, 1);
   const messages = calls[0].input.messages;
-  const records = messages.flatMap(turn => {
-    try {
-      const decoded = JSON.parse(turn.content);
-      return Array.isArray(decoded) ? decoded : [decoded];
-    } catch {
-      return [];
-    }
-  });
-  assert.ok(records.some(record => record.kind === 'topic_boundary'), 'explicit topic change needs its own model-visible marker');
+  assert.ok(messages.some(turn => turn.role === 'user' &&
+    turn.content.includes('İnsan (konu değişikliği)\n  Qwen, çayı unut')), 'the boundary must belong to the human who requested it');
   assert.ok(messages.some(turn => turn.content.includes('Bir kulüp kuruyoruz.')));
   assert.ok(messages.at(-1).content.includes(latest));
 });
@@ -179,7 +172,7 @@ test('an unresponsive provider or checker cannot hold the chat request open inde
   t.mock.method(AbortSignal, 'timeout', ms => realSignalTimeout(Math.min(ms, 10)));
   for (const stalledTurn of [1, 2]) {
     const query = postChat('Önceki oturumda hangi parolayı belirledik?', [], turn =>
-      turn === stalledTurn ? new Promise(() => {}) : finalText(unsupportedClaim));
+      stalledTurn === 1 || turn === 2 ? new Promise(() => {}) : finalText(unsupportedClaim));
     let timer;
     try {
       const {calls, result} = await Promise.race([
@@ -188,7 +181,7 @@ test('an unresponsive provider or checker cannot hold the chat request open inde
           timer = realTimer(() => reject(new Error('chat request stayed pending after provider deadline')), 650);
         })
       ]);
-      assert.equal(calls.length, stalledTurn);
+      assert.equal(calls.length, 2, 'only generation may retry a provider timeout');
       assert.notEqual(result.status, 'ok');
       assert.equal(result.status, stalledTurn === 1 ? 'provider_timeout' : 'review_unavailable');
       assert.doesNotMatch(JSON.stringify(result), /Mercan Kule/u);
@@ -205,7 +198,7 @@ test('Qwen corrects a draft taking credit for a peer question', async () => {
     turn => finalText(drafts[turn - 1]));
   assert.equal(calls.length, 2);
   const input = calls[0].input.messages;
-  assert.ok(input.some(m => m.role === 'user' && m.content.includes('peer_statement') && m.content.includes('llama')));
+  assert.ok(input.some(m => m.role === 'user' && m.content.includes('Llama\n  Hangi dersi veriyorsun?')));
   assert.equal(result.answer, drafts[1]);
 });
 
@@ -214,4 +207,77 @@ test('a repeated authorship error is corrected from the visible source', async (
   assert.match(result.answer, /Llama/);
   assert.ok(result.answer.includes(teacherHistory[1].content));
   assert.doesNotMatch(result.answer, /sormuştum/u);
+});
+
+
+test('one transient Qwen timeout recovers within the original turn and budget', async () => {
+  const answer = 'Buradayım. Yolculuk yorucu geçmiş.';
+  const {calls, result} = await postChat('Çok yoruldum', [], turn => {
+    if (turn === 1) throw new Error('3008: provider timed out');
+    return finalText(answer);
+  });
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every(call => call.id === calls[0].id));
+  assert.deepEqual(calls[0].input.messages, calls[1].input.messages);
+  assert.equal(result.answer, answer);
+});
+
+test('provider limits and unrelated errors do not trigger another inference', async () => {
+  for (const [error, status] of [['4006: daily free allocation exhausted', 'quota_exhausted'], ['invalid model input', 'provider_error']]) {
+    const {calls, result} = await postChat('Selam', [], () => { throw new Error(error); });
+    assert.equal(calls.length, 1);
+    assert.equal(result.status, status);
+  }
+});
+
+test('a past reply is quoted as evidence rather than a response format to imitate', async () => {
+  const oldReply = '[{"speaker":"qwen","text":"Ben Qwen’im."}]';
+  const history = [human('Adınız ne?'), reply('qwen', oldReply), reply('llama', 'Ben Llama’yım.')];
+  const latest = 'Barışalım mı, kurabiyeler benden.';
+  const {calls} = await postChat(latest, history, () => finalText('Elbette, teşekkür ederim!'));
+  assert.equal(calls.length, 1);
+  const messages = calls[0].input.messages;
+  assert.ok(!messages.some(turn => turn.role === 'assistant' && turn.content.includes(oldReply)));
+  const current = messages.at(-1);
+  assert.equal(current.role, 'user');
+  assert.ok(current.content.includes('Qwen\n  ' + oldReply));
+  assert.ok(current.content.includes('Llama\n  Ben Llama’yım.'));
+  assert.ok(current.content.endsWith('Şimdi insan yazıyor\n' + latest));
+});
+
+test('a mistaken claim about a human contribution is corrected by the original model and checked again', async () => {
+  const bad = 'Serginin afişini ben çizdim.';
+  const fixed = 'Afişi sen çizdin. Renklerle ilgili yorumu Llama yaptı.';
+  const staged = [bad, 'WRONG human', fixed, 'ALLOW'];
+  const context = [human('Serginin afişini ben çizdim.'), reply('llama', 'Renkler çok hoş!')];
+  const {calls,result} = await postChat('Afişten bahsediyorduk.', context, turn => finalText(staged[turn-1]));
+  assert.equal(result.answer, fixed);
+  assert.deepEqual(calls.map(call => call.id.includes('qwen')), [true,false,true,false]);
+  assert.ok(calls[1].input.messages.at(-1).content.includes(bad));
+  assert.ok(calls[2].input.messages[0].content.includes('source was human'));
+  assert.ok(calls[3].input.messages.at(-1).content.includes(fixed));
+});
+
+test('uncertain or unresolved ownership cannot publish another participant’s words as mine', async () => {
+  const draft = 'Ben yaptım, kumaşları ben boyadım.';
+  const context = [human('Kumaşları ben boyadım.'), reply('llama', 'Güzel olmuş.')];
+  for (const sequence of [[draft,'UNCERTAIN'], [draft,'WRONG human',draft], [draft,'yalnızca bir tahmin']]) {
+    const {result,calls} = await postChat('Bu çalışmadan söz edelim.', context, turn => finalText(sequence[turn-1]));
+    assert.equal(result.answer, undefined);
+    assert.ok(['incomplete','review_unavailable'].includes(result.status));
+    assert.equal(calls.length, sequence.length);
+  }
+});
+
+test('partial quotation of a peer’s impersonal praise still carries its original speaker', async () => {
+  const praise = 'Derslerinde doğanın mucizelerini keşfetmek ne güzel.';
+  const history = [human('Biyoloji öğretiyorum.'), reply('llama', praise), reply('qwen', 'Hangi kademede?')];
+  const bad = 'Bu benim klişe bir övgüye kaçmamam gerektiğini gösteriyor. “Mucizeleri keşfetmek”ten çok günlük işleri sorayım.';
+  const fixed = 'O söz Llama’nındı. Senin derslerini nasıl anlattığını merak ediyorum.';
+  const sequence = [bad,'WRONG llama',fixed,'ALLOW'];
+  const {calls,result} = await postChat('Sıradan bir ders işte.', history, turn=>finalText(sequence[turn-1]));
+  assert.equal(result.answer, fixed);
+  assert.deepEqual(calls.map(call => call.id.includes('qwen')), [true,false,true,false]);
+  const record = JSON.parse(calls[1].input.messages.at(-1).content);
+  assert.ok(record.history.some(turn=>turn.speaker==='llama' && turn.content===praise));
 });

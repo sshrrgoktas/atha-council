@@ -29,6 +29,12 @@ function memoryStorage() {
  };
 }
 
+const workerSource=fs.readFileSync(path.join(__dirname,'worker.mjs'),'utf8');
+const testModule='const TEST_HTML='+JSON.stringify(html)+';\n'+workerSource;
+const renderedPage=import('data:text/javascript;base64,'+Buffer.from(testModule).toString('base64'))
+ .then(({default:worker})=>worker.fetch(new Request('https://test.invalid/'),{}))
+ .then(response=>response.text());
+
 async function openParticipant({confirm,requestChat,localStorage=memoryStorage()}) {
  const elements=new Map();
  function makeElement() {
@@ -58,7 +64,7 @@ async function openParticipant({confirm,requestChat,localStorage=memoryStorage()
  const document={
   getElementById:element,createElement:makeElement,addEventListener(){},body:{classList:{add(){}}}
  };
- const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+ const script=(await renderedPage).match(/<script>([\s\S]*?)<\/script>/)[1];
  const timers=new Map();
  const setTimeout=(fn,ms)=>{const id=Symbol();timers.set(id,{fn,ms});return id};
  vm.runInNewContext(script,{document,window:{},location:{pathname:'/',hash:''},fetch,confirm,localStorage,sessionStorage,
@@ -163,4 +169,28 @@ test('Report and cancelled logout preserve the session, confirmed logout keeps c
  element('logoutBtn').dispatch('click');
  assert.equal(prompts,2);
  assertSession(false);
+});
+
+
+test('reloading an old chat renders the real speaker text and preserves explicitly requested JSON',async()=>{
+ const store=memoryStorage();
+ const old=(speaker,text)=>JSON.stringify([{speaker,text}]);
+ const requested=old('llama','İstenen örnek.');
+ const history=[
+  {role:'user',speaker:'human',content:'Barışalım mı?'},
+  {role:'model',speaker:'qwen',content:old('qwen','Barışalım.')},
+  {role:'user',speaker:'human',content:'Bir diyalogu JSON olarak ver.'},
+  {role:'model',speaker:'llama',content:requested}
+ ];
+ store.setItem('atha_community_test_chat_fixture',JSON.stringify(history));
+ let sent;
+ const client=await openParticipant({localStorage:store,requestChat:(model,signal,input)=>{
+  sent=input.history;return {status:'ok',answer:'Tamam.'};
+ }});
+ assert.equal(client.bubbleText('QWEN'),'Barışalım.');
+ assert.equal(client.bubbleText('LLAMA'),requested);
+ client.element('message').value='Qwen, selam';
+ await client.element('composer').dispatch('submit');
+ assert.equal(sent[1].content,'Barışalım.');
+ assert.equal(sent[3].content,requested);
 });

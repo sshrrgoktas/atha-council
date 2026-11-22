@@ -54,15 +54,23 @@ function saveHistory(){
  localStorage.setItem(chatKey(testerId),json);localStorage.setItem(chatKey(testerId)+'_active',active||'');}
  catch(e){$('status').textContent='Bu tarayıcı sohbet geçmişini kaydedemiyor (gizli mod veya dolu depolama olabilir).'}
 }
+/* saved-reply decoder */
 function restoreHistory(id){
  history.length=0;active=null;let entries=[];
  try{const data=JSON.parse(localStorage.getItem(chatKey(id))||'[]');if(Array.isArray(data))entries=data.slice(-90);
  const last=localStorage.getItem(chatKey(id)+'_active');if(last==='qwen'||last==='llama')active=last;}catch(e){}
  $('messages').replaceChildren();
+ let lastRequest=null;
  for(const m of entries){
   if(!m||!['user','model'].includes(m.role)||typeof m.content!=='string')continue;
-  history.push({role:m.role,speaker:String(m.speaker||'').slice(0,20),content:m.content.slice(0,8000)});
-  bubble(m.role==='user'?'Sen':String(m.speaker||'TEST').toUpperCase(),m.content,m.role==='user');
+  const speaker=String(m.speaker||'').slice(0,20);
+  let content=m.content;
+  if(m.role==='user')lastRequest=content;
+  else if(lastRequest!==null&&(speaker==='qwen'||speaker==='llama')){
+   content=formatChatReply(visibleReply(content),speaker,lastRequest);
+  }
+  if(content)history.push({role:m.role,speaker,content:content.slice(0,8000)});
+  bubble(m.role==='user'?'Sen':speaker.toUpperCase(),content||'Bu eski yanıtta konuşmacı doğrulanamadı.',m.role==='user');
  }
  if(!history.length){const welcome=document.createElement('div');welcome.className='welcome';welcome.textContent='Hoş geldin! 💙 Qwen ve Llama ile sohbete başla.';$('messages').appendChild(welcome)}
 }
