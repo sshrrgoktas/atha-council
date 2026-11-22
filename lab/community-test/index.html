@@ -115,6 +115,7 @@ function replyProblem(status){
   case 'empty': case 'incomplete': case 'incomplete_output': case 'reasoning_only': return 'Model yanıtını tamamlayamadı. Yeniden deneyebilirsin.';
   case 'daily_test_quota_reached': return 'Bu davetin günlük TEST mesaj sınırına ulaşıldı.';
   case 'invalid_or_expired_invite': return 'TEST daveti geçersiz veya süresi dolmuş. Yeniden giriş yap.';
+  case 'provider_busy': return 'Model şu anda yoğun. Biraz sonra tekrar deneyebilirsin.';
   case 'provider_error': return 'Model hizmeti şu anda yanıt veremedi. Daha sonra yeniden deneyebilirsin.';
   default: return 'Yanıt alınamadı. Sorunu bildirirken bu mesajı belirtebilirsin.';
  }

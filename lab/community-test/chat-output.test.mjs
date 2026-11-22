@@ -65,3 +65,54 @@ test('a malformed speaker response can recover in the same turn',async()=>{
   assert.equal(response.status,'ok');
   assert.equal(response.answer,'Merhaba!');
 });
+
+for(const model of ['qwen','llama']){
+  test(model+' rejects impersonation in plain text and Markdown and regenerates exactly once',async()=>{
+    const mixed='**Llama:** Bana takıldın.\n\n**Qwen**: Ona takıldın.';
+    const latest='İkiniz de kendi adınıza söyler misiniz, az önce kime takıldım?';
+    for(const draft of [mixed,'Llama: Benimle takıldın.\nQwen: Ben Qwen’im.',
+      JSON.stringify([{speaker:model,text:mixed}]),'### LLAMA： Merhaba.\n- _Qwen:_ Günaydın.']){
+      let count=0;
+      const output=await chat(model,latest,()=>({response:++count===1?draft:'Llama’ya takıldın.'}));
+      assert.equal(count,2);
+      assert.equal(output.answer,'Llama’ya takıldın.');
+    }
+    let attempts=0;
+    const wrong=model==='qwen'?'Llama':'Qwen';
+    const forever=await chat(model,latest,()=>({response:(attempts++,wrong+': Bunu ben söyledim.')}));
+    assert.equal(attempts,2);
+    assert.notEqual(forever.status,'ok');
+    assert.equal(forever.answer,undefined);
+  });
+  test(model+' removes its own heading and preserves prose, fiction, code and requested quotations',async()=>{
+    const both='Llama: Merhaba!\n\n**Qwen:** Günaydın.';
+    const single='**'+model.toUpperCase()+':** Buradayım.\n\nÇaya ne dersin?';
+    for(const [latest,draft,answer] of [
+      ['Selam',single,'Buradayım.\n\nÇaya ne dersin?'],
+      ['Selam','Qwen bunu söyledi. Llama da güldü.','Qwen bunu söyledi. Llama da güldü.'],
+      ['İki repliklik bir diyalog yaz.',both,both],
+      ['Kısa bir hikâye yaz.',both,both],
+      ['Bana bu iki modelin sözlerini alıntıla.',both,both],
+      ['Bu replikleri İngilizceye çevir.',both,both],
+      ['Write a dialogue between Qwen and Llama.',both,both],
+      ['Write the following code exactly.','```txt\n'+both+'\n```','```txt\n'+both+'\n```']
+    ]){
+      const output=await chat(model,latest,{response:draft});
+      assert.equal(output.answer,answer,latest);
+    }
+  });
+}
+
+
+test('one temporary capacity refusal is retried, a continued refusal is visible',async()=>{
+ for(const recover of [true,false]){
+  let calls=0;
+  const result=await chat('qwen','Selam',()=>{
+   calls++;
+   if(!recover||calls===1)throw Error('3040: Capacity temporarily exceeded, please try again.');
+   return {response:'Merhaba!'};
+  });
+  assert.equal(calls,2);
+  assert.equal(result.status,recover?'ok':'provider_busy');
+ }
+});

@@ -281,3 +281,49 @@ test('partial quotation of a peer’s impersonal praise still carries its origin
   const record = JSON.parse(calls[1].input.messages.at(-1).content);
   assert.ok(record.history.some(turn=>turn.speaker==='llama' && turn.content===praise));
 });
+
+
+test('an immediate follow-up about an absent interval keeps the explicit room answer',async()=>{
+ const {calls,result}=await postChat('Peki o sırada birbirinize ne dediniz?',[
+  human('Ben yokken ne yaptınız?'),reply('llama','Sen yazınca yanıt veriyoruz.')
+ ],()=>{ throw Error('no background inference is needed'); });
+ assert.equal(calls.length,0);
+ assert.equal(result.status,'ok');
+ assert.match(result.answer,/ayrı bir konuşma geçmiyor/u);
+});
+
+test('a direct address question uses the visible correction, even following a joking interjection', async () => {
+  const history = [human('Llama ve Qwen, az önce Llama’ya şakasına salak dedim.'), reply('llama','Kimle?'), human('Ben Llama’ya dedim.'), reply('qwen','Hadi yarışalım!')];
+  const {calls,result} = await postChat('Llama sensin. Qwen de burada. İkiniz de kendi adınıza söyler misiniz, az önce kime takıldım?', history, ()=>{throw new Error('explicit source is sufficient')});
+  assert.equal(calls.length, 0);
+  assert.equal(result.answer,'Ben Qwen’im, Llama’ya takıldın. “Ben Llama’ya dedim” diye yazdın.');
+});
+
+test('a first-person item offer is attributed to the author of the actual offer', async () => {
+  const history=[human('Simitleri ben alayım; siz ne içersiniz?'),reply('llama','Çay içebilirim.')];
+  const {result,calls}=await postChat('Simitleri almayı kim teklif etti?',history,()=>{throw new Error('source available')});
+  assert.equal(result.answer,'Teklif senden geldi. “Simitleri ben alayım” diye yazdın.');
+  assert.equal(calls.length,0);
+});
+
+test('missing participant answer gets one repair by the original author, but a general resemblance question stays ordinary', async () => {
+  const history=[human('Herkes sırayla konuştu.'),reply('llama','Neredesin?'),human('Okuldayım.')];
+  const sequence=['Kim daha hızlı cevap verecek acaba?','MISSING','Llama sordu.','ALLOW'];
+  const {result,calls}=await postChat('Az önce kim sordu?',history,turn=>finalText(sequence[turn-1]));
+  assert.equal(result.answer,'Llama sordu.');
+  assert.deepEqual(calls.map(call=>call.id.includes('qwen')), [true,false,true,false]);
+  const ordinary=await postChat('Bulut kime benziyor?', history,()=>finalText('Bir tavşana benziyor.'));
+  assert.equal(ordinary.calls.length,1);
+});
+
+test('an old offer or an unrelated correction cannot establish the requested person', async () => {
+  for(const [history,latest] of [
+    [[human('Dün simitleri ben alayım dedim.')],'Simitleri almayı kim teklif etti?'],
+    [[human('Renkleri Qwen’e sordum.'),human('Ben Llama’ya dedim.')],'Az önce renkleri kime sordum?'],
+    [[human('Ben Llama’ya dedim.')],'Az önce kime takıldım?'],
+    [[human('Simitleri ben alayım.')],'Geçen hafta simitleri almayı kim teklif etti?']
+  ]){
+    const {calls}=await postChat(latest,history,turn=>finalText(turn===1?'Eldeki mesajlardan kesinleştiremiyorum.':'ALLOW'));
+    assert.ok(calls.length>0,'unrelated or temporally ambiguous sources must not short-circuit review');
+  }
+});
